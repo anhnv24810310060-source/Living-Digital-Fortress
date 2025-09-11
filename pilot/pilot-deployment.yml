@@ -1,0 +1,460 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: shieldx-pilot
+  labels:
+    name: shieldx-pilot
+    environment: pilot
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pilot-config
+  namespace: shieldx-pilot
+data:
+  tenant_id: "pilot_tenant_001"
+  environment: "pilot"
+  log_level: "debug"
+  monitoring_enabled: "true"
+  security_mode: "strict"
+  pilot_features: |
+    {
+      "credits_system": true,
+      "continuous_auth": true,
+      "shadow_evaluation": true,
+      "digital_twin": true,
+      "plugin_marketplace": true,
+      "web_console": true
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shieldx-orchestrator-pilot
+  namespace: shieldx-pilot
+  labels:
+    app: shieldx-orchestrator
+    environment: pilot
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: shieldx-orchestrator
+      environment: pilot
+  template:
+    metadata:
+      labels:
+        app: shieldx-orchestrator
+        environment: pilot
+      annotations:
+        seccomp.security.alpha.kubernetes.io/pod: localhost/shieldx-default
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: shieldx-orchestrator
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        fsGroup: 65534
+        seccompProfile:
+          type: Localhost
+          localhostProfile: shieldx-default.json
+      containers:
+      - name: orchestrator
+        image: registry.shieldx.io/shieldx/orchestrator:v1.0.0-pilot
+        imagePullPolicy: Always
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 65534
+          capabilities:
+            drop:
+            - ALL
+            add:
+            - NET_BIND_SERVICE
+        ports:
+        - containerPort: 8080
+          name: http
+        - containerPort: 8443
+          name: https
+        env:
+        - name: ENVIRONMENT
+          value: "pilot"
+        - name: TENANT_ID
+          valueFrom:
+            configMapKeyRef:
+              name: pilot-config
+              key: tenant_id
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: pilot-config
+              key: log_level
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: pilot-secrets
+              key: database_url
+        - name: CREDITS_URL
+          value: "http://shieldx-credits-pilot:5004"
+        - name: CONTAUTH_URL
+          value: "http://shieldx-contauth-pilot:5002"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        - name: var-run
+          mountPath: /var/run
+        - name: config
+          mountPath: /etc/shieldx
+          readOnly: true
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      - name: var-run
+        emptyDir: {}
+      - name: config
+        configMap:
+          name: pilot-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: shieldx-orchestrator-pilot
+  namespace: shieldx-pilot
+  labels:
+    app: shieldx-orchestrator
+    environment: pilot
+spec:
+  selector:
+    app: shieldx-orchestrator
+    environment: pilot
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+  - name: https
+    port: 8443
+    targetPort: 8443
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shieldx-credits-pilot
+  namespace: shieldx-pilot
+  labels:
+    app: shieldx-credits
+    environment: pilot
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: shieldx-credits
+      environment: pilot
+  template:
+    metadata:
+      labels:
+        app: shieldx-credits
+        environment: pilot
+      annotations:
+        seccomp.security.alpha.kubernetes.io/pod: localhost/shieldx-database
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        fsGroup: 65534
+      containers:
+      - name: credits
+        image: registry.shieldx.io/shieldx/credits:v1.0.0-pilot
+        imagePullPolicy: Always
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 65534
+          capabilities:
+            drop:
+            - ALL
+        ports:
+        - containerPort: 5004
+          name: http
+        env:
+        - name: ENVIRONMENT
+          value: "pilot"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: pilot-secrets
+              key: credits_database_url
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "200m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 5004
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 5004
+          initialDelaySeconds: 5
+          periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: shieldx-credits-pilot
+  namespace: shieldx-pilot
+spec:
+  selector:
+    app: shieldx-credits
+    environment: pilot
+  ports:
+  - port: 5004
+    targetPort: 5004
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shieldx-contauth-pilot
+  namespace: shieldx-pilot
+  labels:
+    app: shieldx-contauth
+    environment: pilot
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: shieldx-contauth
+      environment: pilot
+  template:
+    metadata:
+      labels:
+        app: shieldx-contauth
+        environment: pilot
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        fsGroup: 65534
+      containers:
+      - name: contauth
+        image: registry.shieldx.io/shieldx/contauth:v1.0.0-pilot
+        imagePullPolicy: Always
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 65534
+          capabilities:
+            drop:
+            - ALL
+        ports:
+        - containerPort: 5002
+          name: http
+        env:
+        - name: ENVIRONMENT
+          value: "pilot"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: pilot-secrets
+              key: contauth_database_url
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "200m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: shieldx-contauth-pilot
+  namespace: shieldx-pilot
+spec:
+  selector:
+    app: shieldx-contauth
+    environment: pilot
+  ports:
+  - port: 5002
+    targetPort: 5002
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: shieldx-pilot-ingress
+  namespace: shieldx-pilot
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+spec:
+  tls:
+  - hosts:
+    - pilot.shieldx.io
+    secretName: pilot-tls
+  rules:
+  - host: pilot.shieldx.io
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: shieldx-orchestrator-pilot
+            port:
+              number: 8080
+      - path: /api/credits
+        pathType: Prefix
+        backend:
+          service:
+            name: shieldx-credits-pilot
+            port:
+              number: 5004
+      - path: /api/contauth
+        pathType: Prefix
+        backend:
+          service:
+            name: shieldx-contauth-pilot
+            port:
+              number: 5002
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: shieldx-pilot-network-policy
+  namespace: shieldx-pilot
+spec:
+  podSelector:
+    matchLabels:
+      environment: pilot
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ingress-nginx
+    - podSelector:
+        matchLabels:
+          environment: pilot
+    ports:
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 5002
+    - protocol: TCP
+      port: 5004
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          environment: pilot
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 5432  # PostgreSQL
+    - protocol: TCP
+      port: 53    # DNS
+    - protocol: UDP
+      port: 53    # DNS
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: pilot-secrets
+  namespace: shieldx-pilot
+type: Opaque
+data:
+  database_url: cG9zdGdyZXNxbDovL3BpbG90X3VzZXI6cGlsb3RfcGFzczIwMjRAcG9zdGdyZXMtcGlsb3Q6NTQzMi9waWxvdA==
+  credits_database_url: cG9zdGdyZXNxbDovL2NyZWRpdHNfdXNlcjpjcmVkaXRzX3Bhc3MyMDI0QHBvc3RncmVzLWNyZWRpdHM6NTQzMi9jcmVkaXRz
+  contauth_database_url: cG9zdGdyZXNxbDovL2NvbnRhdXRoX3VzZXI6Y29udGF1dGhfcGFzczIwMjRAcG9zdGdyZXMtY29udGF1dGg6NTQzMi9jb250YXV0aA==
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: shieldx-orchestrator
+  namespace: shieldx-pilot
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: shieldx-pilot
+  name: shieldx-orchestrator
+rules:
+- apiGroups: [""]
+  resources: ["pods", "services", "configmaps"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["apps"]
+  resources: ["deployments"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: shieldx-orchestrator
+  namespace: shieldx-pilot
+subjects:
+- kind: ServiceAccount
+  name: shieldx-orchestrator
+  namespace: shieldx-pilot
+roleRef:
+  kind: Role
+  name: shieldx-orchestrator
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: shieldx-pilot-monitoring
+  namespace: shieldx-pilot
+  labels:
+    app: shieldx
+    environment: pilot
+spec:
+  selector:
+    matchLabels:
+      app: shieldx-orchestrator
+      environment: pilot
+  endpoints:
+  - port: http
+    path: /metrics
+    interval: 30s
+    scrapeTimeout: 10s

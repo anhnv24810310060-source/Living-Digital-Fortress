@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: plugins
+      POSTGRES_USER: plugin_user
+      POSTGRES_PASSWORD: plugin_pass2024
+    ports:
+      - "5433:5432"
+    volumes:
+      - plugin_db_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+
+  plugin-registry:
+    build: .
+    environment:
+      DATABASE_URL: postgres://plugin_user:plugin_pass2024@postgres:5432/plugins?sslmode=disable
+      PORT: 8082
+    ports:
+      - "8082:8082"
+    depends_on:
+      - postgres
+    volumes:
+      - /tmp:/tmp
+      - ./plugins:/app/plugins
+
+  cosign:
+    image: gcr.io/projectsigstore/cosign:latest
+    volumes:
+      - /tmp:/tmp
+    command: ["sleep", "infinity"]
+
+  trivy:
+    image: aquasec/trivy:latest
+    volumes:
+      - /tmp:/tmp
+    command: ["sleep", "infinity"]
+
+volumes:
+  plugin_db_data:

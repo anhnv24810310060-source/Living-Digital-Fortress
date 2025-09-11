@@ -1,0 +1,14 @@
+{
+  "allow_all": false,
+  "allowed": [
+    { "tenant": "demo", "scopes": ["api", "web"] }
+  ],
+  "advanced": [
+    { "tenant": "demo", "path_prefix": "/admin", "action": "deny" },
+    { "tenant": "demo", "scopes": ["api"], "action": "allow" }
+  ],
+  "tarpit_ms": 200
+}
+
+
+

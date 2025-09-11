@@ -1,0 +1,46 @@
+name: basic_recover
+version: "1.0"
+description: "Basic node recovery playbook"
+
+triggers:
+  - incident_type: "node_down"
+  - incident_type: "node_unhealthy"
+
+steps:
+  - name: "isolate_node"
+    type: "isolation"
+    timeout: "30s"
+    
+  - name: "backup_data"
+    type: "backup"
+    timeout: "5m"
+    
+  - name: "terminate_instance"
+    type: "cloud_action"
+    action: "terminate"
+    timeout: "2m"
+    
+  - name: "spawn_replacement"
+    type: "cloud_action"
+    action: "launch_instance"
+    parameters:
+      instance_type: "t3.medium"
+      image_id: "ami-12345"
+    timeout: "10m"
+    
+  - name: "health_check"
+    type: "validation"
+    timeout: "3m"
+    
+  - name: "restore_data"
+    type: "restore"
+    timeout: "5m"
+    
+  - name: "register_node"
+    type: "registration"
+    timeout: "1m"
+
+rollback:
+  - name: "restore_original"
+    type: "cloud_action"
+    action: "start_instance"
