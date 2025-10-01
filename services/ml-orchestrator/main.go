@@ -7,6 +7,9 @@ import (
 	"net/http"
 	"os"
 	"time"
+
+	"shieldx/pkg/metrics"
+	otelobs "shieldx/pkg/observability/otel"
 )
 
 type MLOrchestrator struct {
@@ -45,17 +48,28 @@ func main() {
 		featureExtractor: &FeatureExtractor{windowSize: 30 * time.Second},
 	}
 
-	http.HandleFunc("/analyze", orchestrator.handleAnalyze)
-	http.HandleFunc("/train", orchestrator.handleTrain)
-	http.HandleFunc("/metrics", orchestrator.handleMetrics)
+	mux := http.NewServeMux()
+	reg := metrics.NewRegistry()
+	httpMetrics := metrics.NewHTTPMetrics(reg, "ml_orchestrator")
+	mux.HandleFunc("/analyze", orchestrator.handleAnalyze)
+	mux.HandleFunc("/train", orchestrator.handleTrain)
+	mux.Handle("/metrics", reg)
 
 	port := os.Getenv("ML_ORCHESTRATOR_PORT")
 	if port == "" {
 		port = "8087"
 	}
 
+	// OpenTelemetry tracing (no-op unless built with otelotlp and endpoint set)
+	shutdown := otelobs.InitTracer("ml_orchestrator")
+	defer shutdown(context.Background())
+
+	// Wrap with tracing + metrics middleware
+	h := httpMetrics.Middleware(mux)
+	h = otelobs.WrapHTTPHandler("ml_orchestrator", h)
+
 	log.Printf("ML Orchestrator starting on port %s", port)
-	log.Fatal(http.ListenAndServe(":"+port, nil))
+	log.Fatal(http.ListenAndServe(":"+port, h))
 }
 
 func (m *MLOrchestrator) handleAnalyze(w http.ResponseWriter, r *http.Request) {
@@ -84,16 +98,7 @@ func (m *MLOrchestrator) handleTrain(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "trained"})
 }
 
-func (m *MLOrchestrator) handleMetrics(w http.ResponseWriter, r *http.Request) {
-	metrics := map[string]interface{}{
-		"timestamp": time.Now(),
-		"status":    "running",
-		"trained":   m.anomalyDetector.trained,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(metrics)
-}
+// Prometheus metrics moved to /metrics via Registry
 
 func (ad *AnomalyDetector) Predict(event TelemetryEvent) AnomalyResult {
 	if !ad.trained {

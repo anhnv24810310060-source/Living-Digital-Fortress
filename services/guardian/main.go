@@ -77,7 +77,7 @@ func main() {
         if err != nil { http.Error(w, "bad ciphertext", 400); return }
         clientPub, err := curve.NewPublicKey(clientPubBytes)
         if err != nil { http.Error(w, "bad client pub", 400); return }
-        shared := guardianPriv.ECDH(clientPub)
+    shared, _ := guardianPriv.ECDH(clientPub)
         var key []byte
         var pt []byte
         // Try current counter and a grace window of counter-1 to avoid race during rekey
@@ -130,7 +130,7 @@ func main() {
         if err != nil { http.Error(w, "bad ciphertext", 400); return }
         clientPub, err := curve.NewPublicKey(clientPubBytes)
         if err != nil { http.Error(w, "bad client pub", 400); return }
-        shared := guardianPriv.ECDH(clientPub)
+    shared, _ := guardianPriv.ECDH(clientPub)
         var key []byte
         // Grace window for counter-1 when decrypting
         tryCounters := []int{env.RekeyCounter}
@@ -172,9 +172,11 @@ func main() {
     })
     reg.Register(mRecv); reg.Register(mUDPRecv); reg.Register(mMasqueOK); reg.Register(mMasqueFB); reg.Register(mUDPDir); reg.Register(mUDPErr); reg.Register(mRekeyGrace); mux.Handle("/metrics", reg)
 
+    // HTTP metrics middleware
+    httpMetrics := metrics.NewHTTPMetrics(reg, "guardian")
     addr := fmt.Sprintf("127.0.0.1:%d", port)
     log.Printf("[guardian] listening on http://%s", addr)
-    log.Fatal(http.ListenAndServe(addr, mux))
+    log.Fatal(http.ListenAndServe(addr, httpMetrics.Middleware(mux)))
 }
 
 
@@ -206,7 +208,7 @@ func masqueSingleExchange(addrList, target string, payload []byte, timeoutMs int
     for attempt := 0; attempt <= retries; attempt++ {
         for _, addr := range addrs {
             tlsConf := &tls.Config{InsecureSkipVerify: true, NextProtos: []string{"shieldx-masque"}}
-            conn, err := quic.DialAddr(addr, tlsConf, &quic.Config{})
+            conn, err := quic.DialAddr(context.Background(), addr, tlsConf, &quic.Config{})
             if err != nil { lastErr = err; continue }
             func() {
                 defer conn.CloseWithError(0, "bye")

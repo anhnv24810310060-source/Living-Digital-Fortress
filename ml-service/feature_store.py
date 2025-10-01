@@ -9,7 +9,8 @@ from sklearn.preprocessing import StandardScaler, LabelEncoder
 import redis
 import psycopg2
 from psycopg2.extras import RealDictCursor
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, Response
+from prometheus_client import Counter as PromCounter, Histogram as PromHistogram, generate_latest, CONTENT_TYPE_LATEST
 import hashlib
 
 @dataclass
@@ -338,7 +339,30 @@ REDIS_URL = "redis://localhost:6379/0"
 feature_store = FeatureStore(DB_URL, REDIS_URL)
 ml_pipeline = MLPipeline(feature_store)
 
+# Prometheus metrics
+REQUESTS_TOTAL = PromCounter('mlservice_http_requests_total', 'Total HTTP requests', ['endpoint', 'method', 'status'])
+REQ_DURATION = PromHistogram('mlservice_http_request_duration_seconds', 'HTTP request duration seconds', ['endpoint', 'method'])
+
+def track_metrics(endpoint):
+    def decorator(fn):
+        def wrapper(*args, **kwargs):
+            method = request.method
+            start = datetime.now()
+            try:
+                resp = fn(*args, **kwargs)
+                # Flask handlers can return (body, status)
+                status = 200
+                if isinstance(resp, tuple) and len(resp) >= 2:
+                    status = resp[1]
+                REQUESTS_TOTAL.labels(endpoint=endpoint, method=method, status=status).inc()
+                return resp
+            finally:
+                REQ_DURATION.labels(endpoint=endpoint, method=method).observe((datetime.now() - start).total_seconds())
+        return wrapper
+    return decorator
+
 @app.route('/process', methods=['POST'])
+@track_metrics('process')
 def process_plugin_output():
     try:
         plugin_output_json = request.get_json()
@@ -357,6 +381,7 @@ def process_plugin_output():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/training-data', methods=['GET'])
+@track_metrics('training_data')
 def get_training_data():
     try:
         limit = int(request.args.get('limit', 10000))
@@ -375,7 +400,11 @@ def get_training_data():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/health', methods=['GET'])
+@track_metrics('health')
 def health_check():
+@app.route('/metrics')
+def metrics():
+    return Response(generate_latest(), mimetype=CONTENT_TYPE_LATEST)
     return jsonify({
         'status': 'healthy',
         'service': 'ml-feature-store',

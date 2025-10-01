@@ -1,6 +1,7 @@
 # ShieldX Cloud Build System
 
-.PHONY: all build test clean firecracker ebpf ml-orchestrator
+.PHONY: all build test clean firecracker ebpf ml-orchestrator observability prom grafana
+ .PHONY: demo-health
 
 # Build all components
 all: build-services build-ebpf
@@ -105,6 +106,44 @@ docker-build:
 	docker build -t shieldx/ingress -f docker/Dockerfile.ingress .
 	docker build -t shieldx/ml-orchestrator -f docker/Dockerfile.ml .
 	docker build -t shieldx/decoy-manager -f docker/Dockerfile.decoy .
+
+# Minimal images for observability demo
+.PHONY: docker-ingress docker-locator demo-up demo-down
+docker-ingress:
+	docker build --build-arg GO_TAGS="$(GO_TAGS)" -t shieldx/ingress:dev -f docker/Dockerfile.ingress .
+
+docker-locator:
+	docker build --build-arg GO_TAGS="$(GO_TAGS)" -t shieldx/locator:dev -f docker/Dockerfile.locator .
+
+demo-up: docker-ingress docker-locator
+	docker compose -f pilot/observability/docker-compose.yml -f pilot/observability/docker-compose.override.yml up --build -d
+
+demo-down:
+	docker compose -f pilot/observability/docker-compose.yml -f pilot/observability/docker-compose.override.yml down
+
+# Observability (local quick-run)
+observability: prom
+	@echo "Observability components started (Prometheus). Import Grafana dashboard from pilot/observability/grafana-dashboard-http-slo.json"
+
+prom:
+	@echo "Starting Prometheus with pilot/observability/prometheus-scrape.yml"
+	@echo "Note: requires 'prometheus' binary on PATH or docker; adjust as needed"
+	-prometheus --config.file=pilot/observability/prometheus-scrape.yml --web.enable-admin-api --web.listen-address=0.0.0.0:9091
+
+grafana:
+	@echo "Import dashboard: pilot/observability/grafana-dashboard-http-slo.json"
+
+# Demo health check: waits for Prometheus targets and Jaeger UI to be up
+demo-health:
+	@echo "Checking Prometheus API..."
+	@curl -sf http://localhost:9090/api/v1/status/runtimeinfo >/dev/null && echo "Prometheus OK" || (echo "Prometheus not ready"; exit 1)
+	@echo "Checking Grafana..."
+	@curl -sf http://localhost:3000/api/health >/dev/null && echo "Grafana OK" || (echo "Grafana not ready"; exit 1)
+	@echo "Checking Jaeger UI..."
+	@curl -sf http://localhost:16686 >/dev/null && echo "Jaeger OK" || (echo "Jaeger not ready"; exit 1)
+	@echo "Checking OTEL Collector (OTLP HTTP 4318)..."
+	@curl -s http://localhost:4318/ >/dev/null && echo "Collector OK (port reachable)" || (echo "Collector not reachable"; exit 1)
+	@echo "Basic demo stack health: PASS"
 
 # Help
 help:

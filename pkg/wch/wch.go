@@ -4,7 +4,6 @@ import (
     "crypto/aes"
     "crypto/cipher"
     "crypto/ecdh"
-    "crypto/hkdf"
     "crypto/rand"
     "crypto/sha256"
     "encoding/base64"
@@ -12,6 +11,7 @@ import (
     "errors"
     "io"
     "fmt"
+    xhkdf "golang.org/x/crypto/hkdf"
 )
 
 const (
@@ -78,7 +78,7 @@ func GenerateClientEphemeral() (*ecdh.PrivateKey, []byte, error) {
 // DeriveKey derives an AES-256 key via HKDF-SHA256 from shared secret and channelId as salt/info.
 func DeriveKey(sharedSecret []byte, channelID string) ([]byte, error) {
     salt := []byte("wch:" + channelID)
-    hk := hkdf.New(sha256.New, sharedSecret, salt, []byte(Protocol))
+    hk := xhkdf.New(sha256.New, sharedSecret, salt, []byte(Protocol))
     key := make([]byte, 32)
     if _, err := io.ReadFull(hk, key); err != nil {
         return nil, err
@@ -90,7 +90,7 @@ func DeriveKey(sharedSecret []byte, channelID string) ([]byte, error) {
 func DeriveKeyWithCounter(sharedSecret []byte, channelID string, counter int) ([]byte, error) {
     if counter <= 0 { return DeriveKey(sharedSecret, channelID) }
     salt := []byte(fmt.Sprintf("wch:%s:%d", channelID, counter))
-    hk := hkdf.New(sha256.New, sharedSecret, salt, []byte(Protocol))
+    hk := xhkdf.New(sha256.New, sharedSecret, salt, []byte(Protocol))
     key := make([]byte, 32)
     if _, err := io.ReadFull(hk, key); err != nil { return nil, err }
     return key, nil

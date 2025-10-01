@@ -12,7 +12,7 @@ import (
     "sync"
     "time"
 
-    "github.com/shieldx-cloud/pkg/deception"
+    "shieldx/pkg/deception"
 )
 
 type ShapeshifterV2 struct {

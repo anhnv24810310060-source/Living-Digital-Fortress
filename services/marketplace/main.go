@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/shieldx/pkg/marketplace"
+	"shieldx/pkg/marketplace"
 )
 
 type Server struct {

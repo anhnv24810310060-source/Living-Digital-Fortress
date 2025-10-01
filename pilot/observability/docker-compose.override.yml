@@ -1,0 +1,91 @@
+version: '3.8'
+services:
+  ingress:
+    image: shieldx/ingress:dev
+    build:
+      context: ../../
+      dockerfile: docker/Dockerfile.ingress
+      args:
+        GO_TAGS: otelotlp
+    environment:
+      - INGRESS_PORT=8081
+      - OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4318
+    ports:
+      - "8081:8081"
+    depends_on:
+      - otel-collector
+  locator:
+    image: shieldx/locator:dev
+    build:
+      context: ../../
+      dockerfile: docker/Dockerfile.locator
+      args:
+        GO_TAGS: otelotlp
+    environment:
+      - LOCATOR_PORT=8080
+      - OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4318
+    ports:
+      - "8080:8080"
+    depends_on:
+      - otel-collector
+
+  shieldx-gateway:
+    image: shieldx/shieldx-gateway:dev
+    build:
+      context: ../../
+      dockerfile: docker/Dockerfile.shieldx-gateway
+      args:
+        GO_TAGS: otelotlp
+    environment:
+      - GATEWAY_PORT=8082
+      - OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4318
+    ports:
+      - "8082:8082"
+    depends_on:
+      - otel-collector
+
+  contauth:
+    image: shieldx/contauth:dev
+    build:
+      context: ../../
+      dockerfile: docker/Dockerfile.contauth
+      args:
+        GO_TAGS: otelotlp
+    environment:
+      - PORT=5002
+      - OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4318
+      - DISABLE_DB=true
+    ports:
+      - "5002:5002"
+    depends_on:
+      - otel-collector
+
+  verifier-pool:
+    image: shieldx/verifier-pool:dev
+    build:
+      context: ../../
+      dockerfile: docker/Dockerfile.verifier-pool
+      args:
+        GO_TAGS: otelotlp
+    environment:
+      - VERIFIER_POOL_PORT=8087
+      - OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4318
+    ports:
+      - "8087:8087"
+    depends_on:
+      - otel-collector
+
+  ml-orchestrator:
+    image: shieldx/ml-orchestrator:dev
+    build:
+      context: ../../
+      dockerfile: docker/Dockerfile.ml-orchestrator
+      args:
+        GO_TAGS: otelotlp
+    environment:
+      - ML_ORCHESTRATOR_PORT=8087
+      - OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4318
+    ports:
+      - "8086:8087"
+    depends_on:
+      - otel-collector

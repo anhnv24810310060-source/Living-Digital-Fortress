@@ -1,11 +1,13 @@
 package policy
 
 import (
-    "bytes"
+    "context"
     "io"
     "net/http"
     "sync/atomic"
     "time"
+
+    "github.com/open-policy-agent/opa/rego"
 )
 
 // EngineHolder allows hot-swapping an OPAEngine safely for readers.
@@ -32,20 +34,29 @@ func StartBundlePoller(url string, interval time.Duration, holder *EngineHolder,
             req, _ := http.NewRequest(http.MethodGet, url, nil)
             if etag != "" { req.Header.Set("If-None-Match", etag) }
             resp, err := client.Do(req)
-            if err != nil { if onLoad!=nil { onLoad("", err) }; goto wait }
-            if resp.StatusCode == http.StatusNotModified { if onLoad!=nil { onLoad(etag, nil) }; resp.Body.Close(); goto wait }
-            b, err := io.ReadAll(resp.Body)
-            resp.Body.Close()
-            if err != nil { if onLoad!=nil { onLoad("", err) }; goto wait }
-            // Compile new engine
-            regoSrc := string(b)
-            // Accept either full module or partial query; we assume module text.
-            e, err := compileRego(regoSrc)
-            if err != nil { if onLoad!=nil { onLoad("", err) }; goto wait }
-            holder.Set(e)
-            etag = resp.Header.Get("ETag")
-            if onLoad != nil { onLoad(etag, nil) }
-        wait:
+            if err == nil {
+                if resp.StatusCode == http.StatusNotModified {
+                    if onLoad!=nil { onLoad(etag, nil) }
+                    resp.Body.Close()
+                } else {
+                    b, rerr := io.ReadAll(resp.Body)
+                    resp.Body.Close()
+                    if rerr != nil {
+                        if onLoad!=nil { onLoad("", rerr) }
+                    } else {
+                        regoSrc := string(b)
+                        if e, cerr := compileRego(regoSrc); cerr != nil {
+                            if onLoad!=nil { onLoad("", cerr) }
+                        } else {
+                            holder.Set(e)
+                            etag = resp.Header.Get("ETag")
+                            if onLoad != nil { onLoad(etag, nil) }
+                        }
+                    }
+                }
+            } else {
+                if onLoad!=nil { onLoad("", err) }
+            }
             select {
             case <-stop:
                 return

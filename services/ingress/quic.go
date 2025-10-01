@@ -1,26 +1,22 @@
+//go:build quic
+
 package main
 
 import (
     "bytes"
+    "crypto/rand"
+    "crypto/tls"
+    "encoding/binary"
     "encoding/json"
-    "fmt"
     "io"
     "log"
+    "net"
+    "net/http"
+    "os"
     "sync/atomic"
     "time"
 
     quic "github.com/quic-go/quic-go"
-    "shieldx/pkg/wch"
-
-    "crypto/rand"
-    "crypto/rsa"
-    "crypto/tls"
-    "crypto/x509"
-    "crypto/x509/pkix"
-    "encoding/pem"
-    "math/big"
-    "net/http"
-    "net"
     "shieldx/pkg/metrics"
 )
 

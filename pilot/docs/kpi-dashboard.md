@@ -343,3 +343,18 @@ Total Blended Gross Margin: 84.2%
 **Last Updated**: 2024-01-15  
 **Data Refresh**: Real-time (5-minute intervals)  
 **Next Review**: 2024-02-15
+
+---
+
+Operational note (2025-09-30):
+- New Prometheus endpoints exposed for SLO dashboards:
+  - Ingress: http://<ingress-host>:<port>/metrics
+  - Locator: http://<locator-host>:<port>/metrics
+  - Guardian (loopback): http://127.0.0.1:<GUARDIAN_PORT>/metrics
+  - ML Orchestrator: http://<ml-orchestrator-host>:<port>/metrics
+  - ML Service (feature_store.py): http://<ml-service-host>:5000/metrics
+  - ContAuth: http://<contauth-host>:<port>/metrics
+  - Verifier Pool: http://<verifier-pool-host>:<port>/metrics
+- Default HTTP metrics exported per service: *_http_requests_total, *_http_errors_total, *_http_request_duration_seconds histogram.
+ - Per-endpoint metrics (for debugging): *_http_requests_by_path_total, *_http_request_duration_by_path_seconds; dùng có kiểm soát để tránh cardinality bùng nổ.
+ - Tracing: optional OpenTelemetry OTLP/HTTP collector at http://localhost:4318; set OTEL_EXPORTER_OTLP_ENDPOINT to the collector address in services to enable.

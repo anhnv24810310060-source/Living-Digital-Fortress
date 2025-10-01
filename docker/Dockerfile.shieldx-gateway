@@ -1,0 +1,21 @@
+# syntax=docker/dockerfile:1
+
+FROM golang:1.24 AS builder
+WORKDIR /src
+ARG GO_TAGS=""
+ENV CGO_ENABLED=0
+COPY go.mod ./
+COPY . .
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    cd services/shieldx-gateway && go mod tidy && \
+    go build -tags="$GO_TAGS" -o /out/shieldx-gateway .
+
+FROM gcr.io/distroless/static-debian12:nonroot
+WORKDIR /app
+ENV OTEL_EXPORTER_OTLP_ENDPOINT=
+ENV GATEWAY_PORT=8082
+COPY --from=builder /out/shieldx-gateway /app/shieldx-gateway
+EXPOSE 8082
+USER nonroot:nonroot
+ENTRYPOINT ["/app/shieldx-gateway"]

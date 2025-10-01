@@ -1,0 +1,80 @@
+{
+  "title": "HTTP SLO Overview",
+  "uid": "http-slo-overview",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Ingress Error Rate (5xx %)",
+      "targets": [{
+        "expr": "sum(rate(ingress_http_errors_total[5m])) / sum(rate(ingress_http_requests_total[5m])) * 100",
+        "legendFormat": "error%"
+      }],
+      "gridPos": {"x": 0, "y": 0, "w": 8, "h": 4}
+    },
+    {
+      "type": "stat",
+      "title": "ContAuth Error Rate (5xx %)",
+      "targets": [{
+        "expr": "sum(rate(contauth_http_errors_total[5m])) / sum(rate(contauth_http_requests_total[5m])) * 100"
+      }],
+      "gridPos": {"x": 8, "y": 0, "w": 8, "h": 4}
+    },
+    {
+      "type": "stat",
+      "title": "Verifier Pool Error Rate (5xx %)",
+      "targets": [{
+        "expr": "sum(rate(verifier_pool_http_errors_total[5m])) / sum(rate(verifier_pool_http_requests_total[5m])) * 100"
+      }],
+      "gridPos": {"x": 16, "y": 0, "w": 8, "h": 4}
+    },
+    {
+      "type": "timeseries",
+      "title": "Ingress p95 Latency (s)",
+      "targets": [{
+        "expr": "histogram_quantile(0.95, sum(rate(ingress_http_request_duration_seconds_bucket[5m])) by (le))"
+      }],
+      "gridPos": {"x": 0, "y": 4, "w": 12, "h": 8}
+    },
+    {
+      "type": "timeseries",
+      "title": "ContAuth p95 Latency (s)",
+      "targets": [{
+        "expr": "histogram_quantile(0.95, sum(rate(contauth_http_request_duration_seconds_bucket[5m])) by (le))"
+      }],
+      "gridPos": {"x": 12, "y": 4, "w": 12, "h": 8}
+    },
+    {
+      "type": "timeseries",
+      "title": "Verifier Pool p95 Latency (s)",
+      "targets": [{
+        "expr": "histogram_quantile(0.95, sum(rate(verifier_pool_http_request_duration_seconds_bucket[5m])) by (le))"
+      }],
+      "gridPos": {"x": 0, "y": 12, "w": 12, "h": 8}
+    },
+    {
+      "type": "timeseries",
+      "title": "ML Orchestrator p95 Latency (s)",
+      "targets": [{
+        "expr": "histogram_quantile(0.95, sum(rate(ml_orchestrator_http_request_duration_seconds_bucket[5m])) by (le))"
+      }],
+      "gridPos": {"x": 12, "y": 12, "w": 12, "h": 8}
+    },
+    {
+      "type": "timeseries",
+      "title": "Requests per Service",
+      "targets": [
+        {"expr": "sum(rate(ingress_http_requests_total[1m]))"},
+        {"expr": "sum(rate(locator_http_requests_total[1m]))"},
+        {"expr": "sum(rate(guardian_http_requests_total[1m]))"},
+        {"expr": "sum(rate(ml_orchestrator_http_requests_total[1m]))"},
+        {"expr": "sum(rate(contauth_http_requests_total[1m]))"},
+        {"expr": "sum(rate(verifier_pool_http_requests_total[1m]))"}
+      ],
+      "gridPos": {"x": 0, "y": 20, "w": 24, "h": 8}
+    }
+  ]
+}

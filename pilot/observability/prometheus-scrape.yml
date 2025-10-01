@@ -1,0 +1,45 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'ingress'
+    static_configs:
+      - targets: ['ingress:8081']
+  - job_name: 'locator'
+    static_configs:
+      - targets: ['locator:8080']
+  - job_name: 'shieldx_gateway'
+    static_configs:
+      - targets: ['shieldx-gateway:8082']
+  - job_name: 'guardian'
+    static_configs:
+      - targets: ['127.0.0.1:9090']
+  - job_name: 'ml_orchestrator'
+    static_configs:
+      - targets: ['ml-orchestrator:8087'] # Prometheus scrapes inside the compose network; host port mapping is irrelevant
+  - job_name: 'contauth'
+    static_configs:
+      - targets: ['contauth:5002']
+  - job_name: 'verifier_pool'
+    static_configs:
+      - targets: ['verifier-pool:8087']
+  # Synthetic checks via blackbox exporter
+  - job_name: 'blackbox'
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+        - http://ingress:8081/healthz
+        - http://locator:8080/healthz
+        - http://shieldx-gateway:8082/health
+        - http://verifier-pool:8087/health
+        - http://ml-orchestrator:8087/metrics
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115

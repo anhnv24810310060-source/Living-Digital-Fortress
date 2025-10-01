@@ -9,7 +9,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/shieldx/pkg/verifier"
+	"shieldx/pkg/verifier"
+	"shieldx/pkg/metrics"
+	otelobs "shieldx/pkg/observability/otel"
 )
 
 type Server struct {
@@ -29,13 +31,25 @@ func main() {
 		port: port,
 	}
 	
-	http.HandleFunc("/register", server.handleRegister)
-	http.HandleFunc("/validate", server.handleValidate)
-	http.HandleFunc("/nodes", server.handleListNodes)
-	http.HandleFunc("/health", server.handleHealth)
-	
+	mux := http.NewServeMux()
+	reg := metrics.NewRegistry()
+	httpMetrics := metrics.NewHTTPMetrics(reg, "verifier_pool")
+	mux.HandleFunc("/register", server.handleRegister)
+	mux.HandleFunc("/validate", server.handleValidate)
+	mux.HandleFunc("/nodes", server.handleListNodes)
+	mux.HandleFunc("/health", server.handleHealth)
+	mux.Handle("/metrics", reg)
+
+	// OpenTelemetry tracing (no-op unless built with otelotlp and endpoint set)
+	shutdown := otelobs.InitTracer("verifier_pool")
+	defer shutdown(context.Background())
+
+	// Wrap with tracing + metrics middleware
+	h := httpMetrics.Middleware(mux)
+	h = otelobs.WrapHTTPHandler("verifier_pool", h)
+
 	log.Printf("Verifier Pool starting on port %s", port)
-	log.Fatal(http.ListenAndServe(":"+port, nil))
+	log.Fatal(http.ListenAndServe(":"+port, h))
 }
 
 func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {

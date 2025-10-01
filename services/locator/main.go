@@ -17,6 +17,8 @@ import (
     "shieldx/pkg/tokens"
     "shieldx/pkg/metrics"
     "github.com/golang-jwt/jwt/v5"
+    otelobs "shieldx/pkg/observability/otel"
+    "context"
 )
 
 type IssueRequest struct {
@@ -171,6 +173,9 @@ func handleRevoke(w http.ResponseWriter, r *http.Request) {
 
 func main() {
     port := getenvInt("LOCATOR_PORT", 8080)
+    // OpenTelemetry tracing (no-op if OTEL_EXPORTER_OTLP_ENDPOINT unset)
+    shutdown := otelobs.InitTracer(serviceName)
+    defer shutdown(context.Background())
     if pkb64 := os.Getenv("LOCATOR_PRIVKEY_B64"); pkb64 != "" {
         var err error
         privKey, err = tokens.PrivateKeyFromB64(pkb64)
@@ -198,9 +203,13 @@ func main() {
     mux.Handle("/metrics", reg)
     mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200); _, _ = w.Write([]byte("ok")) })
 
+    // HTTP metrics middleware
+    httpMetrics := metrics.NewHTTPMetrics(reg, serviceName)
     addr := fmt.Sprintf(":%d", port)
     log.Printf("[locator] listening on %s", addr)
-    log.Fatal(http.ListenAndServe(addr, mux))
+    h := httpMetrics.Middleware(mux)
+    h = otelobs.WrapHTTPHandler(serviceName, h)
+    log.Fatal(http.ListenAndServe(addr, h))
 }
 
 func getenvInt(key string, def int) int {

@@ -2,16 +2,17 @@ package main
 
 import (
     "bytes"
+    "context"
     "encoding/json"
     "fmt"
     "io"
     "log"
-	"net"
+    "net"
     "net/http"
     "os"
     "strconv"
-	"strings"
-	"sync"
+    "strings"
+    "sync"
     "time"
 
     "shieldx/pkg/ledger"
@@ -24,14 +25,16 @@ import (
 	"shieldx/pkg/forensics"
 	"shieldx/pkg/guard"
 	"shieldx/pkg/xdpguard"
-	"shieldx/pkg/dpop"
-	redis "github.com/redis/go-redis/v9"
-	"context"
-	"os/exec"
-	"runtime"
-	"shieldx/pkg/wgstate"
+    "shieldx/pkg/dpop"
+    redis "github.com/redis/go-redis/v9"
+    "os/exec"
+    "runtime"
+    "shieldx/pkg/wgstate"
     "os/signal"
     "syscall"
+
+    // optional tracing
+    otelobs "shieldx/pkg/observability/otel"
 )
 
 type connectRequest struct {
@@ -256,7 +259,7 @@ func connectHandler(w http.ResponseWriter, r *http.Request) {
 			}
 			_ = ledger.AppendJSONLine(ledgerPath, serviceName, "policy.shadow_opa", map[string]any{"tenant": tenant, "scope": scope, "decision": dec})
 		}
-	} else if (shadowPol != policy.Config{}) {
+    } else if shadowPol.AllowAll || len(shadowPol.Allowed) > 0 || len(shadowPol.Advanced) > 0 {
         shadowAction := policy.Evaluate(shadowPol, tenant, scope, "/")
 		switch shadowAction {
 		case policy.ActionAllow: mShadowAllow.Inc()
@@ -320,6 +323,9 @@ func connectHandler(w http.ResponseWriter, r *http.Request) {
 
 func main() {
     port := getenvInt("INGRESS_PORT", 8081)
+    // OpenTelemetry tracing (no-op if OTEL_EXPORTER_OTLP_ENDPOINT unset)
+    shutdown := otelobs.InitTracer(serviceName)
+    defer shutdown(context.Background())
     // Load policy from file if provided
     cfgPath := os.Getenv("INGRESS_POLICY_PATH")
     var err error
@@ -707,9 +713,7 @@ func main() {
         for range ticker.C {
             if h, err := audit.HashChain(ledgerPath); err == nil {
                 _ = ledger.AppendJSONLine(ledgerPath, serviceName, "anchor", map[string]any{"hash": h})
-				if mr, err := audit.MerkleRoot(ledgerPath); err == nil {
-					_, _, _ = forensics.SaveJSON(serviceName, "anchors", map[string]any{"hashchain": h, "merkle": mr, "ts": time.Now().UTC()})
-				}
+                _, _, _ = forensics.SaveJSON(serviceName, "anchors", map[string]any{"hashchain": h, "ts": time.Now().UTC()})
             }
         }
     }()
@@ -728,7 +732,9 @@ func main() {
 	// periodic DPoP GC
 	go func(){ t:=time.NewTicker(2*time.Minute); defer t.Stop(); for range t.C { gcDPoPStore() } }()
     // wrap with basic rate limiting middleware
-    h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+    // HTTP metrics middleware
+    httpMetrics := metrics.NewHTTPMetrics(reg, serviceName)
+    baseH := httpMetrics.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Early L4-ish token guard (header-based) to drop before heavy work
 		if adm := os.Getenv("ADMISSION_SECRET"); adm != "" {
 			if !guard.VerifyHeader(r, adm, os.Getenv("ADMISSION_HEADER"), "ingress") {
@@ -742,7 +748,8 @@ func main() {
             return
         }
         mux.ServeHTTP(w, r)
-    })
+    }))
+    h := otelobs.WrapHTTPHandler(serviceName, baseH)
     log.Fatal(http.ListenAndServe(addr, h))
 }
 

@@ -19,6 +19,8 @@ import (
 	"time"
 
 	"golang.org/x/time/rate"
+    "shieldx/pkg/metrics"
+    otelobs "shieldx/pkg/observability/otel"
 )
 
 // Production ShieldX Gateway - Central Orchestrator
@@ -162,16 +164,18 @@ func (sg *ShieldXGateway) initServices() {
 		sg.services[serviceName] = endpoint
 		
 		// Create HTTP client with connection pooling
-		sg.httpClients[serviceName] = &http.Client{
-			Timeout: serviceConfig.Timeout,
-			Transport: &http.Transport{
+		// Wrap transport with OpenTelemetry to propagate traces on client calls
+		baseTransport := &http.Transport{
 				MaxIdleConns:        100,
 				MaxIdleConnsPerHost: 10,
 				IdleConnTimeout:     90 * time.Second,
 				TLSClientConfig: &tls.Config{
 					InsecureSkipVerify: false,
 				},
-			},
+		}
+		sg.httpClients[serviceName] = &http.Client{
+			Timeout:   serviceConfig.Timeout,
+			Transport: otelobs.WrapHTTPTransport(baseTransport),
 		}
 		
 		// Start health checking
@@ -638,9 +642,13 @@ func main() {
 	log.Println("Starting ShieldX Gateway (Production)")
 	
 	gateway := NewShieldXGateway()
+	// OpenTelemetry tracing (no-op unless built with otelotlp and endpoint set)
+	shutdown := otelobs.InitTracer("shieldx_gateway")
+	defer shutdown(context.Background())
 	
 	// Setup HTTP server
 	mux := http.NewServeMux()
+	reg := metrics.NewRegistry()
 	
 	// Main processing endpoint
 	mux.HandleFunc("/", gateway.processRequest)
@@ -648,8 +656,13 @@ func main() {
 	// Health check endpoint
 	mux.HandleFunc("/health", gateway.healthHandler)
 	
-	// Apply middleware
-	handler := gateway.securityMiddleware(mux)
+	// Expose metrics
+	mux.Handle("/metrics", reg)
+
+	// Apply middleware with HTTP metrics and tracing wrapper
+	httpMetrics := metrics.NewHTTPMetrics(reg, "shieldx_gateway")
+	handler := httpMetrics.Middleware(gateway.securityMiddleware(mux))
+	handler = otelobs.WrapHTTPHandler("shieldx_gateway", handler)
 	
 	// Configure server
 	gateway.server = &http.Server{
@@ -699,7 +712,7 @@ func main() {
 
 func loadConfig() *GatewayConfig {
 	// Default production configuration
-	return &GatewayConfig{
+	cfg := &GatewayConfig{
 		Port:                  8080,
 		MaxConcurrentRequests: 10000,
 		RequestTimeout:        30 * time.Second,
@@ -733,6 +746,18 @@ func loadConfig() *GatewayConfig {
 			},
 		},
 	}
+	if v := os.Getenv("GATEWAY_PORT"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 { cfg.Port = n }
+	}
+	return cfg
+}
+
+// getenvInt is a small helper kept for parity with other services (unused now but handy)
+func getenvInt(key string, def int) int {
+	v := os.Getenv(key)
+	if v == "" { return def }
+	if n, err := strconv.Atoi(v); err == nil { return n }
+	return def
 }
 
 // Helper functions
