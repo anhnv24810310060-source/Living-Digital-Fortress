@@ -107,3 +107,15 @@ services:
       - "8086:8087"
     depends_on:
       - otel-collector
+
+  policy-rollout:
+    image: shieldx/policy-rollout:dev
+    build:
+      context: ../../
+      dockerfile: docker/Dockerfile.policy-rollout
+    environment:
+      - POLICY_ROLLOUT_PORT=8099
+    ports:
+      - "8099:8099"
+    depends_on:
+      - otel-collector

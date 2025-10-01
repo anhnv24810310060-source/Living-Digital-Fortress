@@ -121,6 +121,31 @@ demo-up: docker-ingress docker-locator
 demo-down:
 	docker compose -f pilot/observability/docker-compose.yml -f pilot/observability/docker-compose.override.yml down
 
+# Policy-as-code (November)
+.PHONY: policy-bundle policy-sign policy-verify policy-all
+policy-bundle:
+	go build -o bin/policyctl ./cmd/policyctl
+	./bin/policyctl bundle -dir policies/demo -out dist/policy-bundle.zip
+
+policy-sign: policy-bundle
+	./bin/policyctl sign -dir policies/demo -sig dist/policy-bundle.sig
+
+policy-verify:
+	./bin/policyctl verify -dir policies/demo -sig dist/policy-bundle.sig
+
+policy-all: policy-bundle policy-sign policy-verify
+	@echo "Policy bundle build/sign/verify complete"
+
+.PHONY: policy-sign-cosign policy-verify-cosign
+policy-sign-cosign: policy-bundle
+	@which cosign >/dev/null || (echo "cosign not found" && exit 1)
+	@echo $$(awk '{print $$2}' dist/digest.txt >/dev/null 2>&1) || ./bin/policyctl bundle -dir policies/demo -out dist/policy-bundle.zip | grep '^digest:' | awk '{print $$2}' > dist/digest.txt
+	COSIGN_EXPERIMENTAL=true cosign sign-blob --yes $(if $(KEY_REF),--key $(KEY_REF),) --output-signature dist/policy-bundle.cosign.sig dist/digest.txt
+
+policy-verify-cosign:
+	@which cosign >/dev/null || (echo "cosign not found" && exit 1)
+	COSIGN_EXPERIMENTAL=true cosign verify-blob --signature dist/policy-bundle.cosign.sig dist/digest.txt
+
 # Observability (local quick-run)
 observability: prom
 	@echo "Observability components started (Prometheus). Import Grafana dashboard from pilot/observability/grafana-dashboard-http-slo.json"
@@ -159,3 +184,33 @@ help:
 	@echo "  phase2              - Complete Phase 2 setup"
 	@echo "  clean               - Clean build artifacts"
 	@echo "  help                - Show this help"
+	@echo "  policy-bundle       - Build demo policy bundle (zip)"
+	@echo "  policy-sign         - Sign demo policy bundle (noop signer, demo)"
+	@echo "  policy-verify       - Verify signature (noop verifier, demo)"
+	@echo "  policy-all          - Build+sign+verify demo policy bundle"
+	@echo "  sbom-all            - Generate SBOMs for Go + Python"
+	@echo "  image-sign          - Cosign sign container image (REGISTRY/IMAGE:TAG, KEY_REF optional)"
+	@echo "  release-snapshot    - Build reproducible snapshot with goreleaser"
+
+.PHONY: sbom-all sbom-go sbom-python image-sign release-snapshot
+sbom-all: sbom-go sbom-python
+	@echo "SBOMs generated under dist/sbom"
+
+sbom-go:
+	@which syft >/dev/null || (echo "syft not found" && exit 1)
+	mkdir -p dist/sbom
+	syft packages dir:. -o cyclonedx-json > dist/sbom/sbom-go.json
+
+sbom-python:
+	@which syft >/dev/null || (echo "syft not found" && exit 1)
+	mkdir -p dist/sbom
+	syft packages dir:ml-service -o cyclonedx-json > dist/sbom/sbom-python.json
+
+image-sign:
+	@which cosign >/dev/null || (echo "cosign not found" && exit 1)
+	@if [ -z "$(IMAGE)" ]; then echo "Usage: make image-sign IMAGE=registry/repo:tag [KEY_REF=...]"; exit 1; fi
+	COSIGN_EXPERIMENTAL=true cosign sign --yes $(if $(KEY_REF),--key $(KEY_REF),) $(IMAGE)
+
+release-snapshot:
+	@which goreleaser >/dev/null || (echo "goreleaser not found" && exit 1)
+	goreleaser release --snapshot --clean

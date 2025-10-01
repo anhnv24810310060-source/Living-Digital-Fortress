@@ -1,0 +1,1 @@
+{ "fixtures": { "deployment": { "kind": "Deployment", "spec": { "template": { "spec": { "securityContext": { } } } } } } }

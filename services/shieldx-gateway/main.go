@@ -18,10 +18,10 @@ import (
 	"syscall"
 	"time"
 
-    logcorr "shieldx/pkg/observability/logcorr"
 	"golang.org/x/time/rate"
     "shieldx/pkg/metrics"
-    otelobs "shieldx/pkg/observability/otel"
+	otelobs "shieldx/pkg/observability/otel"
+	"shieldx/pkg/ratls"
 )
 
 // Production ShieldX Gateway - Central Orchestrator
@@ -50,12 +50,15 @@ type ShieldXGateway struct {
 	server        *http.Server
 
 	// Metrics counters
-    handler := httpMetrics.Middleware(gateway.securityMiddleware(mux))
-    handler = logcorr.Middleware(handler)
-    handler = otelobs.WrapHTTPHandler("shieldx_gateway", handler)
 	errorCount     int64
 	activeRequests int64
+	requestCount  int64
+
+	// RA-TLS issuer (optional)
+	issuer       *ratls.AutoIssuer
 }
+
+var gCertExpiry = metrics.NewGauge("ratls_cert_expiry_seconds", "Seconds until current RA-TLS cert expiry")
 
 type GatewayConfig struct {
 	Port                  int           `json:"port"`
@@ -172,14 +175,14 @@ func (sg *ShieldXGateway) initServices() {
 				MaxIdleConns:        100,
 				MaxIdleConnsPerHost: 10,
 				IdleConnTimeout:     90 * time.Second,
-				TLSClientConfig: &tls.Config{
-					InsecureSkipVerify: false,
-				},
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: false},
 		}
-		sg.httpClients[serviceName] = &http.Client{
-			Timeout:   serviceConfig.Timeout,
-			Transport: otelobs.WrapHTTPTransport(baseTransport),
+		// Attach RA-TLS client mTLS if enabled
+		transport := otelobs.WrapHTTPTransport(baseTransport)
+		if sg.issuer != nil {
+			baseTransport.TLSClientConfig = sg.issuer.ClientTLSConfig()
 		}
+		sg.httpClients[serviceName] = &http.Client{ Timeout: serviceConfig.Timeout, Transport: transport }
 		
 		// Start health checking
 		go sg.healthCheckLoop(serviceName, endpoint)
@@ -238,6 +241,15 @@ func (sg *ShieldXGateway) processRequest(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(statusCode)
 	
 	json.NewEncoder(w).Encode(response)
+}
+
+// recordCertExpiryMetric emits a gauge for seconds until current cert expiry
+func (sg *ShieldXGateway) recordCertExpiryMetric(reg *metrics.Registry, issuer *ratls.AutoIssuer) {
+	if issuer == nil { return }
+	notAfter, err := issuer.LeafNotAfter()
+	if err != nil { return }
+	secs := uint64(time.Until(notAfter).Seconds())
+	gCertExpiry.Set(secs)
 }
 
 func (sg *ShieldXGateway) processDecisionPipeline(req *GatewayRequest) *GatewayResponse {
@@ -660,6 +672,7 @@ func main() {
 	mux.HandleFunc("/health", gateway.healthHandler)
 	
 	// Expose metrics
+	reg.RegisterGauge(gCertExpiry)
 	mux.Handle("/metrics", reg)
 
 	// Apply middleware with HTTP metrics and tracing wrapper
@@ -667,6 +680,26 @@ func main() {
 	handler := httpMetrics.Middleware(gateway.securityMiddleware(mux))
 	handler = otelobs.WrapHTTPHandler("shieldx_gateway", handler)
 	
+	// RA-TLS configuration from env (optional)
+	if os.Getenv("RATLS_ENABLE") == "true" {
+		td := getenvDefault("RATLS_TRUST_DOMAIN", "shieldx.local")
+		ns := getenvDefault("RATLS_NAMESPACE", "default")
+		svc := getenvDefault("RATLS_SERVICE", "shieldx-gateway")
+		rotate := parseDurationDefault("RATLS_ROTATE_EVERY", 45*time.Minute)
+		valid := parseDurationDefault("RATLS_VALIDITY", 60*time.Minute)
+		issuer, err := ratls.NewDevIssuer(ratls.Identity{TrustDomain: td, Namespace: ns, Service: svc}, rotate, valid)
+		if err != nil { log.Fatalf("init RA-TLS issuer: %v", err) }
+		gateway.issuer = issuer
+
+		// Metric for cert expiry seconds
+		go func() {
+			for {
+				gateway.recordCertExpiryMetric(reg, issuer)
+				time.Sleep(1 * time.Minute)
+			}
+		}()
+	}
+
 	// Configure server
 	gateway.server = &http.Server{
 		Addr:         fmt.Sprintf(":%d", gateway.config.Port),
@@ -675,12 +708,21 @@ func main() {
 		WriteTimeout: 30 * time.Second,
 		IdleTimeout:  120 * time.Second,
 	}
+	if gateway.issuer != nil {
+		// Enforce mutual TLS with trust domain
+		td := getenvDefault("RATLS_TRUST_DOMAIN", "shieldx.local")
+		gateway.server.TLSConfig = gateway.issuer.ServerTLSConfig(true, td)
+	}
 	
 	// Start server
 	go func() {
 		log.Printf("ShieldX Gateway listening on port %d", gateway.config.Port)
 		
-		if gateway.config.TLS.Enabled {
+		if gateway.issuer != nil {
+			// mTLS with rotating certs
+			err := gateway.server.ListenAndServeTLS("", "")
+			if err != nil && err != http.ErrServerClosed { log.Fatalf("HTTPS server failed: %v", err) }
+		} else if gateway.config.TLS.Enabled {
 			err := gateway.server.ListenAndServeTLS(
 				gateway.config.TLS.CertFile,
 				gateway.config.TLS.KeyFile,
@@ -923,4 +965,17 @@ func getBool(m map[string]interface{}, key string, defaultVal bool) bool {
 func min(a, b float64) float64 {
 	if a < b { return a }
 	return b
+}
+
+// env helpers
+func getenvDefault(key, def string) string {
+	if v := os.Getenv(key); v != "" { return v }
+	return def
+}
+
+func parseDurationDefault(key string, def time.Duration) time.Duration {
+	if v := os.Getenv(key); v != "" {
+		if d, err := time.ParseDuration(v); err == nil { return d }
+	}
+	return def
 }

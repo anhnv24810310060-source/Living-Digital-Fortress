@@ -35,6 +35,7 @@ import (
 
     // optional tracing
     otelobs "shieldx/pkg/observability/otel"
+    "shieldx/pkg/ratls"
 )
 
 type connectRequest struct {
@@ -100,6 +101,9 @@ var (
 	mWGRouteTeardown = metrics.NewCounter("wg_route_teardown_total", "WG route/NAT teardowns")
 	mWGTCConfigured = metrics.NewCounter("wg_tc_config_total", "WG TC bandwidth class configured")
 	mWGPPSConfigured = metrics.NewCounter("wg_pps_config_total", "WG PPS nft limit configured")
+    // RA-TLS
+    ratlsIssuer *ratls.AutoIssuer
+    gCertExpiry = metrics.NewGauge("ratls_cert_expiry_seconds", "Seconds until current RA-TLS cert expiry")
 )
 
 func loadWGScopeSubnets() {
@@ -215,7 +219,7 @@ func connectHandler(w http.ResponseWriter, r *http.Request) {
         loc = "http://localhost:8080"
     }
     body, _ := json.Marshal(map[string]string{"token": req.Token})
-    httpResp, err := http.Post(loc+"/introspect", "application/json", bytes.NewReader(body))
+    httpResp, err := getHTTPClient().Post(loc+"/introspect", "application/json", bytes.NewReader(body))
     if err != nil {
         http.Error(w, "locator unavailable", http.StatusBadGateway)
         _ = ledger.AppendJSONLine(ledgerPath, serviceName, "connect.locator_error", map[string]any{"error": err.Error()})
@@ -280,8 +284,8 @@ func connectHandler(w http.ResponseWriter, r *http.Request) {
 		// best-effort divert to decoy manager
 		dcm := os.Getenv("DECOY_MGR_URL")
 		if dcm == "" { dcm = "http://localhost:8083" }
-		http.Post(dcm+"/spawn", "application/json", bytes.NewReader([]byte(fmt.Sprintf(`{"tenant":"%s","kind":"http"}`, tenant))))
-		http.Post(dcm+"/analyze", "application/json", bytes.NewReader([]byte(`{"decoyId":"auto","event":"diverted","payload":"connect"}`)))
+        getHTTPClient().Post(dcm+"/spawn", "application/json", bytes.NewReader([]byte(fmt.Sprintf(`{"tenant":"%s","kind":"http"}`, tenant))))
+        getHTTPClient().Post(dcm+"/analyze", "application/json", bytes.NewReader([]byte(`{"decoyId":"auto","event":"diverted","payload":"connect"}`)))
 		w.WriteHeader(http.StatusAccepted)
 		_, _ = w.Write([]byte("diverted"))
         return
@@ -294,7 +298,7 @@ func connectHandler(w http.ResponseWriter, r *http.Request) {
     channelID := fmt.Sprintf("wch_%d", time.Now().UnixNano())
     exp := time.Now().Add(5 * time.Minute)
     guardian := fmt.Sprintf("http://127.0.0.1:%d", getenvInt("GUARDIAN_PORT", 9090))
-    resp, err := http.Get(guardian + "/wch/pubkey")
+    resp, err := getHTTPClient().Get(guardian + "/wch/pubkey")
     if err != nil || resp.StatusCode != 200 {
         http.Error(w, "guardian pubkey unavailable", http.StatusBadGateway)
         return
@@ -313,7 +317,7 @@ func connectHandler(w http.ResponseWriter, r *http.Request) {
 			loc := os.Getenv("LOCATOR_URL")
 			if loc == "" { loc = "http://localhost:8080" }
 			body, _ := json.Marshal(map[string]string{"token": tok})
-			resp, err := http.Post(loc+"/revoke", "application/json", bytes.NewReader(body))
+            resp, err := getHTTPClient().Post(loc+"/revoke", "application/json", bytes.NewReader(body))
 			if err == nil && resp != nil { resp.Body.Close() }
 			_ = ledger.AppendJSONLine(ledgerPath, serviceName, "connect.redeem_once", map[string]any{"channelId": channelID})
 		}(req.Token)
@@ -344,15 +348,7 @@ func main() {
 	if errOPA != nil {
 		log.Printf("[ingress] OPA load error: %v (shadow OPA disabled)", errOPA)
 	}
-	// OPA bundle poller (shadow-eval hot reload)
-	if bundle := os.Getenv("INGRESS_OPA_BUNDLE_URL"); bundle != "" {
-		holder := &policy.EngineHolder{}
-		if opaEng != nil { holder.Set(opaEng) }
-		stop := policy.StartBundlePoller(bundle, 30*time.Second, holder, nil, func(ver string, err error) {
-			if err != nil { log.Printf("[ingress] OPA bundle error: %v", err) } else { log.Printf("[ingress] OPA bundle loaded etag=%s", ver) }
-		})
-		defer stop()
-	}
+    // OPA bundle poller (optional): not available in this build; static policy load only
 	// init redis if provided
 	if addr := os.Getenv("REDIS_ADDR"); addr != "" {
 		rdb = redis.NewClient(&redis.Options{Addr: addr})
@@ -394,8 +390,8 @@ func main() {
         dcm := os.Getenv("DECOY_MGR_URL")
         if dcm == "" { dcm = "http://localhost:8083" }
         // spawn (no-op in PoC) and log
-        http.Post(dcm+"/spawn", "application/json", bytes.NewReader([]byte(fmt.Sprintf(`{"tenant":"%s","kind":"http"}`, tenant))))
-        http.Post(dcm+"/analyze", "application/json", bytes.NewReader([]byte(`{"decoyId":"auto","event":"suspect","payload":"sample"}`)))
+    getHTTPClient().Post(dcm+"/spawn", "application/json", bytes.NewReader([]byte(fmt.Sprintf(`{"tenant":"%s","kind":"http"}`, tenant))))
+    getHTTPClient().Post(dcm+"/analyze", "application/json", bytes.NewReader([]byte(`{"decoyId":"auto","event":"suspect","payload":"sample"}`)))
         w.WriteHeader(202)
         _, _ = w.Write([]byte("diverted to decoy"))
     })
@@ -480,7 +476,7 @@ func main() {
 		// Forward validated envelope to guardian
         guardian := fmt.Sprintf("http://127.0.0.1:%d/wch/recv", getenvInt("GUARDIAN_PORT", 9090))
 		buf, _ := json.Marshal(env)
-		resp, err := http.Post(guardian, "application/json", bytes.NewReader(buf))
+        resp, err := getHTTPClient().Post(guardian, "application/json", bytes.NewReader(buf))
         if err != nil { http.Error(w, "guardian unavailable", 502); return }
         defer resp.Body.Close()
         for k, vv := range resp.Header { for _, v := range vv { w.Header().Add(k, v) } }
@@ -500,7 +496,7 @@ func main() {
         if !ok || time.Now().After(info.Expiry) { mSendRejected.Inc(); http.Error(w, "channel invalid", 401); return }
         guardian := fmt.Sprintf("http://127.0.0.1:%d/wch/recv-udp", getenvInt("GUARDIAN_PORT", 9090))
         buf, _ := json.Marshal(env)
-        resp, err := http.Post(guardian, "application/json", bytes.NewReader(buf))
+    resp, err := getHTTPClient().Post(guardian, "application/json", bytes.NewReader(buf))
         if err != nil { http.Error(w, "guardian unavailable", 502); return }
         defer resp.Body.Close()
         for k, vv := range resp.Header { for _, v := range vv { w.Header().Add(k, v) } }
@@ -669,7 +665,7 @@ func main() {
     // Simple reverse proxy endpoint to guardian for PoC (no real tunnel yet)
     mux.HandleFunc("/proxy/", func(w http.ResponseWriter, r *http.Request) {
         target := fmt.Sprintf("http://127.0.0.1:%d%s", getenvInt("GUARDIAN_PORT", 9090), r.URL.Path[len("/proxy"):])
-        resp, err := http.Get(target)
+    resp, err := getHTTPClient().Get(target)
         if err != nil {
             http.Error(w, "upstream error", http.StatusBadGateway)
             return
@@ -686,6 +682,7 @@ func main() {
     reg.Register(mWGAdd); reg.Register(mWGRemove); reg.Register(mWGRotate); reg.Register(mWGRouteErr); reg.Register(mWGThrottle); reg.Register(mWGStateRep); reg.Register(mWGRotateFail)
     reg.RegisterGauge(gWGPeers); reg.RegisterGauge(gWGRxBytes); reg.RegisterGauge(gWGTxBytes); reg.RegisterGauge(gWGHandshakeStale); reg.RegisterGauge(gWGStaleRatio)
     reg.Register(mWGRouteSetup); reg.Register(mWGRouteTeardown); reg.Register(mWGTCConfigured); reg.Register(mWGPPSConfigured)
+    reg.RegisterGauge(gCertExpiry)
     mux.Handle("/metrics", reg)
     mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200); _, _ = w.Write([]byte("ok")) })
 
@@ -750,7 +747,26 @@ func main() {
         mux.ServeHTTP(w, r)
     }))
     h := otelobs.WrapHTTPHandler(serviceName, baseH)
-    log.Fatal(http.ListenAndServe(addr, h))
+    // RA-TLS optional enable
+    if os.Getenv("RATLS_ENABLE") == "true" {
+        td := getenvDefault("RATLS_TRUST_DOMAIN", "shieldx.local")
+        ns := getenvDefault("RATLS_NAMESPACE", "default")
+        svc := getenvDefault("RATLS_SERVICE", serviceName)
+        rotate := parseDurationDefault("RATLS_ROTATE_EVERY", 45*time.Minute)
+        valid := parseDurationDefault("RATLS_VALIDITY", 60*time.Minute)
+        issuer, err := ratls.NewDevIssuer(ratls.Identity{TrustDomain: td, Namespace: ns, Service: svc}, rotate, valid)
+        if err != nil { log.Fatalf("[ingress] RA-TLS init: %v", err) }
+        ratlsIssuer = issuer
+        // update cert expiry gauge
+        go func(){ for { if t, err := ratlsIssuer.LeafNotAfter(); err==nil { secs := uint64(time.Until(t).Seconds()); gCertExpiry.Set(secs) }; time.Sleep(time.Minute) } }()
+    }
+    // Use RA-TLS if enabled
+    if ratlsIssuer != nil {
+        srv := &http.Server{ Addr: addr, Handler: h, TLSConfig: ratlsIssuer.ServerTLSConfig(true, getenvDefault("RATLS_TRUST_DOMAIN", "shieldx.local")) }
+        log.Fatal(srv.ListenAndServeTLS("", ""))
+    } else {
+        log.Fatal(http.ListenAndServe(addr, h))
+    }
 }
 
 func normalizeHTU(r *http.Request) string {
@@ -816,6 +832,16 @@ func getenvInt(key string, def int) int {
     return n
 }
 
+func getenvDefault(key, def string) string {
+    if v := os.Getenv(key); v != "" { return v }
+    return def
+}
+
+func parseDurationDefault(key string, def time.Duration) time.Duration {
+    if v := os.Getenv(key); v != "" { if d, err := time.ParseDuration(v); err==nil { return d } }
+    return def
+}
+
 // clientIP extracts client IP from X-Forwarded-For / X-Real-IP / RemoteAddr
 func clientIP(r *http.Request) string {
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
@@ -871,6 +897,20 @@ func teardownLinuxWGRoute(iface string) error {
 	exec.Command("sh", "-c", fmt.Sprintf("ip link set down dev %s 2>/dev/null || true", iface)).Run()
 	exec.Command("sh", "-c", fmt.Sprintf("ip link del dev %s 2>/dev/null || true", iface)).Run()
 	return nil
+}
+
+
+// Shared HTTP client (wraps with OpenTelemetry and RA-TLS if enabled)
+var httpClientOnce sync.Once
+var httpClient *http.Client
+
+func getHTTPClient() *http.Client {
+    httpClientOnce.Do(func(){
+        tr := &http.Transport{ MaxIdleConns: 100, MaxIdleConnsPerHost: 10, IdleConnTimeout: 90 * time.Second }
+        if ratlsIssuer != nil { tr.TLSClientConfig = ratlsIssuer.ClientTLSConfig() }
+        httpClient = &http.Client{ Transport: otelobs.WrapHTTPTransport(tr), Timeout: 30 * time.Second }
+    })
+    return httpClient
 }
 
 

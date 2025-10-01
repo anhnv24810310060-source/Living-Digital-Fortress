@@ -1,0 +1,64 @@
+name: Policy Promote
+
+on:
+  workflow_run:
+    workflows: ["Policy Bundle CI"]
+    types: [completed]
+
+jobs:
+  promote:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+        continue-on-error: true
+      - name: Ensure bundle exists
+        run: |
+          test -f dist/policy-bundle.zip || echo "No bundle from previous job; rebuilding" && true
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - name: Rebuild bundle if missing and extract digest
+        run: |
+          mkdir -p bin dist
+          go build -o bin/policyctl ./cmd/policyctl
+          if [ ! -f dist/policy-bundle.zip ]; then
+            ./bin/policyctl bundle -dir policies/demo -out dist/policy-bundle.zip | tee dist/digest.log
+          fi
+          if [ ! -f dist/digest.txt ]; then
+            ./bin/policyctl bundle -dir policies/demo -out dist/policy-bundle.zip | grep '^digest:' | awk '{print $2}' > dist/digest.txt
+          fi
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3.7.0
+        with:
+          cosign-release: 'v2.4.1'
+      - name: Sign (keyless) and verify
+        env:
+          COSIGN_EXPERIMENTAL: 'true'
+        run: |
+          cosign sign-blob --yes --output-signature dist/policy-bundle.cosign.sig dist/digest.txt
+          cosign verify-blob --signature dist/policy-bundle.cosign.sig dist/digest.txt
+      - name: Upload approved bundle as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: approved-bundle
+          path: |
+            dist/policy-bundle.zip
+            dist/policy-bundle.cosign.sig
+            dist/digest.txt
+      - name: Optional callback to policy-rollout
+        if: ${{ secrets.ROLLOUT_ENDPOINT_URL != '' }}
+        env:
+          ROLLOUT_ENDPOINT_URL: ${{ secrets.ROLLOUT_ENDPOINT_URL }}
+          ARTIFACT_BASE_URL: ${{ secrets.ARTIFACT_BASE_URL }}
+        run: |
+          DIGEST=$(cat dist/digest.txt)
+          BUNDLE_URL="$ARTIFACT_BASE_URL/policy-bundle.zip"
+          SIG_URL="$ARTIFACT_BASE_URL/policy-bundle.cosign.sig"
+          curl -sS -X POST "$ROLLOUT_ENDPOINT_URL/apply" -H 'Content-Type: application/json' -d "{\"url\":\"$BUNDLE_URL\",\"sig\":\"$SIG_URL\"}"

@@ -18,3 +18,11 @@ groups:
     annotations:
       summary: "ContAuth p95 latency > 500ms"
       description: "p95 latency over the last 10 minutes exceeds threshold."
+  - alert: RATLSCertExpiringSoon
+    expr: ratls_cert_expiry_seconds < 600
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "RA-TLS certificate expires in < 10 minutes"
+      description: "The current RA-TLS leaf certificate is expiring soon; rotation may be stalled."

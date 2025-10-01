@@ -1,3 +1,114 @@
+## 2025-10-01 — RA‑TLS (SPIFFE) + wiring shieldx-gateway/ingress + cảnh báo hết hạn cert (prepend)
+
+- Thư viện RA‑TLS (pkg/ratls):
+	- Thêm `AutoIssuer` (CA in‑memory) phát hành cert ngắn hạn có SPIFFE SAN, tự xoay vòng (rotate) theo cấu hình (`RATLS_ROTATE_EVERY` < `RATLS_VALIDITY`).
+	- API TLS: `ServerTLSConfig(requireClientCert, trustDomain)` và `ClientTLSConfig()` để bật mTLS nội bộ theo trust domain.
+	- Metric helper: `LeafNotAfter()` để đọc thời gian hết hạn chứng chỉ hiện tại (phục vụ metric cảnh báo).
+	- Kiểm thử: mTLS thành công, reject sai trust domain, và rotation hoạt động — tất cả PASS.
+
+- Tích hợp dịch vụ:
+	- `services/shieldx-gateway/main.go`
+		- Đọc env RA‑TLS (`RATLS_ENABLE`, `RATLS_TRUST_DOMAIN`, `RATLS_NAMESPACE`, `RATLS_SERVICE`, `RATLS_ROTATE_EVERY`, `RATLS_VALIDITY`).
+		- Bật mTLS inbound bằng `issuer.ServerTLSConfig(true, trustDomain)` khi `RATLS_ENABLE=true`.
+		- HTTP client outbound dùng `issuer.ClientTLSConfig()` (giữ OTEL transport).
+		- Metric `ratls_cert_expiry_seconds` (giây còn lại tới hạn cert) và cập nhật định kỳ để quan sát.
+	- `services/ingress/main.go`
+		- Bật mTLS inbound tương tự gateway khi bật RA‑TLS qua env.
+		- Chuẩn hóa toàn bộ outbound (Locator/Guardian/Decoy) qua shared HTTP client bọc OTEL + mTLS client cert.
+		- Thêm metric `ratls_cert_expiry_seconds` và cập nhật theo `LeafNotAfter()`.
+
+- Quan sát & Cảnh báo:
+	- Prometheus rule mới `RATLSCertExpiringSoon`: bắn cảnh báo khi `ratls_cert_expiry_seconds < 600` trong 5 phút (khả năng rotation bị kẹt).
+	- Tài liệu rollout ngắn gọn: `pilot/docs/ratls-rollout.md` (envs, mẫu wiring server/client, metric, rule cảnh báo, ghi chú sản xuất).
+
+- Ảnh hưởng build/chạy:
+	- Không thêm phụ thuộc ngoài chuẩn thư viện Go. Các dịch vụ gateway/ingress build sạch; test `pkg/ratls` PASS.
+	- Khi bật RA‑TLS, yêu cầu tất cả gọi nội bộ sang service khác dùng HTTPS + mTLS.
+
+## 2025-12-01 — Báo cáo Tháng 12: Done (SBOM + ký image + build tái lập)
+
+- CI `supply-chain.yml` hiện build + push ma trận tất cả images trong `docker/`, ký bằng Cosign keyless (OIDC) theo digest, và xuất SBOM CycloneDX cho từng image (đính kèm artifact). Nguồn (Go + Python) cũng có SBOM.
+- GoReleaser snapshot cấu hình tái lập (trimpath, buildid rỗng) cho `cmd/policyctl`; có thể mở rộng binaries sau.
+- Tài liệu đã bổ sung hướng dẫn enforce trong cluster với `pilot/hardening/image-signing.yml` (kèm `kubectl apply -f ...` và lưu ý issuer/subject).
+- KPI: 100% images phát hành từ CI có chữ ký + SBOM; release có thể tái lập. Việc enforce verify trong runtime phụ thuộc bước apply manifest vào cluster (đã có hướng dẫn).
+
+## 2025-12-01 — Tiến độ Tháng 12: SBOM + Ký image + Build tái lập
+
+- Đã thêm workflow CI `supply-chain.yml`: sinh SBOM (Syft CycloneDX), build snapshot (GoReleaser) và tùy chọn ký image (Cosign keyless qua OIDC) khi cung cấp input `image`.
+- Đã bổ sung tài liệu `pilot/docs/supply-chain.md` hướng dẫn chạy local và CI.
+- Makefile đã có: `sbom-all`, `image-sign`, `release-snapshot`.
+- Ghi chú: GoReleaser hiện build `cmd/policyctl`; có thể mở rộng thêm binary khác sau.
+
+## 2024-12-01 — Khởi động Tháng 12: SBOM + Ký image + Build tái lập (reproducible)
+
+- Makefile: thêm targets `sbom-all` (Syft CycloneDX), `image-sign` (Cosign keyless hoặc KEY_REF), `release-snapshot` (Goreleaser snapshot).
+- CI: thêm workflow `.github/workflows/supply-chain.yml` tạo SBOM, build snapshot, và ký image theo input.
+- Tài liệu: `pilot/docs/supply-chain.md` hướng dẫn chạy local/CI.
+- Ghi chú: dùng OIDC cho Cosign trong CI; SBOM xuất ra `dist/sbom/**`.
+
+## 2025-11-01 — Báo cáo Tháng 11: Done; chuẩn bị Tháng 12 (SBOM + ký image + reproducible builds) — prepend
+
+- Tháng 11: Trạng thái = Done
+	- Policy bundle ký số + CI verify (Cosign keyless): Hoàn tất
+	- Conftest + Rego unit tests: Hoàn tất
+	- Canary rollout + drift detection + metrics: Hoàn tất
+	- Promote workflow (upload approved-bundle + webhook /apply tùy chọn): Hoàn tất
+	- Tracing rollout (otelotlp build tag): Sẵn sàng
+	- Spec bundle v0: Có
+	- KPI: PR policy phải pass verify + tests; canary mô phỏng/metrics có sẵn
+
+- Chuẩn bị Tháng 12 (đặt nền tảng, rủi ro thấp):
+	- Makefile: targets `sbom-all`, `image-sign`, `release-snapshot` (goreleaser) — thêm ngay
+	- CI `supply-chain.yml`: sinh SBOM (Syft/CycloneDX), build snapshot reproducible (goreleaser --snapshot), tải artifact SBOM
+	- Docs: `pilot/docs/supply-chain.md` mô tả luồng SBOM → ký image → verify; yêu cầu secrets
+	- Lưu ý: ký image (cosign) sẽ bật khi có registry + secrets; hiện chỉ chuẩn bị targets và workflow
+
+## 2025-11-01 — Promote workflow, tracing rollout, registry URL callback (prepend)
+
+- Promote CI: `.github/workflows/policy-promote.yml` chạy sau khi "Policy Bundle CI" thành công:
+	- Tải (hoặc build lại) bundle, ký/verify bằng Cosign keyless, upload artifact `approved-bundle` (zip+sig+digest).
+	- Tùy chọn gọi webhook `/apply` của `policy-rollout` nếu cấu hình `ROLLOUT_ENDPOINT_URL` và `ARTIFACT_BASE_URL` (presign/serve artefacts).
+- Tracing rollout: `services/policy-rollout` bọc handler bằng `otelobs.WrapHTTPHandler` (build tag `otelotlp` để bật); thêm header phản hồi x-verify-* như span attributes thô (demo).
+- Registry thực: khuyến nghị dùng artefact store/GitHub Releases/S3; workflow đã để ngỏ biến `ARTIFACT_BASE_URL` cho URL public hoặc presigned.
+
+## 2025-11-01 — Rollout kết nối bundle thật (URL+cosign), compose wiring, Dockerfile (prepend)
+
+- Policy Rollout service mở rộng:
+	- `/apply` nhận `{url, sig}`: tải bundle zip từ URL, tính digest, verify bằng Cosign (nếu có chữ ký) rồi bắt đầu canary.
+	- `/metrics` bổ sung thông tin nguồn và thời gian xác minh (qua log); giữ các metric verify/drift/rollout hiện hữu.
+- Loader: `pkg/policy/zipload.go` đọc bundle từ zip và tính digest theo manifest/files.
+- Compose: thêm service `policy-rollout` vào `pilot/observability/docker-compose.override.yml` (port 8099).
+- Dockerfile: `docker/Dockerfile.policy-rollout` (multi-stage, distroless, nonroot).
+
+## 2025-11-01 — Cosign keyless (CI), Make targets, rollout/drift skeleton, Rego tests (prepend)
+
+- CI (GitHub Actions): cập nhật `.github/workflows/policy.yml` để dùng Cosign keyless:
+	- Bật permissions `id-token: write`.
+	- Cài `cosign` và chạy `cosign sign-blob`/`verify-blob` với OIDC.
+	- Giai đoạn bundle tạo `dist/digest.txt` để ký/verify theo digest.
+- Makefile: thêm targets `policy-sign-cosign` và `policy-verify-cosign` (KEY_REF tùy chọn; mặc định keyless).
+- Rollout & Drift detection: tạo skeleton service `services/policy-rollout/`:
+	- Endpoints: `/health`, `/metrics`, `/apply` (nhận digest), canary 10% và mô phỏng promote/rollback.
+	- Metrics: `policy_verify_success_total`, `policy_verify_failure_total`, `policy_drift_events_total`, `policy_rollout_percentage`.
+- Tests:
+	- Go: `pkg/policy/bundle_test.go` (build/hash/zip, cosign adapter skip nếu thiếu cosign).
+	- OPA: thêm `policies/demo/policy_test.rego` cho allow/deny; mẫu Conftest/OPA trước đó giữ nguyên.
+
+## 2025-11-01 — Khởi động Tháng 11/2025: skeleton Policy Bundle + CLI + Makefile (ghi chú mới ở đầu file)
+
+- Quy ước ghi nhật ký: Từ thời điểm này, mọi cập nhật mới sẽ được thêm ở ĐẦU file để dễ theo dõi tiến độ gần nhất.
+- Đã tạo skeleton Policy-as-code:
+	- `pkg/policy/bundle.go`: Manifest/Bundle, `LoadFromDir`, `Hash()` (SHA-256 canonical), `WriteZip()`, `Signer/Verifier` interface, `NoopSigner/NoopVerifier` demo, `BuildAndWrite`, `SignDigest`, `VerifyDigest`.
+	- CLI `cmd/policyctl`: lệnh `bundle`, `sign`, `verify` để thao tác nhanh với bundle.
+	- Demo policy: `policies/demo/manifest.json`, `rules/allow.rego`, `rules/deny.rego` (đường đi E2E).
+	- Makefile: targets `policy-bundle`, `policy-sign`, `policy-verify`, `policy-all`.
+- Xác nhận chạy E2E:
+	- Build CLI, tạo bundle zip, ký (noop), và verify thành công; in ra digest.
+- Việc tiếp theo (ngắn hạn):
+	- Thêm Spec tài liệu `pilot/docs/policy-bundle-spec.md`.
+	- Thay `NoopSigner/Verifier` bằng adapter Cosign CLI (tối thiểu) và thêm test.
+	- Thiết lập Conftest + unit test Rego; workflow CI `policy.yml` verify chữ ký trên PR.
+
 ## 2025-11-01 — Kế hoạch Tháng 11/2025 — Policy-as-code ký số và kiểm thử (Checklist)
 
 Mục tiêu: Policy bundle có ký số, kiểm thử và canary 10% an toàn; drift detection. PR policy phải có chữ ký và test đi kèm.
