@@ -1,3 +1,64 @@
+## 2025-10-01 — Production Authentication & Authorization System ✅
+
+### 🔐 Security Enhancement - Phase 1 Complete
+
+**Modules Mới**:
+- `pkg/auth/jwt_manager.go` - JWT RS256 với access/refresh tokens
+- `pkg/auth/session_manager.go` - Redis-backed distributed sessions
+- `pkg/auth/rbac_engine.go` - Policy-based RBAC với OPA
+- `pkg/auth/oauth2_provider.go` - OAuth2/OIDC Authorization Code Flow + PKCE
+- `pkg/auth/middleware.go` - Production HTTP middleware
+- `pkg/auth/revoked_store.go` - Token revocation với Redis
+- `pkg/auth/helpers.go` - Key generation & testing utilities
+
+**Service Mới**:
+- `services/auth-service/` - Standalone authentication service
+- Dockerfile: `docker/Dockerfile.auth-service`
+
+**Tính Năng**:
+✅ JWT với RSA-256 signing (không dùng HS256)
+✅ Access token (15 phút) + Refresh token (7 ngày) với rotation
+✅ Token revocation store (Redis)
+✅ Session management với Redis
+✅ RBAC engine với 5 default roles (admin, user, service, auditor, operator)
+✅ OPA policy integration (api_access, data_access)
+✅ OAuth2 Authorization Code Flow
+✅ PKCE support (Proof Key for Code Exchange)
+✅ Multi-tenant support
+✅ Role inheritance & permission composition
+
+**API Endpoints**:
+- `POST /auth/login` - Login với username/password
+- `POST /auth/refresh` - Token refresh
+- `GET /oauth2/authorize` - OAuth2 authorization
+- `POST /oauth2/token` - Token exchange
+- `GET /api/profile` - User profile (protected)
+- `GET /admin/roles` - Roles management (admin only)
+
+**Security Improvements**:
+- Thay thế demo JWT validation bằng production-grade RSA signing
+- Session tracking với Redis (distributed, scalable)
+- Fine-grained permissions (resource:action format)
+- Policy-based authorization với OPA
+- Token revocation blacklist
+- PKCE support cho public clients
+- Multi-tenant isolation
+
+**Dependencies Added**:
+- `github.com/google/uuid` - Secure ID generation
+- Already have: `redis/go-redis`, `open-policy-agent/opa`, `golang-jwt/jwt`
+
+**Migration Path**:
+- Old `pkg/gateway/auth_middleware.go` giữ nguyên cho backward compatibility
+- New services dùng `pkg/auth/*` modules
+- Sẽ migrate dần các services sang auth system mới
+
+**LOC Added**: ~1,850 lines production code + documentation
+
+by shieldx
+
+---
+
 ## 2025-10-01 — Bổ Sung 4 Services Quan Trọng & Hoàn Thiện Hệ Thống 100% ✅
 
 ### Services Mới (4/4): Anchor, Ingress, ThreatGraph, Decoy-HTTP
