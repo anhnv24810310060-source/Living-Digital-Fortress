@@ -4,6 +4,8 @@ import (
     "fmt"
     "math"
     "net/http"
+    "os"
+    "regexp"
     "sort"
     "strings"
     "sync"
@@ -241,8 +243,9 @@ type HTTPMetrics struct {
     RequestsByPath *LabeledCounter
     DurationByPath *LabeledHistogram
     // path normalization / cardinality controls
-    pathAllowlist []string       // exact prefixes to keep
-    pathRegexes   []string       // reserved for future regex matching
+    pathAllowlist []string       // exact prefixes to keep as-is
+    pathRegexps   []*regexp.Regexp // regex allowlist to keep as-is
+    pathMode      string         // "heuristic" (default) or "strict"
 }
 
 func NewHTTPMetrics(reg *Registry, service string) *HTTPMetrics {
@@ -252,7 +255,10 @@ func NewHTTPMetrics(reg *Registry, service string) *HTTPMetrics {
         Duration:      NewHistogram(service+"_http_request_duration_seconds", "HTTP request duration seconds", nil),
         RequestsByPath: NewLabeledCounter(service+"_http_requests_by_path_total", "Total HTTP requests by method and path", []string{"method","path"}),
         DurationByPath: NewLabeledHistogram(service+"_http_request_duration_by_path_seconds", "HTTP request duration seconds by method and path", []string{"method","path"}, nil),
-        pathAllowlist: []string{"/","/health","/healthz","/metrics"},
+        // default allowlist excludes root "/" to avoid disabling normalization globally
+        pathAllowlist: allowlistFromEnv(service, []string{"/health","/healthz","/metrics"}),
+        pathRegexps:   regexAllowlistFromEnv(service),
+        pathMode:      pathModeFromEnv(service),
     }
     if reg != nil {
         reg.Register(m.RequestsTotal)
@@ -286,7 +292,7 @@ func (m *HTTPMetrics) Middleware(next http.Handler) http.Handler {
         if sr.status >= 500 { m.ErrorsTotal.Inc() }
         m.Duration.Observe(time.Since(start).Seconds())
         // Per-path labels (note: potential cardinality risk)
-        p := normalizePath(r.URL.Path, m.pathAllowlist)
+        p := normalizePath(r.URL.Path, m.pathAllowlist, m.pathRegexps, m.pathMode)
         meth := r.Method
         m.RequestsByPath.Inc(map[string]string{"method": meth, "path": p})
         m.DurationByPath.Observe(map[string]string{"method": meth, "path": p}, time.Since(start).Seconds())
@@ -295,13 +301,22 @@ func (m *HTTPMetrics) Middleware(next http.Handler) http.Handler {
 
 // normalizePath reduces path cardinality by:
 // - keeping known low-cardinality paths as-is (allowlist prefixes)
-// - replacing path segments that look like IDs (hex, UUID-like, digits) with :id
-func normalizePath(path string, allow []string) string {
+// - keeping paths that match configured regex allowlist as-is
+// - replacing path segments that look like IDs (hex, UUID-like, digits) with :id (heuristic mode)
+// - or collapsing to ":other" if not in allowlist/regex (strict mode)
+func normalizePath(path string, allow []string, rxps []*regexp.Regexp, mode string) string {
     if path == "" { return "/" }
     for _, pref := range allow {
-        if strings.HasPrefix(path, pref) { return path }
+        if pref != "" && strings.HasPrefix(path, pref) { return path }
     }
-    // simple heuristic: replace segments that are long or numeric/hex-like
+    for _, rx := range rxps {
+        if rx != nil && rx.MatchString(path) { return path }
+    }
+    // strict mode: collapse to a single low-cardinality bucket
+    if strings.EqualFold(mode, "strict") {
+        return ":other"
+    }
+    // heuristic mode (default): replace likely-id segments with :id
     segs := strings.Split(path, "/")
     for i, s := range segs {
         if s == "" { continue }
@@ -327,6 +342,63 @@ func looksLikeID(s string) bool {
     for i := 0; i < len(s); i++ { if s[i] < '0' || s[i] > '9' { digits = false; break } }
     if digits && len(s) > 3 { return true }
     return false
+}
+
+// allowlistFromEnv reads SERVICE_HTTP_PATH_ALLOWLIST (comma-separated) if set.
+// Also supports global HTTP_PATH_ALLOWLIST as fallback.
+func allowlistFromEnv(service string, def []string) []string {
+    // SERVICE name envs use uppercase and dashes/space normalized to underscore
+    key := strings.ToUpper(service) + "_HTTP_PATH_ALLOWLIST"
+    if v := os.Getenv(key); v != "" {
+        return splitCSV(v)
+    }
+    if v := os.Getenv("HTTP_PATH_ALLOWLIST"); v != "" {
+        return splitCSV(v)
+    }
+    return def
+}
+
+func splitCSV(v string) []string {
+    parts := strings.Split(v, ",")
+    out := make([]string, 0, len(parts))
+    for _, p := range parts {
+        s := strings.TrimSpace(p)
+        if s != "" { out = append(out, s) }
+    }
+    return out
+}
+
+// regexAllowlistFromEnv reads SERVICE_HTTP_PATH_REGEX (comma-separated) if set, else HTTP_PATH_REGEX.
+func regexAllowlistFromEnv(service string) []*regexp.Regexp {
+    var raw string
+    if v := os.Getenv(strings.ToUpper(service) + "_HTTP_PATH_REGEX"); v != "" {
+        raw = v
+    } else if v := os.Getenv("HTTP_PATH_REGEX"); v != "" {
+        raw = v
+    }
+    if raw == "" { return nil }
+    parts := splitCSV(raw)
+    out := make([]*regexp.Regexp, 0, len(parts))
+    for _, expr := range parts {
+        if expr == "" { continue }
+        if rx, err := regexp.Compile(expr); err == nil {
+            out = append(out, rx)
+        }
+    }
+    return out
+}
+
+// pathModeFromEnv reads SERVICE_HTTP_PATH_MODE or HTTP_PATH_MODE; values: heuristic (default) | strict
+func pathModeFromEnv(service string) string {
+    if v := os.Getenv(strings.ToUpper(service) + "_HTTP_PATH_MODE"); v != "" {
+        vv := strings.ToLower(strings.TrimSpace(v))
+        if vv == "strict" || vv == "heuristic" { return vv }
+    }
+    if v := os.Getenv("HTTP_PATH_MODE"); v != "" {
+        vv := strings.ToLower(strings.TrimSpace(v))
+        if vv == "strict" || vv == "heuristic" { return vv }
+    }
+    return "heuristic"
 }
 
 

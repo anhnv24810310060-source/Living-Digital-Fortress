@@ -18,6 +18,7 @@ import (
 	"syscall"
 	"time"
 
+    logcorr "shieldx/pkg/observability/logcorr"
 	"golang.org/x/time/rate"
     "shieldx/pkg/metrics"
     otelobs "shieldx/pkg/observability/otel"
@@ -49,7 +50,9 @@ type ShieldXGateway struct {
 	server        *http.Server
 
 	// Metrics counters
-	requestCount   int64
+    handler := httpMetrics.Middleware(gateway.securityMiddleware(mux))
+    handler = logcorr.Middleware(handler)
+    handler = otelobs.WrapHTTPHandler("shieldx_gateway", handler)
 	errorCount     int64
 	activeRequests int64
 }

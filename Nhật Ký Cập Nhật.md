@@ -1,3 +1,172 @@
+## 2025-11-01 — Kế hoạch Tháng 11/2025 — Policy-as-code ký số và kiểm thử (Checklist)
+
+Mục tiêu: Policy bundle có ký số, kiểm thử và canary 10% an toàn; drift detection. PR policy phải có chữ ký và test đi kèm.
+
+Phạm vi tác động: `pkg/policy/`, `services/policy/` (hoặc `services/plugin_registry/`), `Makefile`, `.github/workflows/`, `pilot/docs/`.
+
+Các hạng mục cần làm (checklist):
+
+- Đặc tả & tài liệu
+	- [ ] Soạn "Policy Bundle Spec v0" (pilot/docs/policy-bundle-spec.md):
+		- Manifest: name, version, created_at, opa_version, policies[], annotations.
+		- Canonicalization: sort keys, normalize LF, exclude signature fields khi băm.
+		- Hash: SHA-256 digest cho toàn bundle (manifest + policy files theo canonical order).
+		- Ký số: Sigstore/cosign (keypair hoặc keyless OIDC); tùy chọn DSSE envelope.
+		- Metadata chữ ký: subject, issuer, expiry, annotations (env, tenant, purpose).
+	- [ ] Hướng dẫn Dev: quy trình build/sign/verify bundle + lưu trữ khóa an toàn.
+
+- Thư viện & công cụ
+	- [ ] `pkg/policy/bundle.go`: types (Manifest, Bundle), builder, `Hash()`, `Sign()`, `Verify()`; load/save `.tar.gz` hoặc `.zip`.
+	- [ ] Tính năng verify cosign (ban đầu mock/exec cosign CLI; module hóa để có thể thay thế lib sau):
+		- [ ] Interface `Signer`/`Verifier`, implementation `CosignCLI`.
+	- [ ] Makefile targets: `policy-bundle`, `policy-sign`, `policy-verify` (kèm docs/usage).
+	- [ ] Mẫu bundle demo với 1–2 file Rego (ví dụ allow/deny rule đơn giản) để kiểm thử đường đi.
+
+- Kiểm thử & CI
+	- [ ] Thiết lập Conftest trong repo (policies mẫu + tests).
+	- [ ] Thêm unit test Rego (ví dụ deny on missing field, allow on valid schema).
+	- [ ] `.github/workflows/policy.yml` (hoặc Makefile + CI sẵn có):
+		- [ ] Chạy `policy-bundle` trên PR.
+		- [ ] Xác minh chữ ký bundle (`policy-verify`).
+		- [ ] Chạy Conftest và unit tests.
+		- [ ] Đính kèm artifact bundle đã ký vào job (nếu cần).
+
+- Rollout & Drift detection
+	- [ ] Dịch vụ/Job canary rollout (services/policy/): áp dụng bundle mới cho 10% workload; nếu error rate vượt ngưỡng SLO -> rollback tự động.
+	- [ ] Drift detection worker: so sánh hash bundle đang chạy với registry; cảnh báo Prometheus + event log khi lệch.
+	- [ ] Endpoint quan sát: `/metrics` cho verify_success_total, verify_failure_total, drift_events_total, rollout_status.
+
+- Quan sát & bảo mật
+	- [ ] Metrics/traces cho đường verify/sign và rollout; log có cấu trúc, audit trail tối thiểu.
+	- [ ] Chiến lược quản lý khóa cosign: file-based (demo) -> keyless (OIDC) sau; rotate và revoke notes.
+
+- Acceptance & Demo
+	- [ ] Kịch bản demo E2E: build -> sign -> verify -> canary -> promote/rollback.
+	- [ ] Tiêu chí chấp nhận: 100% policy PR có chữ ký hợp lệ + test pass; rollback tự động < 5 phút trong canary lỗi.
+
+Gợi ý thực thi theo tuần (tham khảo, không bắt buộc):
+- Tuần 1: Spec + `pkg/policy` skeleton + Makefile targets + bundle demo.
+- Tuần 2: Conftest + unit tests Rego + workflow CI base.
+- Tuần 3: Canary rollout + drift detection + metrics/observability.
+- Tuần 4: Hardening key mgmt, tài liệu, demo E2E và chốt chấp nhận.
+
+
+
+
+## 2025-10-01 — Dockerfiles demo + OTEL build tag
+
+- Thêm `docker/Dockerfile.ingress` và `docker/Dockerfile.locator` (multi-stage, distroless, nonroot). Hỗ trợ `--build-arg GO_TAGS="otelotlp"` để bật exporter thật.
+- `Makefile`: thêm các target `docker-ingress`, `docker-locator`, `demo-up`, `demo-down` để build images và chạy nhanh stack demo (`pilot/observability/docker-compose*.yml`).
+- `pkg/observability/otel/`: giữ `InitTracer` mặc định no-op; thêm biến thể thực sự trong `otel_otlp.go` (build tag `otelotlp`) dùng OTLP/HTTP (`otlptracehttp`).
+- Kết quả: có thể chạy Prometheus/Grafana/Collector + ingress/locator demo. Muốn bật tracing: build image với `GO_TAGS=otelotlp` và set `OTEL_EXPORTER_OTLP_ENDPOINT`.
+
+## 2025-10-01 — Bật tracing cho demo, thêm ShieldX Gateway vào compose, cố định scrape và build tags
+
+- Tracing và build tags (Go):
+	- Thêm build constraint cho biến thể no-op để tránh xung đột khi bật `-tags otelotlp`:
+		- `pkg/observability/otel/otel.go`: `//go:build !otelotlp` (no-op InitTracer)
+		- `pkg/observability/otel/httpwrap.go`: `//go:build !otelotlp` (no-op HTTP wrapper)
+		- Giữ `otel_otlp.go` và `httpwrap_otlp.go` cho biến thể thật khi build với `otelotlp`.
+- ShieldX Gateway:
+	- `services/shieldx-gateway/main.go`: 
+		- Gọi `InitTracer("shieldx_gateway")` và bọc `http.Handler` bằng `otelobs.WrapHTTPHandler` (server spans).
+		- Bọc HTTP metrics middleware + phục vụ `/metrics`; đọc cổng từ env `GATEWAY_PORT`.
+	- `services/shieldx-gateway/go.mod`: thêm `replace shieldx => ../..` để import `shieldx/pkg/metrics` trong module con.
+	- `docker/Dockerfile.shieldx-gateway`: 
+		- Nâng builder lên Go 1.24; build ngay trong `services/shieldx-gateway` (module riêng); runtime distroless; `ENV GATEWAY_PORT=8082`.
+- Compose + Prometheus:
+	- `pilot/observability/docker-compose.override.yml`:
+		- Thêm service `shieldx-gateway` (8082) và truyền `OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4318`.
+		- Bật tracing cho `ingress`, `locator`, `shieldx-gateway` qua `build.args: { GO_TAGS: otelotlp }`.
+	- `pilot/observability/prometheus-scrape.yml`:
+		- Sửa job `ingress` sang `ingress:8081` (đúng port runtime).
+		- Thêm job `shieldx_gateway` trỏ `shieldx-gateway:8082`.
+
+- Kết quả chạy demo:
+	- `make demo-up` khởi chạy thành công: Prometheus (9090), Grafana (3000), OTEL Collector (4318), Ingress (8081), Locator (8080), ShieldX Gateway (8082).
+	- Các service xuất `/metrics`; Collector nhận spans (exporter `debug`).
+
+Xác nhận nhanh (sanity):
+- Prometheus targets OK (ingress:8081, locator:8080, shieldx-gateway:8082).
+- Health endpoints: `/healthz` (ingress), `/health` (shieldx-gateway) phản hồi 200.
+
+Tiến độ Tháng 10/2025 — Nền tảng quan sát và SLO cơ bản
+- Metrics: Đạt (100%) cho phạm vi mục tiêu: ingress, contauth, verifier-pool, ml-orchestrator, locator, shieldx-gateway, và ML service (Python) đều có `/metrics`.
+- Tracing: Đang triển khai. Đã bật cho ingress, locator, shieldx-gateway (qua `otelotlp`). Cần nối tiếp cho contauth, verifier-pool, ml-orchestrator để đạt ≥95% endpoints có trace. Collector đã hoạt động (debug exporter).
+- Dashboard & Alerts: Đã có dashboard SLO và alert rules mẫu (Prometheus + Grafana). Cần thời gian chạy để lấp dữ liệu SLO.
+- Error budget tracking: Bắt đầu thu thập; cần 1 tuần runtime liên tục để đánh giá.
+
+Việc tiếp theo (nhỏ, rủi ro thấp):
+- Bổ sung Tempo/Jaeger vào compose để quan sát trace trực quan trong Grafana.
+- Bọc tracing cho contauth, verifier-pool, ml-orchestrator bằng `otelobs.WrapHTTPHandler` và `InitTracer()`.
+- (Tùy chọn) Thêm whitelist cho path-label để kiểm soát cardinality metrics HTTP.
+
+
+## 2025-10-01 — Hoàn thiện demo Observability: sửa metrics histogram, mở rộng compose, xác thực traces
+
+- Sửa lỗi xuất metrics Prometheus cho histogram có nhãn:
+	- File: `pkg/metrics/metrics.go` — gom nhãn `le` vào cùng một cặp `{}` với `method`/`path` thay vì in hai cặp, loại bỏ lỗi Prometheus: "expected value after metric, got '{l' ('BOPEN')".
+- Build & restart các dịch vụ demo với `otelotlp` để bật tracing: `ingress`, `locator`, `shieldx-gateway`, `verifier-pool`, `ml-orchestrator`, `contauth`.
+	- Dockerfiles cập nhật: `docker/Dockerfile.contauth`, `docker/Dockerfile.verifier-pool`, `docker/Dockerfile.ml-orchestrator` — build trong thư mục module con; runtime distroless, nonroot.
+- ContAuth chế độ demo không DB:
+	- Thêm `services/contauth/dummy_collector.go` và chuyển động qua biến môi trường `DISABLE_DB=true` (đã thiết lập trong compose) để chạy không cần Postgres.
+- Compose & Prometheus:
+	- `pilot/observability/docker-compose.override.yml`: thêm `DISABLE_DB=true` cho contauth; đổi ánh xạ cổng `ml-orchestrator` thành `8086:8087` (trong container vẫn 8087); giữ `GO_TAGS=otelotlp` và `OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4318` cho các service.
+	- `pilot/observability/prometheus-scrape.yml`: bỏ job `ml_service` (không chạy trong demo); bổ sung chú thích scrape trong mạng compose.
+- Kết quả xác nhận:
+	- Tất cả targets trong Prometheus ở trạng thái up: `ingress:8081`, `locator:8080`, `shieldx-gateway:8082`, `verifier-pool:8087`, `ml-orchestrator:8087` (xuất cổng host `8086`), `contauth:5002`.
+	- `/metrics` của từng service phản hồi OK từ host và trong mạng compose; lỗi BOPEN biến mất.
+	- OTEL Collector (debug exporter) ghi nhận spans liên tục, xác nhận tracing end-to-end hoạt động khi build với `otelotlp`.
+- Ghi chú:
+	- Metrics theo path có rủi ro cardinality; sẽ thêm whitelist/chuẩn hoá sau khi có dữ liệu thực tế.
+	- Build toàn repo có thể còn lỗi ở module/kiểm thử ngoài phạm vi demo; không ảnh hưởng mục tiêu Tháng 10 (demo stack chạy tốt).
+
+Tiêu chí chấp nhận Tháng 10 (cập nhật):
+- Metrics: đạt 100% cho 5 dịch vụ mục tiêu.
+- Traces: đã bật trên các dịch vụ trong demo; Collector nhận span đều đặn. Dashboard SLO đang thu thập dữ liệu, sẵn sàng theo dõi error budget 1 tuần.
+
+
+### 2025-10-01 — Bổ sung Jaeger + Blackbox và propagation traces
+- Compose: thêm Jaeger all-in-one và Blackbox Exporter vào `pilot/observability/docker-compose.yml`; mount provisioning Grafana.
+- Prometheus: thêm job `blackbox` trong `prometheus-scrape.yml` để probe các endpoint `/health(z)` và `/metrics`.
+- ShieldX Gateway: bọc outbound HTTP client bằng `otelobs.WrapHTTPTransport` để propagate trace context; tránh bọc handler trùng lặp.
+- Grafana: thêm datasource Jaeger và dashboard tối thiểu `ShieldX HTTP Overview` với link sang Explore để xem traces theo service.
+
+## 2025-10-01 — Kiểm soát cardinality cho metrics HTTP theo path (allowlist/regex/mode)
+
+- `pkg/metrics/metrics.go`:
+	- Thêm cơ chế kiểm soát cardinality cho nhãn `path` của metrics HTTP:
+		- Allowlist theo prefix (`pathAllowlist`).
+		- Allowlist theo biểu thức regex (`pathRegexps`).
+		- Chế độ chuẩn hóa `pathMode`: `heuristic` (mặc định, thay thế các segment giống ID thành `:id`) hoặc `strict` (không thuộc allowlist/regex sẽ gộp về `:other`).
+	- Cấu hình qua biến môi trường (ưu tiên theo service, fallback global):
+		- `<SERVICE>_HTTP_PATH_ALLOWLIST` hoặc `HTTP_PATH_ALLOWLIST` (CSV, ví dụ: `/health,/metrics,/api/v1/login`).
+		- `<SERVICE>_HTTP_PATH_REGEX` hoặc `HTTP_PATH_REGEX` (CSV regex, ví dụ: `^/api/v1/users/[a-z0-9-]+/profile$`).
+		- `<SERVICE>_HTTP_PATH_MODE` hoặc `HTTP_PATH_MODE` (`heuristic` | `strict`).
+	- Thay đổi mặc định an toàn: bỏ `"/"` khỏi allowlist mặc định để tránh vô tình giữ nguyên toàn bộ đường dẫn (giảm rủi ro bùng nổ cardinality).
+	- Giữ tương thích ngược: nếu không đặt biến môi trường, hành vi vẫn theo heuristic như trước, nhưng an toàn hơn về cardinality.
+
+- Ảnh hưởng dashboard/Prometheus:
+	- Nhãn `path` ổn định hơn; giảm rủi ro high-cardinality time series. Có thể tinh chỉnh thêm allowlist/regex theo service khi quan sát thực tế.
+
+- Hướng dẫn nhanh:
+	- Ví dụ giới hạn cardinality nghiêm ngặt cho Ingress:
+		- `INGRESS_HTTP_PATH_ALLOWLIST="/healthz,/metrics,/route"`
+		- `INGRESS_HTTP_PATH_MODE=strict`
+	- Ví dụ cho phép một số pattern động qua regex cho ContAuth:
+		- `CONTAUTH_HTTP_PATH_REGEX="^/sessions/[a-f0-9-]{36}$,^/users/[0-9]+/risk$"`
+
+Ghi chú: tiếp tục theo dõi cardinality sau 24–48 giờ; nếu số series vẫn cao, chuyển `HTTP_PATH_MODE` sang `strict` cho dịch vụ có lưu lượng lớn hoặc mở rộng allowlist hợp lý.
+
+### Bổ sung cấu hình demo
+- `pilot/observability/docker-compose.override.yml`: thêm biến môi trường mặc định cho các dịch vụ (ingress, locator, shieldx-gateway, contauth, verifier-pool, ml-orchestrator):
+	- `<SERVICE>_HTTP_PATH_ALLOWLIST` tập trung vào `/health(z)` và `/metrics`.
+	- `<SERVICE>_HTTP_PATH_MODE=strict` để ổn định series trong demo.
+
+
+
+
+
 ## 2025-09-30 — Khởi tạo lộ trình 12 tháng và chuẩn bị Tháng 10/2025 (Observability & SLO)
 
 - Đã bổ sung vào `Lộ Trình Cải Tiến.md` mục "Lộ trình 12 tháng (10/2025 → 09/2026)" với kế hoạch chi tiết từng tháng.
@@ -83,83 +252,3 @@ Ghi chú: Cần cài dependencies Python để kích hoạt metrics ML service.
 	- Ví dụ chạy `ingress` và `locator` với `OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4318` để demo tracing end-to-end.
 
 Lưu ý: chưa chạy `go mod download` toàn repo để tránh thay đổi ngoài phạm vi; build tổng thể sẽ yêu cầu đồng bộ `go.sum`. Các file thay đổi biên dịch sạch theo kiểm tra tĩnh nội bộ.
-
-## 2025-10-01 — Dockerfiles demo + OTEL build tag
-
-- Thêm `docker/Dockerfile.ingress` và `docker/Dockerfile.locator` (multi-stage, distroless, nonroot). Hỗ trợ `--build-arg GO_TAGS="otelotlp"` để bật exporter thật.
-- `Makefile`: thêm các target `docker-ingress`, `docker-locator`, `demo-up`, `demo-down` để build images và chạy nhanh stack demo (`pilot/observability/docker-compose*.yml`).
-- `pkg/observability/otel/`: giữ `InitTracer` mặc định no-op; thêm biến thể thực sự trong `otel_otlp.go` (build tag `otelotlp`) dùng OTLP/HTTP (`otlptracehttp`).
-- Kết quả: có thể chạy Prometheus/Grafana/Collector + ingress/locator demo. Muốn bật tracing: build image với `GO_TAGS=otelotlp` và set `OTEL_EXPORTER_OTLP_ENDPOINT`.
-
-## 2025-10-01 — Bật tracing cho demo, thêm ShieldX Gateway vào compose, cố định scrape và build tags
-
-- Tracing và build tags (Go):
-	- Thêm build constraint cho biến thể no-op để tránh xung đột khi bật `-tags otelotlp`:
-		- `pkg/observability/otel/otel.go`: `//go:build !otelotlp` (no-op InitTracer)
-		- `pkg/observability/otel/httpwrap.go`: `//go:build !otelotlp` (no-op HTTP wrapper)
-		- Giữ `otel_otlp.go` và `httpwrap_otlp.go` cho biến thể thật khi build với `otelotlp`.
-- ShieldX Gateway:
-	- `services/shieldx-gateway/main.go`: 
-		- Gọi `InitTracer("shieldx_gateway")` và bọc `http.Handler` bằng `otelobs.WrapHTTPHandler` (server spans).
-		- Bọc HTTP metrics middleware + phục vụ `/metrics`; đọc cổng từ env `GATEWAY_PORT`.
-	- `services/shieldx-gateway/go.mod`: thêm `replace shieldx => ../..` để import `shieldx/pkg/metrics` trong module con.
-	- `docker/Dockerfile.shieldx-gateway`: 
-		- Nâng builder lên Go 1.24; build ngay trong `services/shieldx-gateway` (module riêng); runtime distroless; `ENV GATEWAY_PORT=8082`.
-- Compose + Prometheus:
-	- `pilot/observability/docker-compose.override.yml`:
-		- Thêm service `shieldx-gateway` (8082) và truyền `OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4318`.
-		- Bật tracing cho `ingress`, `locator`, `shieldx-gateway` qua `build.args: { GO_TAGS: otelotlp }`.
-	- `pilot/observability/prometheus-scrape.yml`:
-		- Sửa job `ingress` sang `ingress:8081` (đúng port runtime).
-		- Thêm job `shieldx_gateway` trỏ `shieldx-gateway:8082`.
-
-- Kết quả chạy demo:
-	- `make demo-up` khởi chạy thành công: Prometheus (9090), Grafana (3000), OTEL Collector (4318), Ingress (8081), Locator (8080), ShieldX Gateway (8082).
-	- Các service xuất `/metrics`; Collector nhận spans (exporter `debug`).
-
-Xác nhận nhanh (sanity):
-- Prometheus targets OK (ingress:8081, locator:8080, shieldx-gateway:8082).
-- Health endpoints: `/healthz` (ingress), `/health` (shieldx-gateway) phản hồi 200.
-
-Tiến độ Tháng 10/2025 — Nền tảng quan sát và SLO cơ bản
-- Metrics: Đạt (100%) cho phạm vi mục tiêu: ingress, contauth, verifier-pool, ml-orchestrator, locator, shieldx-gateway, và ML service (Python) đều có `/metrics`.
-- Tracing: Đang triển khai. Đã bật cho ingress, locator, shieldx-gateway (qua `otelotlp`). Cần nối tiếp cho contauth, verifier-pool, ml-orchestrator để đạt ≥95% endpoints có trace. Collector đã hoạt động (debug exporter).
-- Dashboard & Alerts: Đã có dashboard SLO và alert rules mẫu (Prometheus + Grafana). Cần thời gian chạy để lấp dữ liệu SLO.
-- Error budget tracking: Bắt đầu thu thập; cần 1 tuần runtime liên tục để đánh giá.
-
-Việc tiếp theo (nhỏ, rủi ro thấp):
-- Bổ sung Tempo/Jaeger vào compose để quan sát trace trực quan trong Grafana.
-- Bọc tracing cho contauth, verifier-pool, ml-orchestrator bằng `otelobs.WrapHTTPHandler` và `InitTracer()`.
-- (Tùy chọn) Thêm whitelist cho path-label để kiểm soát cardinality metrics HTTP.
-
-
-## 2025-10-01 — Hoàn thiện demo Observability: sửa metrics histogram, mở rộng compose, xác thực traces
-
-- Sửa lỗi xuất metrics Prometheus cho histogram có nhãn:
-	- File: `pkg/metrics/metrics.go` — gom nhãn `le` vào cùng một cặp `{}` với `method`/`path` thay vì in hai cặp, loại bỏ lỗi Prometheus: "expected value after metric, got '{l' ('BOPEN')".
-- Build & restart các dịch vụ demo với `otelotlp` để bật tracing: `ingress`, `locator`, `shieldx-gateway`, `verifier-pool`, `ml-orchestrator`, `contauth`.
-	- Dockerfiles cập nhật: `docker/Dockerfile.contauth`, `docker/Dockerfile.verifier-pool`, `docker/Dockerfile.ml-orchestrator` — build trong thư mục module con; runtime distroless, nonroot.
-- ContAuth chế độ demo không DB:
-	- Thêm `services/contauth/dummy_collector.go` và chuyển động qua biến môi trường `DISABLE_DB=true` (đã thiết lập trong compose) để chạy không cần Postgres.
-- Compose & Prometheus:
-	- `pilot/observability/docker-compose.override.yml`: thêm `DISABLE_DB=true` cho contauth; đổi ánh xạ cổng `ml-orchestrator` thành `8086:8087` (trong container vẫn 8087); giữ `GO_TAGS=otelotlp` và `OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4318` cho các service.
-	- `pilot/observability/prometheus-scrape.yml`: bỏ job `ml_service` (không chạy trong demo); bổ sung chú thích scrape trong mạng compose.
-- Kết quả xác nhận:
-	- Tất cả targets trong Prometheus ở trạng thái up: `ingress:8081`, `locator:8080`, `shieldx-gateway:8082`, `verifier-pool:8087`, `ml-orchestrator:8087` (xuất cổng host `8086`), `contauth:5002`.
-	- `/metrics` của từng service phản hồi OK từ host và trong mạng compose; lỗi BOPEN biến mất.
-	- OTEL Collector (debug exporter) ghi nhận spans liên tục, xác nhận tracing end-to-end hoạt động khi build với `otelotlp`.
-- Ghi chú:
-	- Metrics theo path có rủi ro cardinality; sẽ thêm whitelist/chuẩn hoá sau khi có dữ liệu thực tế.
-	- Build toàn repo có thể còn lỗi ở module/kiểm thử ngoài phạm vi demo; không ảnh hưởng mục tiêu Tháng 10 (demo stack chạy tốt).
-
-Tiêu chí chấp nhận Tháng 10 (cập nhật):
-- Metrics: đạt 100% cho 5 dịch vụ mục tiêu.
-- Traces: đã bật trên các dịch vụ trong demo; Collector nhận span đều đặn. Dashboard SLO đang thu thập dữ liệu, sẵn sàng theo dõi error budget 1 tuần.
-
-
-### 2025-10-01 — Bổ sung Jaeger + Blackbox và propagation traces
-- Compose: thêm Jaeger all-in-one và Blackbox Exporter vào `pilot/observability/docker-compose.yml`; mount provisioning Grafana.
-- Prometheus: thêm job `blackbox` trong `prometheus-scrape.yml` để probe các endpoint `/health(z)` và `/metrics`.
-- ShieldX Gateway: bọc outbound HTTP client bằng `otelobs.WrapHTTPTransport` để propagate trace context; tránh bọc handler trùng lặp.
-- Grafana: thêm datasource Jaeger và dashboard tối thiểu `ShieldX HTTP Overview` với link sang Explore để xem traces theo service.
-

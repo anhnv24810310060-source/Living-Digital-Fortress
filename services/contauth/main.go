@@ -7,6 +7,7 @@ import (
 	"os"
 	"shieldx/pkg/metrics"
 	otelobs "shieldx/pkg/observability/otel"
+    logcorr "shieldx/pkg/observability/logcorr"
 )
 
 func main() {
@@ -43,8 +44,9 @@ func main() {
 	shutdown := otelobs.InitTracer("contauth")
 	defer shutdown(context.Background())
 
-	// Wrap with tracing + metrics middleware
+	// Wrap with metrics, log-correlation, then tracing (outermost) so span is in context for logging
 	h := httpMetrics.Middleware(mux)
+	h = logcorr.Middleware(h)
 	h = otelobs.WrapHTTPHandler("contauth", h)
 
 	log.Printf("Continuous Auth service starting on port %s", port)

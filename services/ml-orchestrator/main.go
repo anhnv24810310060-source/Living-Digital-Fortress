@@ -10,6 +10,7 @@ import (
 
 	"shieldx/pkg/metrics"
 	otelobs "shieldx/pkg/observability/otel"
+    logcorr "shieldx/pkg/observability/logcorr"
 )
 
 type MLOrchestrator struct {
@@ -64,8 +65,9 @@ func main() {
 	shutdown := otelobs.InitTracer("ml_orchestrator")
 	defer shutdown(context.Background())
 
-	// Wrap with tracing + metrics middleware
+	// Wrap with metrics, log-correlation, then tracing
 	h := httpMetrics.Middleware(mux)
+	h = logcorr.Middleware(h)
 	h = otelobs.WrapHTTPHandler("ml_orchestrator", h)
 
 	log.Printf("ML Orchestrator starting on port %s", port)

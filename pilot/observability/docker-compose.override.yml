@@ -10,6 +10,9 @@ services:
     environment:
       - INGRESS_PORT=8081
       - OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4318
+      # Metrics path cardinality controls
+      - INGRESS_HTTP_PATH_ALLOWLIST=/healthz,/metrics
+      - INGRESS_HTTP_PATH_MODE=strict
     ports:
       - "8081:8081"
     depends_on:
@@ -24,6 +27,9 @@ services:
     environment:
       - LOCATOR_PORT=8080
       - OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4318
+      # Metrics path cardinality controls
+      - LOCATOR_HTTP_PATH_ALLOWLIST=/healthz,/metrics
+      - LOCATOR_HTTP_PATH_MODE=strict
     ports:
       - "8080:8080"
     depends_on:
@@ -39,6 +45,9 @@ services:
     environment:
       - GATEWAY_PORT=8082
       - OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4318
+      # Metrics path cardinality controls
+      - SHIELDX_GATEWAY_HTTP_PATH_ALLOWLIST=/health,/metrics
+      - SHIELDX_GATEWAY_HTTP_PATH_MODE=strict
     ports:
       - "8082:8082"
     depends_on:
@@ -55,6 +64,9 @@ services:
       - PORT=5002
       - OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4318
       - DISABLE_DB=true
+      # Metrics path cardinality controls
+      - CONTAUTH_HTTP_PATH_ALLOWLIST=/health,/metrics
+      - CONTAUTH_HTTP_PATH_MODE=strict
     ports:
       - "5002:5002"
     depends_on:
@@ -70,6 +82,9 @@ services:
     environment:
       - VERIFIER_POOL_PORT=8087
       - OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4318
+      # Metrics path cardinality controls
+      - VERIFIER_POOL_HTTP_PATH_ALLOWLIST=/health,/metrics
+      - VERIFIER_POOL_HTTP_PATH_MODE=strict
     ports:
       - "8087:8087"
     depends_on:
@@ -85,6 +100,9 @@ services:
     environment:
       - ML_ORCHESTRATOR_PORT=8087
       - OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4318
+      # Metrics path cardinality controls
+      - ML_ORCHESTRATOR_HTTP_PATH_ALLOWLIST=/health,/metrics
+      - ML_ORCHESTRATOR_HTTP_PATH_MODE=strict
     ports:
       - "8086:8087"
     depends_on:

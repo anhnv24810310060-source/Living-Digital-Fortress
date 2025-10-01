@@ -12,6 +12,7 @@ import (
 	"shieldx/pkg/verifier"
 	"shieldx/pkg/metrics"
 	otelobs "shieldx/pkg/observability/otel"
+    logcorr "shieldx/pkg/observability/logcorr"
 )
 
 type Server struct {
@@ -44,8 +45,9 @@ func main() {
 	shutdown := otelobs.InitTracer("verifier_pool")
 	defer shutdown(context.Background())
 
-	// Wrap with tracing + metrics middleware
+	// Wrap with metrics, log-correlation, then tracing
 	h := httpMetrics.Middleware(mux)
+	h = logcorr.Middleware(h)
 	h = otelobs.WrapHTTPHandler("verifier_pool", h)
 
 	log.Printf("Verifier Pool starting on port %s", port)
