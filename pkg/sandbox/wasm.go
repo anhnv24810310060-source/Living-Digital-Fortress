@@ -1,3 +1,5 @@
+//go:build sandbox_wasm
+
 package sandbox
 
 import (
@@ -7,7 +9,6 @@ import (
     "time"
 
     "github.com/tetratelabs/wazero"
-    "github.com/tetratelabs/wazero/api"
 )
 
 // WASMRunner executes a WASI-like analyzer (no network) to process payload and return a string result.

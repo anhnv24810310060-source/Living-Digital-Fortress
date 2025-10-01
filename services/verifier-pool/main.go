@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -12,7 +13,8 @@ import (
 	"shieldx/pkg/verifier"
 	"shieldx/pkg/metrics"
 	otelobs "shieldx/pkg/observability/otel"
-    logcorr "shieldx/pkg/observability/logcorr"
+	logcorr "shieldx/pkg/observability/logcorr"
+	"shieldx/pkg/ratls"
 )
 
 type Server struct {
@@ -39,6 +41,18 @@ func main() {
 	mux.HandleFunc("/validate", server.handleValidate)
 	mux.HandleFunc("/nodes", server.handleListNodes)
 	mux.HandleFunc("/health", server.handleHealth)
+	mux.HandleFunc("/whoami", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		info := map[string]interface{}{
+			"service": "verifier-pool",
+			"ratls_enabled": os.Getenv("RATLS_ENABLE") == "true",
+		}
+		if os.Getenv("RATLS_ENABLE") == "true" {
+			td := getenvDefault("RATLS_TRUST_DOMAIN", "shieldx.local")
+			info["trust_domain"] = td
+		}
+		json.NewEncoder(w).Encode(info)
+	})
 	mux.Handle("/metrics", reg)
 
 	// OpenTelemetry tracing (no-op unless built with otelotlp and endpoint set)
@@ -50,8 +64,31 @@ func main() {
 	h = logcorr.Middleware(h)
 	h = otelobs.WrapHTTPHandler("verifier_pool", h)
 
-	log.Printf("Verifier Pool starting on port %s", port)
-	log.Fatal(http.ListenAndServe(":"+port, h))
+	// RA-TLS optional enablement
+	gCertExpiry := metrics.NewGauge("ratls_cert_expiry_seconds", "Seconds until current RA-TLS cert expiry")
+	reg.RegisterGauge(gCertExpiry)
+	var issuer *ratls.AutoIssuer
+	if os.Getenv("RATLS_ENABLE") == "true" {
+		td := getenvDefault("RATLS_TRUST_DOMAIN", "shieldx.local")
+		ns := getenvDefault("RATLS_NAMESPACE", "default")
+		svc := getenvDefault("RATLS_SERVICE", "verifier-pool")
+		rotate := parseDurationDefault("RATLS_ROTATE_EVERY", 45*time.Minute)
+		valid := parseDurationDefault("RATLS_VALIDITY", 60*time.Minute)
+		ai, err := ratls.NewDevIssuer(ratls.Identity{TrustDomain: td, Namespace: ns, Service: svc}, rotate, valid)
+		if err != nil { log.Fatalf("[verifier-pool] RA-TLS init: %v", err) }
+		issuer = ai
+		go func(){ for { if t, err := issuer.LeafNotAfter(); err==nil { gCertExpiry.Set(uint64(time.Until(t).Seconds())) }; time.Sleep(1*time.Minute) } }()
+	}
+	addr := fmt.Sprintf(":%s", port)
+	srv := &http.Server{ Addr: addr, Handler: h }
+	if issuer != nil {
+		srv.TLSConfig = issuer.ServerTLSConfig(true, getenvDefault("RATLS_TRUST_DOMAIN", "shieldx.local"))
+		log.Printf("Verifier Pool (RA-TLS) starting on %s", addr)
+		log.Fatal(srv.ListenAndServeTLS("", ""))
+	} else {
+		log.Printf("Verifier Pool starting on %s", addr)
+		log.Fatal(srv.ListenAndServe())
+	}
 }
 
 func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
@@ -130,4 +167,13 @@ func getEnv(key, defaultValue string) string {
 		return value
 	}
 	return defaultValue
+}
+
+func getenvDefault(key, def string) string {
+	if v := os.Getenv(key); v != "" { return v }
+	return def
+}
+func parseDurationDefault(key string, def time.Duration) time.Duration {
+	if v := os.Getenv(key); v != "" { if d, err := time.ParseDuration(v); err == nil { return d } }
+	return def
 }

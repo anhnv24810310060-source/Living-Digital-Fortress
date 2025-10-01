@@ -1,0 +1,172 @@
+apiVersion: autoheal.shieldx.io/v1
+kind: Playbook
+metadata:
+  name: service-restart-standard
+  version: 1.0.0
+  author: ShieldX SRE Team
+  created: 2025-10-01T12:00:00Z
+  tags: [restart, service, production-ready]
+  
+spec:
+  trigger:
+    type: service_unresponsive
+    severity: high
+    conditions:
+      - metric: http_request_errors_rate
+        operator: gt
+        threshold: 0.05
+        duration: 5m
+      - metric: health_check_failures
+        operator: gt
+        threshold: 3
+        duration: 2m
+        
+  precheck:
+    - name: verify_service_exists
+      type: service_check
+      command: "systemctl status {{ .service }} || docker ps | grep {{ .service }}"
+      expected: "success"
+      timeout: 10s
+      critical: true
+      
+    - name: check_disk_space
+      type: metric_check
+      command: "df -h / | tail -1 | awk '{print $5}' | sed 's/%//'"
+      expected: "<90"
+      timeout: 5s
+      critical: true
+      
+    - name: check_memory_available
+      type: metric_check
+      command: "free | grep Mem | awk '{print int($3/$2 * 100)}'"
+      expected: "<95"
+      timeout: 5s
+      critical: true
+      
+    - name: backup_current_state
+      type: script
+      command: "docker inspect {{ .service }} > /var/log/shieldx/backup-{{ .service }}-$(date +%s).json"
+      expected: "success"
+      timeout: 15s
+      critical: false
+      
+  actions:
+    - name: stop_service_gracefully
+      type: script
+      target: "{{ .service }}"
+      params:
+        script: "docker stop {{ .service }} || systemctl stop {{ .service }}"
+        graceful_timeout: 30
+      timeout: 45s
+      retries: 1
+      retry_delay: 5s
+      on_failure: continue
+      
+    - name: clear_stale_connections
+      type: script
+      target: "{{ .service }}"
+      params:
+        script: "netstat -an | grep {{ .service_port }} | awk '{print $5}' | cut -d: -f1 | sort -u | xargs -I {} timeout 5 nc -z {} {{ .service_port }} || true"
+      timeout: 30s
+      retries: 0
+      on_failure: continue
+      
+    - name: restart_service
+      type: restart
+      target: "{{ .service }}"
+      params:
+        mode: "fresh"
+        wait_for_ready: true
+        health_check_url: "http://localhost:{{ .service_port }}/health"
+        max_wait: 60
+      timeout: 90s
+      retries: 2
+      retry_delay: 10s
+      on_failure: rollback
+      
+    - name: warm_up_service
+      type: script
+      target: "{{ .service }}"
+      params:
+        script: "for i in {1..5}; do curl -s http://localhost:{{ .service_port }}/health && sleep 2; done"
+      timeout: 20s
+      retries: 0
+      on_failure: continue
+      
+  rollback:
+    enabled: true
+    actions:
+      - name: restore_from_backup
+        type: script
+        target: "{{ .service }}"
+        params:
+          script: "/opt/shieldx/scripts/restore-service.sh {{ .service }}"
+        timeout: 120s
+        
+      - name: notify_rollback_complete
+        type: api_call
+        target: "notification_service"
+        params:
+          endpoint: "/api/v1/notify"
+          method: POST
+          body: '{"service":"{{ .service }}","action":"rollback","status":"completed"}'
+        timeout: 10s
+        
+  postcheck:
+    - name: verify_service_running
+      type: health_check
+      command: "curl -f -m 10 http://localhost:{{ .service_port }}/health"
+      expected: "200"
+      timeout: 30s
+      critical: true
+      
+    - name: verify_metrics_endpoint
+      type: health_check
+      command: "curl -f -m 10 http://localhost:{{ .service_port }}/metrics"
+      expected: "200"
+      timeout: 15s
+      critical: false
+      
+    - name: verify_error_rate_normal
+      type: metric_check
+      command: "curl -s http://localhost:{{ .service_port }}/metrics | grep -E 'http_requests_total|http_errors_total' | awk '{sum+=$2} END {print sum}'"
+      expected: "<10"
+      timeout: 10s
+      critical: false
+      
+    - name: verify_no_crash_loop
+      type: service_check
+      command: "docker inspect {{ .service }} | jq -r '.[0].State.Restarting'"
+      expected: "false"
+      timeout: 10s
+      critical: true
+      
+    - name: wait_for_stability
+      type: script
+      command: "sleep 30 && curl -f http://localhost:{{ .service_port }}/health"
+      expected: "success"
+      timeout: 45s
+      critical: true
+      
+  audit:
+    enabled: true
+    hashchain: true
+    anchor: true
+    metadata:
+      category: "service_management"
+      compliance: ["SOC2", "ISO27001"]
+      retention_days: 365
+    
+  notifications:
+    on_start: 
+      - slack
+    on_success: 
+      - slack
+    on_failure: 
+      - slack
+      - pagerduty
+      - email
+    channels:
+      slack: "#shieldx-alerts"
+      pagerduty: "service_ops"
+      email: "sre-team@shieldx.io"

@@ -1,3 +1,198 @@
+## 2025-10-01 — Cập nhật Quan Trọng: Observability SLO & OTEL (prepend)
+
+### 1. Bật OpenTelemetry cho `ml-service` (tùy chọn) ✅
+- **Cập nhật**: `ml-service/feature_store.py`
+	- Hàm `init_tracing_from_env()` tự động khởi tạo tracer khi đặt `OTEL_EXPORTER_OTLP_ENDPOINT` (hỗ trợ headers `OTEL_EXPORTER_OTLP_HEADERS`).
+	- Instrument Flask và thư viện `requests` bằng `opentelemetry-instrumentation` → tạo span chuẩn với `service.name=ml_service`.
+	- Giữ Prometheus metrics hiện hữu, đồng thời ghi log cảnh báo nếu thiếu gói OTEL → an toàn khi chạy trong môi trường cũ.
+- **Phụ thuộc mới**: pin các gói OTEL (`opentelemetry-api/sdk/exporter-otlp`, instrumentation cho Flask/Requests) trong `ml-service/requirements.txt` để CI cài đặt nhất quán.
+
+### 2. Chuẩn hóa tài liệu SLO dashboard ✅
+- **Tạo mới**: `pilot/docs/slo-dashboard.md`
+	- Bảng SLO cho 5 dịch vụ then chốt (ingress, shieldx-gateway, contauth, verifier-pool, ml-service) với metric/PromQL cụ thể.
+	- Hướng dẫn Collector, layout Grafana, checklist deploy, và liên kết error-budget policy.
+- **Cập nhật**: `pilot/docs/kpi-dashboard.md`
+	- Thêm thông báo “legacy” dẫn người đọc tới tài liệu mới, giữ lại số liệu cũ như lịch sử.
+
+---
+
+## 2025-10-01 — Cập nhật Quan Trọng: 5 Cải Tiến Hạ Tầng Vận Hành (prepend)
+
+### 1. Chuẩn hóa Playbook Schema cho Auto-heal ✅
+- **Tạo mới**: `core/autoheal/playbooks/SCHEMA.md` - Playbook Schema Specification v1.0
+  - Định nghĩa schema chuẩn với apiVersion, kind, metadata, spec đầy đủ
+  - Bao gồm: trigger, precheck, actions, rollback, postcheck, audit, notifications
+  - Validation rules và best practices chi tiết
+  - Ví dụ: service restart, node recovery với đầy đủ tham số
+- **Playbook mẫu sản xuất**:
+  - `service-restart.yaml`: Restart dịch vụ với backup/rollback/verification đầy đủ
+  - `memory-leak-mitigation.yaml`: Phát hiện và xử lý memory leak với heap dump, GC trigger, và restart có kiểm soát
+- **Tính năng nổi bật**:
+  - Audit hashchain integration
+  - Anchor checkpoint cho compliance
+  - Rollback tự động trên lỗi
+  - Multi-level health checks (precheck, postcheck)
+  - Notification routing (Slack, PagerDuty, Email)
+
+### 2. Runbook Specification và Template ✅
+- **Tạo mới**: `pilot/docs/runbook-spec.md` - Runbook chuẩn cho vận hành
+  - 10 sections chuẩn: Summary, Prerequisites, Detection, Impact, Escalation, Procedure, Verification, Post-Incident, References
+  - Template markdown đầy đủ cho viết runbook mới
+  - Danh sách 10 runbooks ưu tiên (RB-2025-001 đến RB-2025-010)
+  - Tích hợp với playbooks: mapping runbook ↔ automation
+  - Best practices: writing, maintaining, using runbooks
+- **Escalation framework**: 
+  - Timeline rõ ràng: 0-5min, 5-15min, 15+min, critical
+  - Contacts và channels đã định nghĩa
+- **Metrics**: MTTR < 30min, Success Rate > 95%, Automation Coverage > 60%
+
+### 3. Error Budget Policy Document ✅
+- **Tạo mới**: `pilot/docs/error-budget-policy.md` - Chính sách Error Budget toàn diện
+  - **SLO định nghĩa** cho tất cả core services:
+    - ingress: 99.9% availability, p95 < 200ms (43.2 min/month error budget)
+    - shieldx-gateway: 99.9% availability, p95 < 150ms
+    - contauth: 99.5% availability, p95 < 500ms (3.6 hours/month)
+    - verifier-pool: 99.5%, ml-orchestrator: 99.0%, locator: 99.9%
+  - **4 Policy tiers**:
+    - Policy 1: Deployment Freeze (budget < 10%)
+    - Policy 2: Deployment Slowdown (10-25%)
+    - Policy 3: Normal Operations (> 25%)
+    - Policy 4: Over-Budget (< 0% - emergency)
+  - **Burn rate alerts**: Multi-window (1h/6h/24h/30d) với thresholds 14.4x/6x/3x/1x
+  - **Budget allocation**: 50% reserved, 50% available cho innovation
+  - **Incident classification**: P0-P3 theo budget impact
+  - **Prometheus queries** và CI/CD integration sẵn sàng
+
+### 4. eBPF Syscall Metrics với Service Labels ✅
+- **Tạo mới**: `pkg/sandbox/ebpf_monitor_metrics.go` - Metrics wrapper cho eBPF
+  - **6 labeled metrics mới**:
+    - `ebpf_syscall_total{service, sandbox, syscall}` - Tổng syscalls
+    - `ebpf_syscall_duration_seconds{service, sandbox, syscall}` - Latency histogram
+    - `ebpf_network_bytes_received_total{service, sandbox, protocol}` - Network in
+    - `ebpf_network_bytes_sent_total{service, sandbox, protocol}` - Network out
+    - `ebpf_file_operations_total{service, sandbox, operation}` - File ops
+    - `ebpf_dangerous_syscalls_total{service, sandbox, syscall}` - Security monitoring
+  - **Tích hợp**: `MonitorWithMetrics` wrapper class
+  - **Tự động phát hiện**: File ops (read/write/open), network ops (send/recv), dangerous syscalls (execve/ptrace/setuid)
+  - **Query helper**: `GetMetricsSummary()` cho dashboard
+
+### 5. Demo Health Check Enhanced trong Makefile ✅
+- **Cập nhật**: `Makefile` target `demo-health` với output rõ ràng hơn
+  - **8-step validation**:
+    1. Prometheus API (9090)
+    2. Grafana (3000)
+    3. Jaeger UI (16686)
+    4. OTEL Collector (4318)
+    5. Ingress service (8081/healthz)
+    6. Locator service (8080/health)
+    7. ShieldX Gateway (8082/health)
+    8. Prometheus targets summary (up/total)
+  - **Visual feedback**: ✅/❌ cho mỗi bước, summary cuối
+  - **Quick links**: URLs cho Grafana, Prometheus, Jaeger
+  - **Instructions**: Import dashboard và next steps
+
+## Ảnh Hưởng và Tiếp Theo
+
+### Hoàn thành
+- ✅ Auto-heal infrastructure: Schema + 2 production playbooks
+- ✅ Operational excellence: Runbook spec + Error budget policy
+- ✅ Observability: eBPF metrics với service/sandbox labels
+- ✅ Developer experience: Enhanced health check với clear feedback
+
+### Mục tiêu đạt được (theo lộ trình Now/2-4 tuần)
+1. ✅ **Auto-heal có bằng chứng**: Playbook schema chuẩn hóa với audit/anchor support
+2. ✅ **Observability end-to-end**: eBPF metrics theo service/sandbox cho syscall/network/file ops
+3. ✅ **Policy-driven operations**: Error budget policies rõ ràng với SLO enforcement
+4. ✅ **Runbook standardization**: Template và spec cho operational procedures
+5. ✅ **Demo readiness**: Health check tooling cho validation nhanh
+
+### Tiếp theo (ưu tiên cao, 1-2 tuần)
+1. **Triển khai Runtime Validation**:
+   - Deploy demo stack và collect 1 tuần SLO data
+   - Verify error budget tracking thực tế
+   - Tune alert thresholds dựa trên production patterns
+   
+2. **Chaos Engineering Framework**:
+   - Implement chaos tests sử dụng playbooks mới
+   - Verify auto-heal với failure injection
+   - Measure MTTR và success rate
+   
+3. **Implement Top 3 Runbooks**:
+   - RB-2025-001: Service Restart (từ playbook)
+   - RB-2025-002: Memory Leak Investigation (từ playbook)
+   - RB-2025-004: Certificate Expiry Emergency (RA-TLS)
+   
+4. **SLO Dashboard Integration**:
+   - Grafana dashboard cho error budgets
+   - Burn rate visualization
+   - Policy status indicators
+   - Budget consumption timeline
+   
+5. **Playbook Executor**:
+   - CLI tool để chạy playbooks: `./bin/playbook-executor run <name> --params`
+   - Dry-run mode cho testing
+   - Integration với audit hashchain
+   - Auto-trigger từ Prometheus alerts
+
+### Metrics KPI (tracking từ bây giờ)
+- **Auto-heal**: MTTR target < 2 phút p95 (từ playbooks)
+- **Runbook usage**: Track usage frequency, update cadence
+- **Error budget**: Compliance với policies (freeze/slowdown triggers)
+- **eBPF metrics**: Cardinality check, query performance
+- **Demo health**: < 60 giây để verify full stack
+
+---
+
+## 2025-10-01 — Prometheus profile "prom-mtls" + mở rộng mtls-demo (gateway↔verifier-pool/ml-orchestrator)
+
+- Prometheus mTLS profile (demo, tuỳ chọn):2025-10-01 — Prometheus profile “prom-mtls” + mở rộng mtls-demo (gateway↔verifier-pool/ml-orchestrator)
+
+- Prometheus mTLS profile (demo, tuỳ chọn):
+	- Thêm `pilot/observability/prometheus-scrape-mtls.yml` cấu hình scrape HTTPS + client cert mẫu (TLS 1.3, cert_file/key_file/ca_file).
+	- Thêm `pilot/observability/docker-compose.prom-mtls.yml`: chạy Prometheus thứ hai (`prometheus-mtls`, cổng 9091) với mount `./tls-prom/` chứa `client.crt`, `client.key`, `ca.crt` để scrape mTLS.
+	- Ghi chú: RA‑TLS demo dùng CA in‑memory; để Prometheus scrape mTLS cần phát hành cert client từ cùng issuer (hoặc chia sẻ CA) cho Prometheus.
+
+- Mở rộng mtls-demo:
+	- Cập nhật `pilot/observability/docker-compose.mtls-demo.yml` bật RA‑TLS thêm cho: `shieldx-gateway`, `verifier-pool`, `ml-orchestrator` (kèm `RATLS_REQUIRE_CLIENT_CERT=true`).
+	- Gateway: hỗ trợ override URL dịch vụ hạ nguồn qua env `AI_ANALYZER_URL(S)` và `VERIFIER_POOL_URL(S)`; mtls-demo cấu hình gọi HTTPS tới `ml-orchestrator:8087` và `verifier-pool:8087`.
+	- Thêm log xác nhận kết nối: khi health-check lần đầu chuyển sang healthy, nếu URL `https://…` sẽ log `[gateway] mTLS connectivity verified to …` để dễ kiểm chứng.
+
+- Ảnh hưởng chạy demo:
+	- Mặc định stack cũ giữ scrape HTTP thuần (Prometheus chính). Khi cần thử scrape mTLS, bật file `docker-compose.prom-mtls.yml` và cung cấp `./tls-prom/`.
+	- Không thay đổi phụ thuộc ngoài Go chuẩn. Các biến `RATLS_*` tiếp tục điều khiển bật/tắt.
+
+- Cải tiến quan sát danh tính (RA‑TLS):
+	- `shieldx-gateway`: middleware log SPIFFE ID của client inbound nếu có (mTLS), endpoint mới `/whoami` trả về trạng thái RA‑TLS và thời gian hết hạn cert hiện tại.
+	- `verifier-pool`, `ml-orchestrator`: thêm `/whoami` đơn giản để kiểm tra nhanh `RATLS_ENABLE` và danh tính dịch vụ.
+
+## 2025-10-01 — RA‑TLS rollout (phase 2): inbound cho contauth/verifier-pool/ml-orchestrator/locator + chuẩn hóa outbound mTLS (prepend)
+
+- Mở rộng RA‑TLS vào các dịch vụ còn lại (inbound):
+	- `services/contauth/main.go`, `services/verifier-pool/main.go`, `services/ml-orchestrator/main.go`, `services/locator/main.go`:
+		- Đọc env RA‑TLS (`RATLS_ENABLE`, `RATLS_TRUST_DOMAIN`, `RATLS_NAMESPACE`, `RATLS_SERVICE`, `RATLS_ROTATE_EVERY`, `RATLS_VALIDITY`).
+		- Bật mTLS inbound bằng `issuer.ServerTLSConfig(true, trustDomain)` khi `RATLS_ENABLE=true`.
+		- Xuất metric `ratls_cert_expiry_seconds` và cập nhật định kỳ theo `LeafNotAfter()`.
+	- Lưu ý: mặc định KHÔNG bật RA‑TLS để không ảnh hưởng demo/scrape; chỉ bật khi thiết lập biến môi trường.
+
+- Outbound mTLS client (chuẩn hóa):
+	- Giữ nguyên pattern ở `shieldx-gateway` và `ingress`: outbound HTTP client dùng `issuer.ClientTLSConfig()` kết hợp `otelobs.WrapHTTPTransport` để propagate traces.
+	- Các dịch vụ còn lại hiện không có outbound nội bộ đáng kể nên không cần chỉnh thêm (N/A).
+
+- Quan sát & Cảnh báo:
+	- Đảm bảo Prometheus nạp rule cảnh báo: đã thêm `rule_files: [/etc/prometheus/alert-rules.yml]` vào `pilot/observability/prometheus-scrape.yml` (rule `RATLSCertExpiringSoon` hoạt động khi bật RA‑TLS và metric có giá trị).
+
+- Rollout khuyến nghị:
+	- Bật theo từng cặp ít rủi ro trong staging (ví dụ `ingress` ↔ `locator`), theo dõi `ratls_cert_expiry_seconds` và xác nhận mTLS (SPIFFE trust domain) được verify.
+	- Sau khi ổn định, mở rộng dần sang các cặp còn lại (gateway ↔ services hạ nguồn).
+
+- Compose demo (tùy chọn):
+	- Chưa bật RA‑TLS mặc định trong compose để giữ Prometheus scrape HTTP thuần.
+	- Nếu muốn bật RA‑TLS trong demo: cần bổ sung TLS scrape config cho Prometheus hoặc tách một Prometheus instance riêng trong mạng mTLS nội bộ. Sẵn sàng cập nhật `docker-compose` + jobs Prometheus theo hướng dẫn trong `pilot/docs/ratls-rollout.md`.
+
+- Ảnh hưởng build/chạy:
+	- Không thêm phụ thuộc ngoài chuẩn thư viện Go. Các dịch vụ build sạch; RA‑TLS bật/tắt hoàn toàn qua env.
+	- Khi bật RA‑TLS, yêu cầu caller nội bộ sang service khác dùng HTTPS + mTLS (đã chuẩn hóa client ở các luồng outbound hiện có).
+
 ## 2025-10-01 — RA‑TLS (SPIFFE) + wiring shieldx-gateway/ingress + cảnh báo hết hạn cert (prepend)
 
 - Thư viện RA‑TLS (pkg/ratls):

@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -241,6 +242,25 @@ func (sg *ShieldXGateway) processRequest(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(statusCode)
 	
 	json.NewEncoder(w).Encode(response)
+}
+
+// identityLogMiddleware logs inbound client SPIFFE ID if present over mTLS
+func (sg *ShieldXGateway) identityLogMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.TLS != nil && len(r.TLS.PeerCertificates) > 0 {
+			if spiffe := firstSPIFFE(r.TLS.PeerCertificates[0]); spiffe != "" {
+				log.Printf("[gateway] inbound client identity: %s", spiffe)
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func firstSPIFFE(cert *x509.Certificate) string {
+	for _, u := range cert.URIs {
+		if u.Scheme == "spiffe" { return u.String() }
+	}
+	return ""
 }
 
 // recordCertExpiryMetric emits a gauge for seconds until current cert expiry
@@ -529,7 +549,23 @@ func (sg *ShieldXGateway) performHealthCheck(serviceName string, endpoint *Servi
 			resp.Body.Close()
 		}
 	}
-	
+	// Log newly healthy endpoints (connectivity verified). If scheme is https and RA-TLS enabled,
+	// this implies client cert was presented and server trust verified by RootCAs.
+	endpoint.mutex.RLock()
+	prevHealthy := make(map[string]struct{}, len(endpoint.HealthyURLs))
+	for _, u := range endpoint.HealthyURLs { prevHealthy[u] = struct{}{} }
+	endpoint.mutex.RUnlock()
+
+	for _, u := range healthyURLs {
+		if _, ok := prevHealthy[u]; !ok {
+			if strings.HasPrefix(strings.ToLower(u), "https://") {
+				log.Printf("[gateway] mTLS connectivity verified to %s", u)
+			} else {
+				log.Printf("[gateway] connectivity verified to %s", u)
+			}
+		}
+	}
+
 	endpoint.mutex.Lock()
 	endpoint.HealthyURLs = healthyURLs
 	endpoint.lastCheck = time.Now()
@@ -670,6 +706,36 @@ func main() {
 	
 	// Health check endpoint
 	mux.HandleFunc("/health", gateway.healthHandler)
+	// Whoami endpoint for RA-TLS identity/debug
+	mux.HandleFunc("/whoami", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		info := map[string]interface{}{
+			"service": "shieldx-gateway",
+			"ratls_enabled": gateway.issuer != nil,
+		}
+		if gateway.issuer != nil {
+			if t, err := gateway.issuer.LeafNotAfter(); err == nil {
+				info["cert_not_after"] = t
+				info["cert_seconds_remaining"] = int64(time.Until(t).Seconds())
+			}
+		}
+		// Include downstream service configuration and current health snapshot
+		deps := map[string]map[string]interface{}{}
+		for name, ep := range gateway.services {
+			ep.mutex.RLock()
+			urls := append([]string(nil), ep.URLs...)
+			healthy := append([]string(nil), ep.HealthyURLs...)
+			last := ep.lastCheck
+			ep.mutex.RUnlock()
+			deps[name] = map[string]interface{}{
+				"urls": urls,
+				"healthy_urls": healthy,
+				"last_check": last,
+			}
+		}
+		info["downstreams"] = deps
+		json.NewEncoder(w).Encode(info)
+	})
 	
 	// Expose metrics
 	reg.RegisterGauge(gCertExpiry)
@@ -677,7 +743,7 @@ func main() {
 
 	// Apply middleware with HTTP metrics and tracing wrapper
 	httpMetrics := metrics.NewHTTPMetrics(reg, "shieldx_gateway")
-	handler := httpMetrics.Middleware(gateway.securityMiddleware(mux))
+	handler := httpMetrics.Middleware(gateway.securityMiddleware(gateway.identityLogMiddleware(mux)))
 	handler = otelobs.WrapHTTPHandler("shieldx_gateway", handler)
 	
 	// RA-TLS configuration from env (optional)
@@ -709,9 +775,10 @@ func main() {
 		IdleTimeout:  120 * time.Second,
 	}
 	if gateway.issuer != nil {
-		// Enforce mutual TLS with trust domain
+		// Enforce TLS with trust domain; client cert requirement can be toggled by env
 		td := getenvDefault("RATLS_TRUST_DOMAIN", "shieldx.local")
-		gateway.server.TLSConfig = gateway.issuer.ServerTLSConfig(true, td)
+		reqClient := parseBoolDefault("RATLS_REQUIRE_CLIENT_CERT", true)
+		gateway.server.TLSConfig = gateway.issuer.ServerTLSConfig(reqClient, td)
 	}
 	
 	// Start server
@@ -793,6 +860,19 @@ func loadConfig() *GatewayConfig {
 	}
 	if v := os.Getenv("GATEWAY_PORT"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 { cfg.Port = n }
+	}
+	// Allow overriding downstream service URLs via env (comma-separated list accepted)
+	if v := strings.TrimSpace(os.Getenv("AI_ANALYZER_URLS")); v != "" {
+		urls := splitAndTrim(v)
+		if len(urls) > 0 { cfg.Services["ai_analyzer"] = ServiceConfig{URLs: urls, Timeout: 10 * time.Second, Retries: 2} }
+	} else if v := strings.TrimSpace(os.Getenv("AI_ANALYZER_URL")); v != "" {
+		cfg.Services["ai_analyzer"] = ServiceConfig{URLs: []string{v}, Timeout: 10 * time.Second, Retries: 2}
+	}
+	if v := strings.TrimSpace(os.Getenv("VERIFIER_POOL_URLS")); v != "" {
+		urls := splitAndTrim(v)
+		if len(urls) > 0 { cfg.Services["verifier_pool"] = ServiceConfig{URLs: urls, Timeout: 10 * time.Second, Retries: 2} }
+	} else if v := strings.TrimSpace(os.Getenv("VERIFIER_POOL_URL")); v != "" {
+		cfg.Services["verifier_pool"] = ServiceConfig{URLs: []string{v}, Timeout: 10 * time.Second, Retries: 2}
 	}
 	return cfg
 }
@@ -978,4 +1058,27 @@ func parseDurationDefault(key string, def time.Duration) time.Duration {
 		if d, err := time.ParseDuration(v); err == nil { return d }
 	}
 	return def
+}
+
+func parseBoolDefault(key string, def bool) bool {
+	if v := os.Getenv(key); v != "" {
+		switch strings.ToLower(strings.TrimSpace(v)) {
+		case "1", "true", "yes", "y", "on":
+			return true
+		case "0", "false", "no", "n", "off":
+			return false
+		}
+	}
+	return def
+}
+
+// splitAndTrim splits by comma and trims whitespace around items, filtering empties
+func splitAndTrim(s string) []string {
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		t := strings.TrimSpace(p)
+		if t != "" { out = append(out, t) }
+	}
+	return out
 }

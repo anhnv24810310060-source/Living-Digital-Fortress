@@ -762,7 +762,8 @@ func main() {
     }
     // Use RA-TLS if enabled
     if ratlsIssuer != nil {
-        srv := &http.Server{ Addr: addr, Handler: h, TLSConfig: ratlsIssuer.ServerTLSConfig(true, getenvDefault("RATLS_TRUST_DOMAIN", "shieldx.local")) }
+        reqClient := parseBoolDefault("RATLS_REQUIRE_CLIENT_CERT", true)
+        srv := &http.Server{ Addr: addr, Handler: h, TLSConfig: ratlsIssuer.ServerTLSConfig(reqClient, getenvDefault("RATLS_TRUST_DOMAIN", "shieldx.local")) }
         log.Fatal(srv.ListenAndServeTLS("", ""))
     } else {
         log.Fatal(http.ListenAndServe(addr, h))
@@ -839,6 +840,15 @@ func getenvDefault(key, def string) string {
 
 func parseDurationDefault(key string, def time.Duration) time.Duration {
     if v := os.Getenv(key); v != "" { if d, err := time.ParseDuration(v); err==nil { return d } }
+    return def
+}
+
+func parseBoolDefault(key string, def bool) bool {
+    if v := os.Getenv(key); v != "" {
+        vv := strings.ToLower(strings.TrimSpace(v))
+        if vv == "1" || vv == "true" || vv == "yes" || vv == "on" { return true }
+        if vv == "0" || vv == "false" || vv == "no" || vv == "off" { return false }
+    }
     return def
 }
 

@@ -139,6 +139,13 @@ func (c *LabeledCounter) Inc(labels map[string]string) {
     k := labelsKey(c.labelOrder, labels)
     c.m[k] = c.m[k] + 1
 }
+// Add increments the labeled counter by n (>=1); useful for counting bytes/events in bulk.
+func (c *LabeledCounter) Add(labels map[string]string, n uint64) {
+    if n == 0 { return }
+    c.mu.Lock(); defer c.mu.Unlock()
+    k := labelsKey(c.labelOrder, labels)
+    c.m[k] = c.m[k] + n
+}
 func (c *LabeledCounter) Expose(w http.ResponseWriter) {
     if c.help != "" { fmt.Fprintf(w, "# HELP %s %s\n", c.name, c.help) }
     fmt.Fprintf(w, "# TYPE %s counter\n", c.name)

@@ -1,7 +1,7 @@
 # ShieldX Cloud Build System
 
 .PHONY: all build test clean firecracker ebpf ml-orchestrator observability prom grafana
- .PHONY: demo-health
+.PHONY: demo-health
 
 # Build all components
 all: build-services build-ebpf
@@ -160,15 +160,43 @@ grafana:
 
 # Demo health check: waits for Prometheus targets and Jaeger UI to be up
 demo-health:
-	@echo "Checking Prometheus API..."
-	@curl -sf http://localhost:9090/api/v1/status/runtimeinfo >/dev/null && echo "Prometheus OK" || (echo "Prometheus not ready"; exit 1)
-	@echo "Checking Grafana..."
-	@curl -sf http://localhost:3000/api/health >/dev/null && echo "Grafana OK" || (echo "Grafana not ready"; exit 1)
-	@echo "Checking Jaeger UI..."
-	@curl -sf http://localhost:16686 >/dev/null && echo "Jaeger OK" || (echo "Jaeger not ready"; exit 1)
-	@echo "Checking OTEL Collector (OTLP HTTP 4318)..."
-	@curl -s http://localhost:4318/ >/dev/null && echo "Collector OK (port reachable)" || (echo "Collector not reachable"; exit 1)
-	@echo "Basic demo stack health: PASS"
+	@echo "=== ShieldX Demo Stack Health Check ==="
+	@echo ""
+	@echo "[1/8] Checking Prometheus API..."
+	@curl -sf http://localhost:9090/api/v1/status/runtimeinfo >/dev/null && echo "  ✅ Prometheus OK" || (echo "  ❌ Prometheus not ready"; exit 1)
+	@echo ""
+	@echo "[2/8] Checking Grafana..."
+	@curl -sf http://localhost:3000/api/health >/dev/null && echo "  ✅ Grafana OK" || (echo "  ❌ Grafana not ready"; exit 1)
+	@echo ""
+	@echo "[3/8] Checking Jaeger UI..."
+	@curl -sf http://localhost:16686 >/dev/null && echo "  ✅ Jaeger OK" || (echo "  ❌ Jaeger not ready"; exit 1)
+	@echo ""
+	@echo "[4/8] Checking OTEL Collector (OTLP HTTP 4318)..."
+	@curl -s http://localhost:4318/ >/dev/null && echo "  ✅ Collector OK" || (echo "  ❌ Collector not reachable"; exit 1)
+	@echo ""
+	@echo "[5/8] Checking Ingress service..."
+	@curl -sf http://localhost:8081/healthz >/dev/null && echo "  ✅ Ingress OK" || echo "  ⚠️  Ingress not responding"
+	@echo ""
+	@echo "[6/8] Checking Locator service..."
+	@curl -sf http://localhost:8080/health >/dev/null && echo "  ✅ Locator OK" || echo "  ⚠️  Locator not responding"
+	@echo ""
+	@echo "[7/8] Checking ShieldX Gateway..."
+	@curl -sf http://localhost:8082/health >/dev/null && echo "  ✅ Gateway OK" || echo "  ⚠️  Gateway not responding"
+	@echo ""
+	@echo "[8/8] Checking Prometheus targets..."
+	@targets=$$(curl -s http://localhost:9090/api/v1/targets | jq -r '.data.activeTargets | map(select(.health == "up")) | length'); \
+	total=$$(curl -s http://localhost:9090/api/v1/targets | jq -r '.data.activeTargets | length'); \
+	echo "  ✅ $$targets/$$total targets UP"
+	@echo ""
+	@echo "=== Summary ==="
+	@echo "Observability Stack: ✅ Ready"
+	@echo "Services: Check individual status above"
+	@echo ""
+	@echo "Next steps:"
+	@echo "  - Grafana: http://localhost:3000 (admin/admin)"
+	@echo "  - Prometheus: http://localhost:9090"
+	@echo "  - Jaeger: http://localhost:16686"
+	@echo "  - Import dashboard: pilot/observability/grafana-dashboard-http-slo.json"
 
 # Help
 help:

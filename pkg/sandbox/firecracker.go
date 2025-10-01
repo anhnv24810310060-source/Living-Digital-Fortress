@@ -207,7 +207,7 @@ func (f *FirecrackerRunner) calculateThreatScore(result *SandboxResult) float64 
 		score += 15.0
 	}
 	
-	return min(score, 100.0)
+	return minFloat(score, 100.0)
 }
 
 func (f *FirecrackerRunner) generateFingerprint(result *SandboxResult) string {
@@ -216,9 +216,4 @@ func (f *FirecrackerRunner) generateFingerprint(result *SandboxResult) string {
 	return fmt.Sprintf("fc_%x", time.Now().UnixNano()%0xFFFFFFFF)
 }
 
-func min(a, b float64) float64 {
-	if a < b {
-		return a
-	}
-	return b
-}
+// minFloat is defined in sandbox.go for the package; reuse it here.

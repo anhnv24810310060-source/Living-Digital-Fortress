@@ -1,10 +1,11 @@
 import pandas as pd
 import numpy as np
 from typing import Dict, List, Any, Optional
-from datetime import datetime, timezone
+from datetime import datetime
 import json
 import logging
-from dataclasses import dataclass, asdict
+import os
+from dataclasses import dataclass
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 import redis
 import psycopg2
@@ -332,6 +333,54 @@ class MLPipeline:
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 
+
+def init_tracing_from_env(service_name: str) -> bool:
+    """Initialize OpenTelemetry tracing if OTLP endpoint is configured."""
+
+    endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+    if not endpoint:
+        return False
+
+    try:
+        from opentelemetry import trace
+        from opentelemetry.sdk.resources import Resource
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export import BatchSpanProcessor
+        from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+        from opentelemetry.instrumentation.flask import FlaskInstrumentor
+        from opentelemetry.instrumentation.requests import RequestsInstrumentor
+    except ImportError as exc:
+        logging.warning("OpenTelemetry packages not available: %s", exc)
+        return False
+
+    headers = None
+    if hdrs := os.getenv("OTEL_EXPORTER_OTLP_HEADERS"):
+        headers = dict(
+            item.strip().split("=", 1) for item in hdrs.split(",") if "=" in item
+        )
+
+    provider = TracerProvider(
+        resource=Resource.create({
+            "service.name": service_name,
+            "service.namespace": "ml-platform",
+            "telemetry.sdk.language": "python",
+        })
+    )
+    exporter = OTLPSpanExporter(endpoint=endpoint, headers=headers)
+    provider.add_span_processor(BatchSpanProcessor(exporter))
+    trace.set_tracer_provider(provider)
+
+    FlaskInstrumentor().instrument_app(app)
+    RequestsInstrumentor().instrument()
+
+    logging.info(
+        "OpenTelemetry tracing enabled for %%s; exporting to %%s", service_name, endpoint
+    )
+    return True
+
+
+TRACING_ENABLED = init_tracing_from_env("ml_service")
+
 # Initialize components
 DB_URL = "postgresql://ml_user:ml_pass2024@localhost:5432/ml_features"
 REDIS_URL = "redis://localhost:6379/0"
@@ -402,14 +451,15 @@ def get_training_data():
 @app.route('/health', methods=['GET'])
 @track_metrics('health')
 def health_check():
-@app.route('/metrics')
-def metrics():
-    return Response(generate_latest(), mimetype=CONTENT_TYPE_LATEST)
     return jsonify({
         'status': 'healthy',
         'service': 'ml-feature-store',
         'timestamp': datetime.now().isoformat()
     }), 200
+
+@app.route('/metrics')
+def metrics():
+    return Response(generate_latest(), mimetype=CONTENT_TYPE_LATEST)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=False)

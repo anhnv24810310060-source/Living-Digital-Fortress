@@ -1,3 +1,5 @@
+//go:build sandbox_docker
+
 package sandbox
 
 import (
@@ -7,7 +9,7 @@ import (
     "os"
     "time"
 
-    "github.com/docker/docker/api/types"
+    dockertypes "github.com/docker/docker/api/types"
     "github.com/docker/docker/api/types/container"
     "github.com/docker/docker/client"
 )
@@ -39,7 +41,7 @@ func (d dockerRunner) Run(ctx context.Context, payload string) (*SandboxResult, 
     }
     
     img := getenv("SANDBOX_IMAGE", "alpine:latest")
-    rc, err := d.cli.ImagePull(ctx, img, types.ImagePullOptions{})
+    rc, err := d.cli.ImagePull(ctx, img, dockertypes.ImagePullOptions{})
     if err == nil { io.Copy(io.Discard, rc); rc.Close() }
     
     cmd := []string{"/bin/sh", "-lc", fmt.Sprintf("printf %q | sha256sum", payload)}
@@ -57,11 +59,11 @@ func (d dockerRunner) Run(ctx context.Context, payload string) (*SandboxResult, 
     
     if err != nil { return nil, err }
     
-    if err := d.cli.ContainerStart(ctx, resp.ID, types.ContainerStartOptions{}); err != nil {
+    if err := d.cli.ContainerStart(ctx, resp.ID, dockertypes.ContainerStartOptions{}); err != nil {
         return nil, err
     }
     
-    r, err := d.cli.ContainerLogs(ctx, resp.ID, types.ContainerLogsOptions{
+    r, err := d.cli.ContainerLogs(ctx, resp.ID, dockertypes.ContainerLogsOptions{
         ShowStdout: true, 
         ShowStderr: true, 
         Follow: true,
@@ -96,14 +98,14 @@ func calculateThreatScore(payload string) float64 {
         }
     }
     
-    return min(score, 1.0)
+    return minFloat(score, 1.0)
 }
 
 func contains(s, substr string) bool {
     return len(s) >= len(substr) && s[:len(substr)] == substr
 }
 
-func min(a, b float64) float64 {
+func minFloat(a, b float64) float64 {
     if a < b { return a }
     return b
 }

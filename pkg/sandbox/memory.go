@@ -11,7 +11,6 @@ import (
 	"strings"
 	"syscall"
 	"time"
-	"unsafe"
 )
 
 type MemorySnapshot struct {
@@ -199,8 +198,8 @@ func captureHeapStack(pid int, snapshot *MemorySnapshot) error {
 	for _, region := range snapshot.Regions {
 		if strings.Contains(region.Path, "[heap]") && len(snapshot.Heap) == 0 {
 			// Capture first 64KB of heap
-			size := min(region.Size, 64*1024)
-			heap := make([]byte, size)
+			size := minU64(region.Size, uint64(64*1024))
+			heap := make([]byte, int(size))
 			
 			if _, err := memFile.ReadAt(heap, int64(region.Start)); err == nil {
 				snapshot.Heap = heap
@@ -209,8 +208,8 @@ func captureHeapStack(pid int, snapshot *MemorySnapshot) error {
 		
 		if strings.Contains(region.Path, "[stack]") && len(snapshot.Stack) == 0 {
 			// Capture last 32KB of stack
-			size := min(region.Size, 32*1024)
-			stack := make([]byte, size)
+			size := minU64(region.Size, uint64(32*1024))
+			stack := make([]byte, int(size))
 			
 			offset := int64(region.End - size)
 			if _, err := memFile.ReadAt(stack, offset); err == nil {
@@ -235,9 +234,9 @@ func scanSuspiciousPatterns(pid int, snapshot *MemorySnapshot) {
 			continue
 		}
 
-		// Read region data (limit to 1MB per region)
-		size := min(region.Size, 1024*1024)
-		data := make([]byte, size)
+	// Read region data (limit to 1MB per region)
+	size := minU64(region.Size, uint64(1024*1024))
+	data := make([]byte, int(size))
 		
 		if _, err := memFile.ReadAt(data, int64(region.Start)); err != nil {
 			continue
@@ -347,7 +346,7 @@ func detectHeapSpray(snapshot *MemorySnapshot) {
 	}
 }
 
-func min(a, b uint64) uint64 {
+func minU64(a, b uint64) uint64 {
 	if a < b {
 		return a
 	}

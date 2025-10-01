@@ -6,10 +6,9 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"os"
 	"sync"
 	"syscall"
-	"time"
-	"unsafe"
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
@@ -115,33 +114,24 @@ func (e *eBPFMonitor) Stop() {
 
 func (e *eBPFMonitor) attachTracepoints() error {
 	// Attach syscall entry tracepoint
-	l, err := link.Tracepoint(link.TracepointOptions{
-		Group:   "syscalls",
-		Name:    "sys_enter_openat",
-		Program: e.collection.Programs["trace_syscall_enter"],
-	})
+	progEnter := e.collection.Programs["trace_syscall_enter"]
+	l, err := link.Tracepoint("syscalls", "sys_enter_openat", progEnter, nil)
 	if err != nil {
 		return err
 	}
 	e.links = append(e.links, l)
 
 	// Attach syscall exit tracepoint
-	l, err = link.Tracepoint(link.TracepointOptions{
-		Group:   "syscalls", 
-		Name:    "sys_exit_openat",
-		Program: e.collection.Programs["trace_syscall_exit"],
-	})
+	progExit := e.collection.Programs["trace_syscall_exit"]
+	l, err = link.Tracepoint("syscalls", "sys_exit_openat", progExit, nil)
 	if err != nil {
 		return err
 	}
 	e.links = append(e.links, l)
 
 	// Attach network tracepoints
-	l, err = link.Tracepoint(link.TracepointOptions{
-		Group:   "syscalls",
-		Name:    "sys_enter_socket",
-		Program: e.collection.Programs["trace_network"],
-	})
+	progNet := e.collection.Programs["trace_network"]
+	l, err = link.Tracepoint("syscalls", "sys_enter_socket", progNet, nil)
 	if err != nil {
 		return err
 	}
