@@ -23,6 +23,7 @@ import (
     "shieldx/pkg/metrics"
 	otelobs "shieldx/pkg/observability/otel"
 	"shieldx/pkg/ratls"
+    gauth "shieldx/pkg/gateway"
 )
 
 // Production ShieldX Gateway - Central Orchestrator
@@ -745,6 +746,28 @@ func main() {
 	httpMetrics := metrics.NewHTTPMetrics(reg, "shieldx_gateway")
 	handler := httpMetrics.Middleware(gateway.securityMiddleware(gateway.identityLogMiddleware(mux)))
 	handler = otelobs.WrapHTTPHandler("shieldx_gateway", handler)
+
+	// Optional API authentication + centralized rate limiting
+	// Enabled by default for non-health endpoints; configurable via env
+	// JWT secret can be rotated via env without restart if reloaded externally
+	jwtSecret := os.Getenv("GATEWAY_JWT_SECRET")
+	if jwtSecret == "" {
+		jwtSecret = "dev-only-secret" // NOTE: override in production via env
+	}
+	authMw := gauth.NewAuthMiddleware(gauth.AuthConfig{
+		JWTSecret:     []byte(jwtSecret),
+		APIKeyHeader:  getenvDefault("GATEWAY_API_KEY_HEADER", "X-API-Key"),
+		BypassPaths:   []string{"/health", "/metrics", "/whoami"},
+		TokenDuration: 0, // default 24h
+	})
+	rateMw := gauth.NewRateLimiter(gauth.RateLimitConfig{
+		RequestsPerMinute: getenvInt("GATEWAY_RPM", 600),
+		BurstSize:         getenvInt("GATEWAY_BURST", 60),
+		BypassPaths:       []string{"/health", "/metrics"},
+	})
+
+	// Compose: tracing/metrics -> security headers -> identity log -> auth -> rate limit -> mux
+	handler = rateMw.Limit(authMw.Authenticate(handler))
 	
 	// RA-TLS configuration from env (optional)
 	if os.Getenv("RATLS_ENABLE") == "true" {

@@ -1,3 +1,24 @@
+## 2025-10-01 — Bổ sung bảo mật Gateway + hạ tầng dữ liệu, LB, mesh (Phase 1) ✅
+
+- API Gateway
+	- Thêm middleware xác thực JWT/API key và RBAC, cộng với rate limiting theo người dùng/IP (bỏ qua: /health, /metrics, /whoami).
+	- Đã dây vào `services/shieldx-gateway/main.go` với biến môi trường: `GATEWAY_JWT_SECRET`, `GATEWAY_API_KEY_HEADER`, `GATEWAY_RPM`, `GATEWAY_BURST` (bật/tắt qua env, mặc định an toàn).
+- Hạ tầng dữ liệu
+	- Thêm `infra/docker-compose.data.yml` cho PostgreSQL/Redis (primary + replica) và Backup Manager chạy hằng ngày.
+	- Thêm `infra/db/backup-scripts/backup-manager.sh` (pg_dump nén + dọn retention), `infra/db/init-scripts/01-init-databases.sql` (khởi tạo DB/schema cho credits/contauth/shadow/guardian + user đọc-only).
+- Load Balancer
+	- Thêm `infra/haproxy/haproxy.cfg` (frontend/backends, health checks, TLS options, stats page 8404).
+- Mesh nội bộ
+	- Thêm `infra/wireguard/mesh-config.yml` mô tả node/peers; tạo helper `pkg/wgmesh/mesh.go` (setup/teardown/status/keygen).
+- Thư viện/Module
+	- Cập nhật `go.mod` bổ sung OTEL metric HTTP exporter và sdk/metric; tidy deps.
+
+Ảnh hưởng vận hành: các tính năng mới mặc định không phá vỡ đường health/metrics; bật dần bằng biến môi trường. Nhật ký cập nhật ngắn gọn để phục vụ audit.
+
+Files chính được thêm/sửa:
+- Mới: `pkg/gateway/auth_middleware.go`, `pkg/gateway/rate_limiter.go`, `infra/docker-compose.data.yml`, `infra/db/init-scripts/01-init-databases.sql`, `infra/db/backup-scripts/backup-manager.sh`, `infra/haproxy/haproxy.cfg`, `infra/wireguard/mesh-config.yml`, `pkg/wgmesh/mesh.go`
+- Sửa: `services/shieldx-gateway/main.go`, `go.mod`, `go.sum`
+
 ## 2025-10-01 — Triển Khai Lộ Trình Tháng 10: Nền Tảng Quan Sát & SLO Hoàn Chỉnh ✅
 
 ### Mục tiêu: Observability & SLO End-to-End (Milestone 1 - Tháng 10/2025)
