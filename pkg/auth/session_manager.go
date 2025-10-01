@@ -18,16 +18,16 @@ var (
 
 // SessionData represents user session information
 type SessionData struct {
-	SessionID   string            `json:"session_id"`
-	UserID      string            `json:"user_id"`
-	TenantID    string            `json:"tenant_id"`
-	Email       string            `json:"email"`
-	IPAddress   string            `json:"ip_address"`
-	UserAgent   string            `json:"user_agent"`
-	CreatedAt   time.Time         `json:"created_at"`
-	LastAccess  time.Time         `json:"last_access"`
-	ExpiresAt   time.Time         `json:"expires_at"`
-	Metadata    map[string]string `json:"metadata,omitempty"`
+	SessionID  string            `json:"session_id"`
+	UserID     string            `json:"user_id"`
+	TenantID   string            `json:"tenant_id"`
+	Email      string            `json:"email"`
+	IPAddress  string            `json:"ip_address"`
+	UserAgent  string            `json:"user_agent"`
+	CreatedAt  time.Time         `json:"created_at"`
+	LastAccess time.Time         `json:"last_access"`
+	ExpiresAt  time.Time         `json:"expires_at"`
+	Metadata   map[string]string `json:"metadata,omitempty"`
 }
 
 // SessionManager handles session lifecycle
@@ -56,7 +56,7 @@ func NewSessionManager(config SessionConfig) (*SessionManager, error) {
 	// Test connection
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	
+
 	if err := client.Ping(ctx).Err(); err != nil {
 		return nil, fmt.Errorf("failed to connect to Redis: %w", err)
 	}
@@ -105,7 +105,7 @@ func (sm *SessionManager) CreateSession(ctx context.Context, userID, tenantID, e
 		"last_access", session.LastAccess.Unix(),
 		"expires_at", session.ExpiresAt.Unix(),
 	).Err()
-	
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to create session: %w", err)
 	}
@@ -119,7 +119,7 @@ func (sm *SessionManager) CreateSession(ctx context.Context, userID, tenantID, e
 // GetSession retrieves session data
 func (sm *SessionManager) GetSession(ctx context.Context, sessionID string) (*SessionData, error) {
 	key := sm.keyPrefix + sessionID
-	
+
 	result, err := sm.client.HGetAll(ctx, key).Result()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get session: %w", err)
@@ -168,7 +168,7 @@ func (sm *SessionManager) GetSession(ctx context.Context, sessionID string) (*Se
 // UpdateSessionActivity updates last access time and extends session
 func (sm *SessionManager) UpdateSessionActivity(ctx context.Context, sessionID string) error {
 	key := sm.keyPrefix + sessionID
-	
+
 	now := time.Now()
 	expiresAt := now.Add(sm.ttl)
 
@@ -176,14 +176,14 @@ func (sm *SessionManager) UpdateSessionActivity(ctx context.Context, sessionID s
 		"last_access", now.Unix(),
 		"expires_at", expiresAt.Unix(),
 	).Err()
-	
+
 	if err != nil {
 		return fmt.Errorf("failed to update session: %w", err)
 	}
 
 	// Extend expiration
 	sm.client.Expire(ctx, key, sm.ttl)
-	
+
 	return nil
 }
 
@@ -202,7 +202,7 @@ func (sm *SessionManager) DeleteUserSessions(ctx context.Context, userID string)
 	// Scan for all sessions
 	pattern := sm.keyPrefix + "*"
 	iter := sm.client.Scan(ctx, 0, pattern, 0).Iterator()
-	
+
 	for iter.Next(ctx) {
 		key := iter.Val()
 		uid, err := sm.client.HGet(ctx, key, "user_id").Result()
@@ -210,7 +210,7 @@ func (sm *SessionManager) DeleteUserSessions(ctx context.Context, userID string)
 			sm.client.Del(ctx, key)
 		}
 	}
-	
+
 	return iter.Err()
 }
 
@@ -218,7 +218,7 @@ func (sm *SessionManager) DeleteUserSessions(ctx context.Context, userID string)
 func (sm *SessionManager) SetSessionMetadata(ctx context.Context, sessionID, key, value string) error {
 	sessionKey := sm.keyPrefix + sessionID
 	metaKey := "meta_" + key
-	
+
 	err := sm.client.HSet(ctx, sessionKey, metaKey, value).Err()
 	if err != nil {
 		return fmt.Errorf("failed to set metadata: %w", err)
@@ -230,7 +230,7 @@ func (sm *SessionManager) SetSessionMetadata(ctx context.Context, sessionID, key
 func (sm *SessionManager) GetSessionMetadata(ctx context.Context, sessionID, key string) (string, error) {
 	sessionKey := sm.keyPrefix + sessionID
 	metaKey := "meta_" + key
-	
+
 	value, err := sm.client.HGet(ctx, sessionKey, metaKey).Result()
 	if err == redis.Nil {
 		return "", nil

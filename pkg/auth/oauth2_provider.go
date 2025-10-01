@@ -7,7 +7,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -17,10 +16,10 @@ import (
 )
 
 var (
-	ErrInvalidAuthCode     = errors.New("invalid authorization code")
-	ErrInvalidClientID     = errors.New("invalid client ID")
-	ErrInvalidRedirectURI  = errors.New("invalid redirect URI")
-	ErrInvalidPKCE         = errors.New("invalid PKCE verifier")
+	ErrInvalidAuthCode    = errors.New("invalid authorization code")
+	ErrInvalidClientID    = errors.New("invalid client ID")
+	ErrInvalidRedirectURI = errors.New("invalid redirect URI")
+	ErrInvalidPKCE        = errors.New("invalid PKCE verifier")
 )
 
 // OAuth2Provider handles OAuth2/OIDC flows
@@ -305,7 +304,7 @@ func (op *OAuth2Provider) handleRefreshTokenGrant(w http.ResponseWriter, r *http
 // generateAuthCode generates and stores an authorization code
 func (op *OAuth2Provider) generateAuthCode(ctx context.Context, authReq *AuthorizationRequest, userID, tenantID string) (string, error) {
 	code := generateRandomString(32)
-	
+
 	authCode := &AuthorizationCode{
 		Code:          code,
 		ClientID:      authReq.ClientID,

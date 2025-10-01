@@ -54,7 +54,7 @@ func (s *InMemoryRevokedStore) IsRevoked(ctx context.Context, tokenID string) (b
 func (s *InMemoryRevokedStore) Cleanup(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	now := time.Now()
 	for tokenID, expiresAt := range s.revoked {
 		if now.After(expiresAt) {
@@ -67,7 +67,7 @@ func (s *InMemoryRevokedStore) Cleanup(ctx context.Context) error {
 func (s *InMemoryRevokedStore) cleanupLoop(ctx context.Context) {
 	ticker := time.NewTicker(1 * time.Hour)
 	defer ticker.Stop()
-	
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -108,7 +108,7 @@ func NewRedisRevokedStore(config RedisConfig) *RedisRevokedStore {
 func (s *RedisRevokedStore) RevokeToken(ctx context.Context, tokenID string, expiresAt time.Time) error {
 	key := s.keyPrefix + tokenID
 	ttl := time.Until(expiresAt)
-	
+
 	if ttl <= 0 {
 		return nil // Token already expired
 	}
