@@ -1,6 +1,5 @@
 package wgmesh
 
-
 import (
 	"fmt"
 	"os/exec"
@@ -40,8 +39,8 @@ func SetupMesh(config MeshConfig) error {
 	}
 
 	// Set private key
-	cmd := exec.Command("wg", "set", config.InterfaceName, 
-		"private-key", "/dev/stdin", 
+	cmd := exec.Command("wg", "set", config.InterfaceName,
+		"private-key", "/dev/stdin",
 		"listen-port", fmt.Sprintf("%d", config.ListenPort))
 	cmd.Stdin = strings.NewReader(config.PrivateKey)
 	if err := cmd.Run(); err != nil {
@@ -51,19 +50,19 @@ func SetupMesh(config MeshConfig) error {
 	// Add peers
 	for _, peer := range config.Peers {
 		peerArgs := []string{"set", config.InterfaceName, "peer", peer.PublicKey}
-		
+
 		if peer.Endpoint != "" {
 			peerArgs = append(peerArgs, "endpoint", peer.Endpoint)
 		}
-		
+
 		if len(peer.AllowedIPs) > 0 {
 			peerArgs = append(peerArgs, "allowed-ips", strings.Join(peer.AllowedIPs, ","))
 		}
-		
+
 		if peer.PersistentKeepalive > 0 {
 			peerArgs = append(peerArgs, "persistent-keepalive", fmt.Sprintf("%d", peer.PersistentKeepalive))
 		}
-		
+
 		if err := exec.Command("wg", peerArgs...).Run(); err != nil {
 			return fmt.Errorf("failed to add peer %s: %w", peer.PublicKey[:16], err)
 		}

@@ -1,3 +1,23 @@
+## 2025-10-01 — Phase 1 (dịch vụ) cập nhật nhanh: Credits, Shadow, HAProxy ✅
+
+- Credits Service (services/credits)
+	- Thêm `init.sql` bật `pgcrypto` để dùng `gen_random_uuid()` trong migrations.
+	- Docker Compose đã mount `init.sql` (đã có sẵn) — đảm bảo khởi tạo extension tự động.
+- Shadow Evaluation (services/shadow)
+	- Thêm `Dockerfile` bản dựng production + healthcheck.
+	- Bổ sung `init.sql` bật `pgcrypto` và map vào `docker-compose.yml` để auto init.
+	- Service giữ API `/shadow/eval`, `/shadow/result`, `/health` như thiết kế.
+- HAProxy (infra/haproxy/haproxy.cfg)
+	- Sửa healthcheck Guardian sang `GET /healthz` (khớp service).
+	- Định tuyến mới cho `/shadow` → backend `shadow_backend` (shadow:5005).
+	- Chuẩn hoá backend Credits dùng hostname dịch vụ (`credits:5004`).
+
+Ghi chú: Không chỉnh sửa “Bản Thiết Kế Hệ Thông.md”. Các thay đổi chỉ ở lớp dịch vụ/hạ tầng theo đúng lộ trình Phase 1.
+
+Files thay đổi: `services/credits/init.sql`, `services/shadow/Dockerfile`, `services/shadow/init.sql`, `services/shadow/docker-compose.yml`, `infra/haproxy/haproxy.cfg`.
+
+by shieldx
+
 ## 2025-10-01 — Bổ sung bảo mật Gateway + hạ tầng dữ liệu, LB, mesh (Phase 1) ✅
 
 - API Gateway
