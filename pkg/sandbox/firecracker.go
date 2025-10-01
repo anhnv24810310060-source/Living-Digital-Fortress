@@ -30,17 +30,17 @@ type ResourceLimits struct {
 }
 
 type SandboxResult struct {
-	ExitCode     int                    `json:"exit_code"`
-	Stdout       string                 `json:"stdout"`
-	Stderr       string                 `json:"stderr"`
-	Syscalls     []SyscallEvent         `json:"syscalls"`
-	NetworkIO    []NetworkEvent         `json:"network_io"`
-	FileAccess   []FileEvent            `json:"file_access"`
-	MemoryDump   []byte                 `json:"memory_dump,omitempty"`
-	Duration     time.Duration          `json:"duration"`
-	Artifacts    map[string][]byte      `json:"artifacts"`
-	ThreatScore  float64                `json:"threat_score"`
-	Fingerprint  string                 `json:"fingerprint"`
+	ExitCode    int               `json:"exit_code"`
+	Stdout      string            `json:"stdout"`
+	Stderr      string            `json:"stderr"`
+	Syscalls    []SyscallEvent    `json:"syscalls"`
+	NetworkIO   []NetworkEvent    `json:"network_io"`
+	FileAccess  []FileEvent       `json:"file_access"`
+	MemoryDump  []byte            `json:"memory_dump,omitempty"`
+	Duration    time.Duration     `json:"duration"`
+	Artifacts   map[string][]byte `json:"artifacts"`
+	ThreatScore float64           `json:"threat_score"`
+	Fingerprint string            `json:"fingerprint"`
 }
 
 type SyscallEvent struct {
@@ -54,14 +54,14 @@ type SyscallEvent struct {
 }
 
 type NetworkEvent struct {
-	Timestamp   int64  `json:"timestamp"`
-	Protocol    string `json:"protocol"`
-	SrcIP       string `json:"src_ip"`
-	DstIP       string `json:"dst_ip"`
-	SrcPort     uint16 `json:"src_port"`
-	DstPort     uint16 `json:"dst_port"`
-	Bytes       int64  `json:"bytes"`
-	Blocked     bool   `json:"blocked"`
+	Timestamp int64  `json:"timestamp"`
+	Protocol  string `json:"protocol"`
+	SrcIP     string `json:"src_ip"`
+	DstIP     string `json:"dst_ip"`
+	SrcPort   uint16 `json:"src_port"`
+	DstPort   uint16 `json:"dst_port"`
+	Bytes     int64  `json:"bytes"`
+	Blocked   bool   `json:"blocked"`
 }
 
 type FileEvent struct {
@@ -84,10 +84,10 @@ func NewFirecrackerRunner(kernelPath, rootfsPath string, limits ResourceLimits) 
 
 func (f *FirecrackerRunner) Run(ctx context.Context, payload string) (*SandboxResult, error) {
 	startTime := time.Now()
-	
+
 	// Create forensics directory
 	os.MkdirAll(f.forensicsPath, 0755)
-	
+
 	// Configure Firecracker
 	cfg := firecracker.Config{
 		SocketPath:      f.socketPath,
@@ -169,7 +169,7 @@ func (f *FirecrackerRunner) executeWithForensics(ctx context.Context, machine *f
 	// For now, simulate execution
 	result.ExitCode = 0
 	result.Stdout = "Payload executed successfully"
-	
+
 	// Collect forensics data
 	result.Syscalls = monitor.GetSyscalls()
 	result.NetworkIO = monitor.GetNetworkEvents()
@@ -180,19 +180,19 @@ func (f *FirecrackerRunner) executeWithForensics(ctx context.Context, machine *f
 
 func (f *FirecrackerRunner) calculateThreatScore(result *SandboxResult) float64 {
 	score := 0.0
-	
+
 	// Dangerous syscalls
 	for _, syscall := range result.Syscalls {
 		if syscall.Dangerous {
 			score += 10.0
 		}
 	}
-	
+
 	// Network activity when denied
 	if f.limits.NetworkDeny && len(result.NetworkIO) > 0 {
 		score += 50.0
 	}
-	
+
 	// File system writes when read-only
 	if f.limits.FilesystemRO {
 		for _, file := range result.FileAccess {
@@ -201,12 +201,12 @@ func (f *FirecrackerRunner) calculateThreatScore(result *SandboxResult) float64 
 			}
 		}
 	}
-	
+
 	// Execution time anomaly
 	if result.Duration > time.Duration(f.limits.TimeoutSec/2)*time.Second {
 		score += 15.0
 	}
-	
+
 	return minFloat(score, 100.0)
 }
 

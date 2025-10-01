@@ -1,0 +1,85 @@
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+      grpc:
+        endpoint: 0.0.0.0:4317
+
+processors:
+  batch:
+    timeout: 10s
+    send_batch_size: 1024
+    send_batch_max_size: 2048
+
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 512
+    spike_limit_mib: 128
+
+  # Add resource attributes
+  resource:
+    attributes:
+      - key: deployment.environment
+        value: production
+        action: insert
+      - key: service.namespace
+        value: living-digital-fortress
+        action: insert
+
+  # Sample traces to reduce volume
+  probabilistic_sampler:
+    sampling_percentage: 10.0
+
+exporters:
+  # Prometheus exporter for metrics
+  prometheus:
+    endpoint: "0.0.0.0:9464"
+    namespace: fortress
+    const_labels:
+      cluster: living-digital-fortress
+
+  # OTLP exporter for traces (to Jaeger/Tempo)
+  otlp/jaeger:
+    endpoint: tempo:4317
+    tls:
+      insecure: true
+
+  # Logging exporter for debugging
+  logging:
+    loglevel: info
+    sampling_initial: 5
+    sampling_thereafter: 200
+
+  # File exporter for backup
+  file:
+    path: /var/log/otel/traces.json
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+  pprof:
+    endpoint: 0.0.0.0:1777
+  zpages:
+    endpoint: 0.0.0.0:55679
+
+service:
+  extensions: [health_check, pprof, zpages]
+  
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, probabilistic_sampler, batch, resource]
+      exporters: [otlp/jaeger, logging, file]
+
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, batch, resource]
+      exporters: [prometheus, logging]
+
+  telemetry:
+    logs:
+      level: info
+    metrics:
+      level: detailed
+      address: 0.0.0.0:8888

@@ -1,10 +1,63 @@
 # ShieldX Cloud Build System
 
 .PHONY: all build test clean firecracker ebpf ml-orchestrator observability prom grafana
-.PHONY: demo-health
+.PHONY: demo-health fmt lint sbom sign release otel-up otel-down slo-check
 
 # Build all components
 all: build-services build-ebpf
+
+# Format code
+fmt:
+	@echo "Formatting Go code..."
+	go fmt ./...
+	@echo "Formatting complete"
+
+# Lint code
+lint:
+	@echo "Linting Go code..."
+	golangci-lint run ./... || echo "Install golangci-lint: https://golangci-lint.run/usage/install/"
+	@echo "Linting complete"
+
+# Run tests
+test:
+	@echo "Running tests..."
+	go test -v -race -coverprofile=coverage.out ./...
+	go tool cover -html=coverage.out -o coverage.html
+	@echo "Tests complete. Coverage report: coverage.html"
+
+# Generate SBOM (Software Bill of Materials)
+sbom:
+	@echo "Generating SBOM..."
+	syft . -o cyclonedx-json > sbom.json || echo "Install syft: https://github.com/anchore/syft"
+	@echo "SBOM generated: sbom.json"
+
+# Sign artifacts (requires cosign)
+sign:
+	@echo "Signing artifacts..."
+	cosign sign-blob --key cosign.key sbom.json || echo "Install cosign: https://docs.sigstore.dev/cosign/installation/"
+	@echo "Artifacts signed"
+
+# OpenTelemetry stack management
+otel-up:
+	@echo "Starting OpenTelemetry observability stack..."
+	cd pilot/observability && docker-compose up -d
+	@echo "Observability stack started"
+	@echo "  - Prometheus: http://localhost:9090"
+	@echo "  - Grafana: http://localhost:3000 (admin/fortress123)"
+	@echo "  - Tempo: http://localhost:3200"
+	@echo "  - OTLP Endpoint: http://localhost:4318"
+
+otel-down:
+	@echo "Stopping OpenTelemetry observability stack..."
+	cd pilot/observability && docker-compose down
+	@echo "Observability stack stopped"
+
+# Check SLO status
+slo-check:
+	@echo "Checking SLO compliance..."
+	@curl -s http://localhost:9090/api/v1/query?query=ingress:slo_availability:rate5m | jq '.data.result[] | {service: "ingress", availability: .value[1]}'
+	@curl -s http://localhost:9090/api/v1/query?query=contauth:slo_error_ratio:rate5m | jq '.data.result[] | {service: "contauth", error_ratio: .value[1]}'
+	@echo "SLO check complete"
 
 # Build Go services
 build-services:

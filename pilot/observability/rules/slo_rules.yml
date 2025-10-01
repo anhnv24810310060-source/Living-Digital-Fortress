@@ -1,0 +1,187 @@
+groups:
+  - name: slo_recording_rules
+    interval: 60s
+    rules:
+      # Ingress SLO - Availability
+      - record: ingress:slo_error_ratio:rate5m
+        expr: |
+          sum(rate(ingress_connect_denied_total[5m]))
+          /
+          sum(rate(ingress_connect_total[5m]))
+
+      - record: ingress:slo_availability:rate5m
+        expr: 1 - ingress:slo_error_ratio:rate5m
+
+      - record: ingress:latency_p95:rate5m
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(ingress_request_duration_seconds_bucket[5m]))
+          )
+
+      - record: ingress:latency_p99:rate5m
+        expr: |
+          histogram_quantile(0.99,
+            sum by (le) (rate(ingress_request_duration_seconds_bucket[5m]))
+          )
+
+      # ShieldX Gateway SLO
+      - record: shieldx_gateway:slo_error_ratio:rate5m
+        expr: |
+          sum(rate(shieldx_gateway_requests_errors[5m]))
+          /
+          sum(rate(shieldx_gateway_requests_total[5m]))
+
+      - record: shieldx_gateway:latency_p95:rate5m
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(shieldx_gateway_latency_seconds_bucket[5m]))
+          )
+
+      - record: shieldx_gateway:latency_p99:rate5m
+        expr: |
+          histogram_quantile(0.99,
+            sum by (le) (rate(shieldx_gateway_latency_seconds_bucket[5m]))
+          )
+
+      # ContAuth SLO
+      - record: contauth:slo_error_ratio:rate5m
+        expr: |
+          sum(rate(contauth_verify_errors[5m]))
+          /
+          sum(rate(contauth_verify_total[5m]))
+
+      - record: contauth:latency_p95:rate5m
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(contauth_verify_duration_seconds_bucket[5m]))
+          )
+
+      - record: contauth:latency_p99:rate5m
+        expr: |
+          histogram_quantile(0.99,
+            sum by (le) (rate(contauth_verify_duration_seconds_bucket[5m]))
+          )
+
+      # Verifier Pool SLO
+      - record: verifier_pool:slo_error_ratio:rate5m
+        expr: |
+          sum(rate(verifier_attestation_failures[5m]))
+          /
+          sum(rate(verifier_attestation_total[5m]))
+
+      - record: verifier_pool:latency_p95:rate5m
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(verifier_attestation_duration_seconds_bucket[5m]))
+          )
+
+      - record: verifier_pool:latency_p99:rate5m
+        expr: |
+          histogram_quantile(0.99,
+            sum by (le) (rate(verifier_attestation_duration_seconds_bucket[5m]))
+          )
+
+      # ML Orchestrator SLO
+      - record: ml_orchestrator:slo_error_ratio:rate5m
+        expr: |
+          sum(rate(ml_orchestrator_inference_errors[5m]))
+          /
+          sum(rate(ml_orchestrator_inference_total[5m]))
+
+      - record: ml_orchestrator:latency_p95:rate5m
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(ml_orchestrator_inference_duration_seconds_bucket[5m]))
+          )
+
+      - record: ml_orchestrator:latency_p99:rate5m
+        expr: |
+          histogram_quantile(0.99,
+            sum by (le) (rate(ml_orchestrator_inference_duration_seconds_bucket[5m]))
+          )
+
+      # Error budget burn rate (fast - 1 hour window)
+      - record: ingress:error_budget_burn_fast
+        expr: |
+          (1 - ingress:slo_availability:rate5m) / (1 - 0.999)
+
+      - record: contauth:error_budget_burn_fast
+        expr: |
+          (1 - (1 - contauth:slo_error_ratio:rate5m)) / (1 - 0.9995)
+
+      # Error budget burn rate (slow - 6 hour window)
+      - record: ingress:error_budget_burn_slow
+        expr: |
+          (1 - (1 - sum(rate(ingress_connect_denied_total[6h])) / sum(rate(ingress_connect_total[6h])))) / (1 - 0.999)
+
+  - name: slo_alerts
+    rules:
+      # Critical: SLO breach
+      - alert: IngressSLOAvailabilityBreach
+        expr: ingress:slo_availability:rate5m < 0.999
+        for: 5m
+        labels:
+          severity: critical
+          service: ingress
+          tier: critical
+        annotations:
+          summary: "Ingress availability below SLO target"
+          description: "Ingress availability is {{ $value | humanizePercentage }}, below 99.9% target"
+
+      - alert: ContAuthSLOLatencyBreach
+        expr: contauth:latency_p95:rate5m > 0.35
+        for: 10m
+        labels:
+          severity: critical
+          service: contauth
+          tier: critical
+        annotations:
+          summary: "ContAuth P95 latency exceeds SLO"
+          description: "ContAuth P95 latency is {{ $value }}s, exceeding 350ms target"
+
+      # Critical: Error budget exhausted
+      - alert: ErrorBudgetExhausted
+        expr: |
+          (
+            ingress:error_budget_burn_fast > 14.4
+            or
+            contauth:error_budget_burn_fast > 14.4
+          )
+        for: 1m
+        labels:
+          severity: critical
+          tier: critical
+        annotations:
+          summary: "Error budget will be exhausted in < 1 hour"
+          description: "Service {{ $labels.service }} error budget burn rate: {{ $value }}"
+
+      # Warning: Error budget low
+      - alert: ErrorBudgetLow
+        expr: |
+          (
+            (1 - ingress:slo_availability:rate5m) / (1 - 0.999) > 0.8
+            or
+            (1 - (1 - contauth:slo_error_ratio:rate5m)) / (1 - 0.9995) > 0.8
+          )
+        for: 5m
+        labels:
+          severity: warning
+          tier: critical
+        annotations:
+          summary: "Error budget below 20%"
+          description: "Service {{ $labels.service }} has consumed > 80% of error budget"
+
+      # Warning: Latency trending high
+      - alert: LatencyP95High
+        expr: |
+          (
+            shieldx_gateway:latency_p95:rate5m > 0.045
+            or
+            verifier_pool:latency_p95:rate5m > 0.18
+          )
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "P95 latency approaching SLO target"
+          description: "{{ $labels.service }} P95 latency {{ $value }}s is > 90% of target"

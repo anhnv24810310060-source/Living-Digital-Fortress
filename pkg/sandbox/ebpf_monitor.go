@@ -25,6 +25,11 @@ type eBPFMonitor struct {
 	networkIO   []NetworkEvent
 	fileAccess  []FileEvent
 	
+	// Enhanced metrics for observability
+	serviceLabel    string  // Service name for tagging
+	sandboxLabel    string  // Sandbox ID for isolation
+	containerLabel  string  // Container ID
+	
 	mu          sync.RWMutex
 	ctx         context.Context
 	cancel      context.CancelFunc

@@ -1,0 +1,65 @@
+global:
+  resolve_timeout: 5m
+  slack_api_url: '${SLACK_WEBHOOK_URL}'
+
+route:
+  group_by: ['alertname', 'service', 'severity']
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 12h
+  receiver: 'default'
+  routes:
+    - match:
+        severity: critical
+      receiver: 'pagerduty-critical'
+      continue: true
+    - match:
+        severity: critical
+      receiver: 'slack-critical'
+    - match:
+        severity: warning
+      receiver: 'slack-warning'
+
+receivers:
+  - name: 'default'
+    slack_configs:
+      - channel: '#fortress-alerts'
+        title: 'Living Digital Fortress Alert'
+        text: '{{ range .Alerts }}{{ .Annotations.summary }}\n{{ .Annotations.description }}\n{{ end }}'
+
+  - name: 'pagerduty-critical'
+    pagerduty_configs:
+      - service_key: '${PAGERDUTY_SERVICE_KEY}'
+        description: '{{ .GroupLabels.alertname }}: {{ .GroupLabels.service }}'
+
+  - name: 'slack-critical'
+    slack_configs:
+      - channel: '#fortress-critical'
+        color: 'danger'
+        title: '🚨 CRITICAL: {{ .GroupLabels.alertname }}'
+        text: |
+          *Service:* {{ .GroupLabels.service }}
+          *Severity:* {{ .GroupLabels.severity }}
+          {{ range .Alerts }}
+          *Summary:* {{ .Annotations.summary }}
+          *Description:* {{ .Annotations.description }}
+          *Value:* {{ .ValueString }}
+          {{ end }}
+
+  - name: 'slack-warning'
+    slack_configs:
+      - channel: '#fortress-alerts'
+        color: 'warning'
+        title: '⚠️ WARNING: {{ .GroupLabels.alertname }}'
+        text: |
+          *Service:* {{ .GroupLabels.service }}
+          {{ range .Alerts }}
+          *Summary:* {{ .Annotations.summary }}
+          {{ end }}
+
+inhibit_rules:
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'service']

@@ -11,14 +11,14 @@ import (
 )
 
 type AnalyzerManifest struct {
-	Name         string            `json:"name"`
-	Version      string            `json:"version"`
-	Author       string            `json:"author"`
-	License      string            `json:"license"`
-	Capabilities CapabilitySet     `json:"capabilities"`
-	Resources    ResourceLimits    `json:"resources"`
-	SBOM         string            `json:"sbom"`
-	Signature    string            `json:"signature"`
+	Name         string         `json:"name"`
+	Version      string         `json:"version"`
+	Author       string         `json:"author"`
+	License      string         `json:"license"`
+	Capabilities CapabilitySet  `json:"capabilities"`
+	Resources    ResourceLimits `json:"resources"`
+	SBOM         string         `json:"sbom"`
+	Signature    string         `json:"signature"`
 }
 
 type CapabilitySet struct {
@@ -83,7 +83,7 @@ func (v *PackageVerifier) VerifySignature(pkg *AnalyzerPackage) bool {
 	// Verify SBOM and signature
 	hash := sha256.Sum256(pkg.WASMBytes)
 	expectedHash := fmt.Sprintf("%x", hash)
-	
+
 	// Simple verification - production would use proper crypto
 	return len(pkg.Manifest.Signature) > 0 && len(expectedHash) > 0
 }
@@ -93,38 +93,38 @@ func (r *AnalyzerRegistry) validateCapabilities(caps CapabilitySet) error {
 	if caps.NetworkEgress {
 		return fmt.Errorf("network egress not allowed")
 	}
-	
+
 	if caps.FilesystemWrite {
 		return fmt.Errorf("filesystem write not allowed")
 	}
-	
+
 	if caps.MemoryMB > 64 {
 		return fmt.Errorf("memory limit too high")
 	}
-	
+
 	if caps.CPUTimeMS > 5000 {
 		return fmt.Errorf("CPU time limit too high")
 	}
-	
+
 	return nil
 }
 
 func (r *AnalyzerRegistry) testAnalyzer(pkg *AnalyzerPackage) error {
 	// Create test runner with strict limits
 	runner := NewWASMRunner(pkg.WASMBytes, "analyze", 1*time.Second)
-	
+
 	// Test with benign payload
 	ctx := context.Background()
 	result, err := runner.Run(ctx, "test payload")
 	if err != nil {
 		return err
 	}
-	
+
 	// Verify result is valid JSON
 	var output map[string]interface{}
 	if err := json.Unmarshal([]byte(result), &output); err != nil {
 		return fmt.Errorf("invalid output format")
 	}
-	
+
 	return nil
 }
