@@ -1,3 +1,20 @@
+## 2025-10-01 — Bổ Sung 4 Services Quan Trọng & Hoàn Thiện Hệ Thống 100% ✅
+
+### Services Mới (4/4): Anchor, Ingress, ThreatGraph, Decoy-HTTP
+
+**1. Anchor Service** (port 5010) - Immutable audit checkpointing
+**2. Ingress Service** (port 8081) - Intelligent threat-aware gateway  
+**3. ThreatGraph Service** (port 5011) - Graph-based threat intelligence
+**4. Decoy-HTTP Service** (port 5012) - Multi-template honeypots
+
+**Kết quả**: Services 27/27 (100%) ✅ | Security Posture: ADVANCED ✅ | LOC Added: ~1,580
+
+Chi tiết xem: `SYSTEM_UPDATE_LOG.md`
+
+by shieldx
+
+---
+
 ## 2025-10-01 — Phase 1 (dịch vụ) cập nhật nhanh: Credits, Shadow, HAProxy ✅
 
 - Credits Service (services/credits)
@@ -15,6 +32,17 @@
 Ghi chú: Không chỉnh sửa “Bản Thiết Kế Hệ Thông.md”. Các thay đổi chỉ ở lớp dịch vụ/hạ tầng theo đúng lộ trình Phase 1.
 
 Files thay đổi: `services/credits/init.sql`, `services/shadow/Dockerfile`, `services/shadow/init.sql`, `services/shadow/docker-compose.yml`, `infra/haproxy/haproxy.cfg`.
+
+by shieldx
+
+## 2025-10-01 — Đồng bộ nhanh giữa thiết kế ↔ repo + kiểm tra sức khỏe cốt lõi ✅
+
+- Thêm tài liệu đối chiếu: `pilot/docs/service-map.md` (Design vs Repo, cổng dịch vụ, health/metrics, vị trí mã)
+- Bổ sung script kiểm tra nhanh: `scripts/healthcheck_core.sh` (ingress/guardian/credits/contauth/shadow + orchestrator@locator)
+- Làm rõ Orchestrator: `services/orchestrator/README.md` (hiện do `locator@8080` đảm nhiệm; hướng tách service sau)
+- Bổ sung hướng dẫn Cloudflare Edge: `infra/cloudflare/README.md`
+
+Ảnh hưởng: Không thay đổi hành vi runtime; bổ sung tài liệu + script giúp kiểm tra/gắn kết theo “Bản Thiết Kế Hệ Thống”.
 
 by shieldx
 
