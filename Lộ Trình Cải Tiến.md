@@ -3,7 +3,12 @@ anhnv24810310060-source: hãy kiểm tra toàn bộ hệ thống so với bản 
 Workspace: Collecting workspace information# Phân Tích Khoảng Cách So Với Bản Thiết Kế
 
 ## 🔴 THIẾU/YẾU NGHIÊM TRỌNG (Priority P0)
-
+1. Security - Authentication & Authorization
+❌ JWT/API Key validation chưa có implementation thật
+❌ RBAC engine chưa có, chỉ có middleware skeleton
+❌ Session management thiếu
+❌ Token refresh mechanism thiếu
+🔧 Cần: Full OAuth2/OIDC flow, policy-based RBAC với OPA
  
 
 ### 2. **Whisper Channel Protocol (WCH)**
@@ -11,7 +16,7 @@ Workspace: Collecting workspace information# Phân Tích Khoảng Cách So Với
 - ❌ Camouflage/JA3 rotation chỉ có docs, không có code
 - ❌ Rate limiting chỉ có memory-based đơn giản
 - 🔧 **Cần**: Production-grade QUIC server, distributed rate limiter (Redis)
-
+ 
 ### 3. **Database Layer**
 - ❌ PostgreSQL connection pooling chưa tối ưu
 - ❌ Migration system thiếu (đang dùng init.sql thủ công)
