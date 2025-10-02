@@ -72,10 +72,10 @@ func RegisterWithOTel(reg *Registry, serviceName string) error {
 	meter := otel.Meter(serviceName)
 
 	// Register counters
-	for name, counter := range reg.counters {
-		otelCounter, err := meter.Int64Counter(name)
+	for _, counter := range reg.counters {
+		otelCounter, err := meter.Int64Counter(counter.name)
 		if err != nil {
-			return fmt.Errorf("failed to create counter %s: %w", name, err)
+			return fmt.Errorf("failed to create counter %s: %w", counter.name, err)
 		}
 
 		// Create a goroutine to periodically sync
@@ -96,23 +96,7 @@ func RegisterWithOTel(reg *Registry, serviceName string) error {
 // MetricsHandler returns an HTTP handler for Prometheus-compatible metrics
 func (r *Registry) MetricsHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
-		r.mu.RLock()
-		defer r.mu.RUnlock()
-
-		// Expose counters
-		for _, c := range r.counters {
-			c.Expose(w)
-		}
-
-		// Expose gauges
-		for _, g := range r.gauges {
-			g.Expose(w)
-		}
-
-		// Expose histograms
-		for _, h := range r.histograms {
-			h.Expose(w)
-		}
+		// Delegate to existing ServeHTTP which already exposes all metrics
+		r.ServeHTTP(w, req)
 	})
 }

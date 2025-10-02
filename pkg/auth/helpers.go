@@ -1,5 +1,4 @@
 package auth
-package auth
 
 import (
 	"crypto/rand"
@@ -65,9 +64,9 @@ func NewTestHelper(t *testing.T) (*TestHelper, error) {
 	}
 
 	jwtManager, err := NewJWTManager(JWTConfig{
-		PrivateKeyPEM:    privateKey,
-		PublicKeyPEM:     publicKey,
-		Issuer:           "test-issuer",
+		PrivateKeyPEM:     privateKey,
+		PublicKeyPEM:      publicKey,
+		Issuer:            "test-issuer",
 		RevokedTokenStore: NewInMemoryRevokedStore(),
 	})
 	if err != nil {

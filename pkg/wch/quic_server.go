@@ -1,11 +1,11 @@
 package wch
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"sync"
@@ -17,52 +17,51 @@ import (
 
 // QUICServer represents a production-grade QUIC server for WCH
 type QUICServer struct {
-	addr           string
-	tlsConfig      *tls.Config
-	quicConfig     *quic.Config
-	server         *http3.Server
-	handler        http.Handler
-	sessions       *SessionManager
-	rateLimiter    RateLimiter
-	camouflage     *CamouflageEngine
-	metrics        *QUICMetrics
-	mu             sync.RWMutex
-	shutdown       chan struct{}
+	addr        string
+	tlsConfig   *tls.Config
+	quicConfig  *quic.Config
+	server      *http3.Server
+	handler     http.Handler
+	sessions    *SessionManager
+	rateLimiter RateLimiter
+	camouflage  *CamouflageEngine
+	metrics     *QUICMetrics
+	mu          sync.RWMutex
+	shutdown    chan struct{}
 }
 
 // QUICConfig configuration for QUIC server
 type QUICConfig struct {
-	Addr                string
-	TLSConfig           *tls.Config
-	MaxIdleTimeout      time.Duration
-	MaxIncomingStreams  int64
-	MaxIncomingUniStreams int64
-	EnableDatagrams     bool
-	MaxStreamReceiveWindow uint64
+	Addr                       string
+	TLSConfig                  *tls.Config
+	MaxIdleTimeout             time.Duration
+	MaxIncomingStreams         int64
+	MaxIncomingUniStreams      int64
+	EnableDatagrams            bool
+	MaxStreamReceiveWindow     uint64
 	MaxConnectionReceiveWindow uint64
-	KeepAlivePeriod     time.Duration
-	HandshakeIdleTimeout time.Duration
-	MaxTokenAge         time.Duration
-	RateLimiter         RateLimiter
-	SessionManager      *SessionManager
-	CamouflageEngine    *CamouflageEngine
+	KeepAlivePeriod            time.Duration
+	HandshakeIdleTimeout       time.Duration
+	RateLimiter                RateLimiter
+	SessionManager             *SessionManager
+	CamouflageEngine           *CamouflageEngine
 }
 
 // QUICMetrics tracks QUIC server metrics
 type QUICMetrics struct {
-	mu                  sync.RWMutex
-	ConnectionsTotal    int64
-	ConnectionsActive   int64
-	StreamsTotal        int64
-	StreamsActive       int64
-	BytesSent           int64
-	BytesReceived       int64
-	PacketsLost         int64
-	RTTHistogram        map[string]int64
-	HandshakeFailures   int64
-	HandshakeSuccesses  int64
-	DatagramsReceived   int64
-	DatagramsSent       int64
+	mu                 sync.RWMutex
+	ConnectionsTotal   int64
+	ConnectionsActive  int64
+	StreamsTotal       int64
+	StreamsActive      int64
+	BytesSent          int64
+	BytesReceived      int64
+	PacketsLost        int64
+	RTTHistogram       map[string]int64
+	HandshakeFailures  int64
+	HandshakeSuccesses int64
+	DatagramsReceived  int64
+	DatagramsSent      int64
 }
 
 // NewQUICServer creates a new production-grade QUIC server
@@ -73,13 +72,12 @@ func NewQUICServer(config QUICConfig) (*QUICServer, error) {
 
 	// Configure QUIC parameters for production
 	quicConfig := &quic.Config{
-		MaxIdleTimeout:      config.MaxIdleTimeout,
-		MaxIncomingStreams:  config.MaxIncomingStreams,
+		MaxIdleTimeout:        config.MaxIdleTimeout,
+		MaxIncomingStreams:    config.MaxIncomingStreams,
 		MaxIncomingUniStreams: config.MaxIncomingUniStreams,
-		EnableDatagrams:     config.EnableDatagrams,
-		KeepAlivePeriod:     config.KeepAlivePeriod,
-		HandshakeIdleTimeout: config.HandshakeIdleTimeout,
-		MaxTokenAge:         config.MaxTokenAge,
+		EnableDatagrams:       config.EnableDatagrams,
+		KeepAlivePeriod:       config.KeepAlivePeriod,
+		HandshakeIdleTimeout:  config.HandshakeIdleTimeout,
 	}
 
 	// Set defaults
@@ -98,9 +96,7 @@ func NewQUICServer(config QUICConfig) (*QUICServer, error) {
 	if quicConfig.HandshakeIdleTimeout == 0 {
 		quicConfig.HandshakeIdleTimeout = 10 * time.Second
 	}
-	if quicConfig.MaxTokenAge == 0 {
-		quicConfig.MaxTokenAge = 24 * time.Hour
-	}
+	// no MaxTokenAge in current quic-go; rely on defaults
 
 	// Configure TLS for QUIC
 	if config.TLSConfig == nil {
@@ -159,8 +155,8 @@ func (s *QUICServer) Start(ctx context.Context) error {
 	}
 
 	log.Printf("🚀 QUIC/HTTP3 server starting on %s", s.addr)
-	log.Printf("📊 Max streams: %d | Idle timeout: %v", 
-		s.quicConfig.MaxIncomingStreams, 
+	log.Printf("📊 Max streams: %d | Idle timeout: %v",
+		s.quicConfig.MaxIncomingStreams,
 		s.quicConfig.MaxIdleTimeout,
 	)
 
@@ -296,8 +292,8 @@ func (s *QUICServer) GetMetrics() *QUICMetrics {
 // metricsResponseWriter wraps http.ResponseWriter to track bytes
 type metricsResponseWriter struct {
 	http.ResponseWriter
-	metrics     *QUICMetrics
-	written     int64
+	metrics *QUICMetrics
+	written int64
 }
 
 func (w *metricsResponseWriter) Write(b []byte) (int, error) {
@@ -330,8 +326,8 @@ func CreateTLSConfig(certFile, keyFile string) (*tls.Config, error) {
 
 // QUICClient represents a QUIC client for WCH
 type QUICClient struct {
-	tlsConfig  *tls.Config
-	quicConfig *quic.Config
+	tlsConfig    *tls.Config
+	quicConfig   *quic.Config
 	roundTripper *http3.RoundTripper
 }
 
@@ -345,7 +341,7 @@ func NewQUICClient(tlsConfig *tls.Config) *QUICClient {
 	}
 
 	quicConfig := &quic.Config{
-		MaxIdleTimeout: 30 * time.Second,
+		MaxIdleTimeout:  30 * time.Second,
 		KeepAlivePeriod: 10 * time.Second,
 	}
 
@@ -376,12 +372,12 @@ func (c *QUICClient) SendEnvelope(ctx context.Context, url string, envelope *Env
 		return nil, fmt.Errorf("failed to marshal envelope: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(data))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Body = io.NopCloser(nil) // Set body from data
+	// body already set by NewRequestWithContext
 
 	resp, err := c.Do(req)
 	if err != nil {

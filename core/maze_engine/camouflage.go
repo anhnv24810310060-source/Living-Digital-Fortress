@@ -1,11 +1,12 @@
 package maze_engine
 
 import (
-	"crypto/rand"
+	crand "crypto/rand"
 	"encoding/json"
 	"fmt"
 	"io/fs"
 	"math"
+	"math/rand"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -28,7 +29,7 @@ type CamouflageEngine struct {
 type Template struct {
 	Name                    string                 `json:"name"`
 	Version                 string                 `json:"version"`
-	FingerprintID          string                 `json:"fingerprint_id"`
+	FingerprintID           string                 `json:"fingerprint_id"`
 	Headers                 map[string]string      `json:"headers"`
 	ErrorPages              map[string]ErrorPage   `json:"error_pages"`
 	BehavioralPatterns      BehavioralPatterns     `json:"behavioral_patterns"`
@@ -89,11 +90,11 @@ type Session struct {
 }
 
 type CamouflageMetrics struct {
-	TemplateRequests   *metrics.Counter
-	SessionsActive     *metrics.Gauge
-	EngagementRate     *metrics.Counter
-	FingerprintMisses  *metrics.Counter
-	ResponseLatency    *metrics.Histogram
+	TemplateRequests  *metrics.Counter
+	SessionsActive    *metrics.Gauge
+	EngagementRate    *metrics.Counter
+	FingerprintMisses *metrics.Counter
+	ResponseLatency   *metrics.Histogram
 }
 
 func NewCamouflageEngine(templatePath string) (*CamouflageEngine, error) {
@@ -120,7 +121,7 @@ func initMetrics() *CamouflageMetrics {
 		SessionsActive:    metrics.NewGauge("camouflage_sessions_active", "Active camouflage sessions"),
 		EngagementRate:    metrics.NewCounter("camouflage_engagement_total", "Total reconnaissance engagements"),
 		FingerprintMisses: metrics.NewCounter("camouflage_fingerprint_misses_total", "Fingerprint detection misses"),
-		ResponseLatency:   metrics.NewHistogram("camouflage_response_duration_seconds", "Response latency"),
+		ResponseLatency:   metrics.NewHistogram("camouflage_response_duration_seconds", "Response latency", nil),
 	}
 }
 
@@ -200,14 +201,18 @@ func (ce *CamouflageEngine) CreateSession(templateName, clientIP, userAgent stri
 	ce.sessions[sessionID] = session
 	ce.mu.Unlock()
 
-	ce.metrics.SessionsActive.Inc()
+	// Update active sessions gauge by counting sessions
+	ce.mu.RLock()
+	active := len(ce.sessions)
+	ce.mu.RUnlock()
+	ce.metrics.SessionsActive.Set(uint64(active))
 
 	// Audit log
 	_ = ledger.AppendJSONLine("data/ledger-camouflage.log", "camouflage", "session_created", map[string]any{
-		"session_id":    sessionID,
-		"template":      templateName,
-		"client_ip":     clientIP,
-		"fingerprint":   fingerprint,
+		"session_id":  sessionID,
+		"template":    templateName,
+		"client_ip":   clientIP,
+		"fingerprint": fingerprint,
 	})
 
 	return session, nil
@@ -245,20 +250,20 @@ func (ce *CamouflageEngine) ApplyTemplate(w http.ResponseWriter, r *http.Request
 
 	// Handle specific paths
 	statusCode, body := ce.handleRequest(r, template)
-	
+
 	w.WriteHeader(statusCode)
 	w.Write([]byte(ce.interpolateVariables(body, r, session)))
 
 	// Log engagement
 	ce.metrics.EngagementRate.Inc()
-	
+
 	_ = ledger.AppendJSONLine("data/ledger-camouflage.log", "camouflage", "request_handled", map[string]any{
-		"session_id":   session.ID,
-		"path":         r.URL.Path,
-		"method":       r.Method,
-		"status_code":  statusCode,
-		"user_agent":   r.UserAgent(),
-		"client_ip":    session.ClientIP,
+		"session_id":  session.ID,
+		"path":        r.URL.Path,
+		"method":      r.Method,
+		"status_code": statusCode,
+		"user_agent":  r.UserAgent(),
+		"client_ip":   session.ClientIP,
 	})
 }
 
@@ -289,8 +294,8 @@ func (ce *CamouflageEngine) handleRequest(r *http.Request, template *Template) (
 }
 
 func (ce *CamouflageEngine) isVulnerabilityProbe(path string, template *Template) bool {
-	vulnSim, exists := template.VulnerabilitySimulation
-	if !exists {
+	vulnSim := template.VulnerabilitySimulation
+	if vulnSim == nil {
 		return false
 	}
 
@@ -435,23 +440,26 @@ func (ce *CamouflageEngine) sessionCleanup() {
 		for id, session := range ce.sessions {
 			if now.Sub(session.LastActivity) > 30*time.Minute {
 				delete(ce.sessions, id)
-				ce.metrics.SessionsActive.Dec()
 			}
 		}
+		// refresh gauge after cleanup
+		active := len(ce.sessions)
+		ce.metrics.SessionsActive.Set(uint64(active))
 		ce.mu.Unlock()
 	}
 }
 
 func generateSessionID() string {
 	bytes := make([]byte, 16)
-	rand.Read(bytes)
+	crand.Read(bytes)
 	return fmt.Sprintf("%x", bytes)
 }
 
 func generateFingerprint(clientIP, userAgent string) string {
 	data := fmt.Sprintf("%s:%s:%d", clientIP, userAgent, time.Now().Unix())
 	bytes := make([]byte, 8)
-	rand.Read(bytes)
+	_ = data // currently unused; may be used for hashing in future
+	crand.Read(bytes)
 	return fmt.Sprintf("%x", bytes)
 }
 

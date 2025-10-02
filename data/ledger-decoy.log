@@ -1,0 +1,2 @@
+{"ts":"2025-10-02T15:32:22.602907737Z","service":"decoy-manager","type":"spawn","data":{"addr":"127.0.0.1:8082","decoyId":"dcy_1759419142602899842","kind":"http","tenant":"t1","tmpl":"local_decoy_http"}}
+{"ts":"2025-10-02T15:32:35.275564885Z","service":"decoy-manager","type":"analyze","data":{"decoyId":"dcy_1","event":"probe"}}

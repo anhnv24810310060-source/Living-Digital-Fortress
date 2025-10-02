@@ -1,5 +1,4 @@
 package wch
-package wch
 
 import (
 	"context"
@@ -112,7 +111,7 @@ func (ce *CamouflageEngine) GetCurrentProfile() TLSProfile {
 func (ce *CamouflageEngine) RotateProfile() {
 	ce.mu.Lock()
 	defer ce.mu.Unlock()
-	
+
 	ce.currentProfile = (ce.currentProfile + 1) % len(ce.profiles)
 	ce.lastRotation = time.Now()
 }
@@ -130,7 +129,7 @@ func (ce *CamouflageEngine) rotateLoop() {
 // GetTLSConfig returns a TLS config for the current profile
 func (ce *CamouflageEngine) GetTLSConfig() *tls.Config {
 	profile := ce.GetCurrentProfile()
-	
+
 	return &tls.Config{
 		CipherSuites:       profile.CipherSuites,
 		CurvePreferences:   profile.Curves,
@@ -161,7 +160,7 @@ func (jr *JA3Rotator) GetFingerprint() JA3Fingerprint {
 func (jr *JA3Rotator) Rotate() {
 	jr.mu.Lock()
 	defer jr.mu.Unlock()
-	
+
 	jr.requestCount++
 	if jr.requestCount >= jr.rotateEvery {
 		jr.current = (jr.current + 1) % len(jr.fingerprints)
@@ -190,11 +189,11 @@ func getDefaultProfiles() []TLSProfile {
 			},
 			UserAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
 			Headers: map[string]string{
-				"Accept":          "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-				"Accept-Language": "en-US,en;q=0.9",
-				"Accept-Encoding": "gzip, deflate, br",
-				"DNT":             "1",
-				"Connection":      "keep-alive",
+				"Accept":                    "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+				"Accept-Language":           "en-US,en;q=0.9",
+				"Accept-Encoding":           "gzip, deflate, br",
+				"DNT":                       "1",
+				"Connection":                "keep-alive",
 				"Upgrade-Insecure-Requests": "1",
 			},
 		},
@@ -215,11 +214,11 @@ func getDefaultProfiles() []TLSProfile {
 			},
 			UserAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
 			Headers: map[string]string{
-				"Accept":          "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-				"Accept-Language": "en-US,en;q=0.5",
-				"Accept-Encoding": "gzip, deflate, br",
-				"DNT":             "1",
-				"Connection":      "keep-alive",
+				"Accept":                    "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+				"Accept-Language":           "en-US,en;q=0.5",
+				"Accept-Encoding":           "gzip, deflate, br",
+				"DNT":                       "1",
+				"Connection":                "keep-alive",
 				"Upgrade-Insecure-Requests": "1",
 			},
 		},
@@ -367,7 +366,7 @@ func TimingObfuscation(ctx context.Context, minDelay, maxDelay time.Duration) {
 	}
 
 	delay := minDelay + time.Duration(rand.Int63n(int64(maxDelay-minDelay)))
-	
+
 	select {
 	case <-ctx.Done():
 		return

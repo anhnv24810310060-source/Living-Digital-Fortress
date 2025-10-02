@@ -1,8 +1,6 @@
 package ml
 
 import (
-	"crypto/sha256"
-	"encoding/binary"
 	"math"
 	"net"
 	"time"
@@ -14,28 +12,28 @@ type FeatureExtractor struct {
 }
 
 type NetworkFlow struct {
-	Timestamp    time.Time
-	SrcIP        net.IP
-	DstIP        net.IP
-	SrcPort      uint16
-	DstPort      uint16
-	Protocol     string
-	PacketSize   int
-	TCPFlags     uint8
-	PayloadSize  int
-	PayloadHash  [32]byte
+	Timestamp   time.Time
+	SrcIP       net.IP
+	DstIP       net.IP
+	SrcPort     uint16
+	DstPort     uint16
+	Protocol    string
+	PacketSize  int
+	TCPFlags    uint8
+	PayloadSize int
+	PayloadHash [32]byte
 }
 
 type ConnectionMetrics struct {
-	Duration         time.Duration
-	PacketCount      int
-	ByteCount        int64
-	PacketSizes      []int
+	Duration          time.Duration
+	PacketCount       int
+	ByteCount         int64
+	PacketSizes       []int
 	InterArrivalTimes []time.Duration
-	TCPFlags         []uint8
-	PayloadEntropy   float64
-	PortDiversity    int
-	IPDiversity      int
+	TCPFlags          []uint8
+	PayloadEntropy    float64
+	PortDiversity     int
+	IPDiversity       int
 }
 
 func NewFeatureExtractor(windowSize time.Duration) *FeatureExtractor {
@@ -47,7 +45,7 @@ func NewFeatureExtractor(windowSize time.Duration) *FeatureExtractor {
 
 func (fe *FeatureExtractor) AddFlow(flow NetworkFlow) {
 	fe.buffer = append(fe.buffer, flow)
-	
+
 	// Clean old flows outside window
 	cutoff := time.Now().Add(-fe.windowSize)
 	for i, f := range fe.buffer {
@@ -74,7 +72,7 @@ func (fe *FeatureExtractor) ExtractFeatures() []float64 {
 	// Connection duration and rates
 	features[3] = metrics.Duration.Seconds()
 	if metrics.Duration.Seconds() > 0 {
-		features[4] = float64(metrics.ByteCount) / metrics.Duration.Seconds()    // bytes/sec
+		features[4] = float64(metrics.ByteCount) / metrics.Duration.Seconds()   // bytes/sec
 		features[5] = float64(metrics.PacketCount) / metrics.Duration.Seconds() // packets/sec
 	}
 
@@ -120,14 +118,14 @@ func (fe *FeatureExtractor) calculateMetrics() ConnectionMetrics {
 	dstPorts := make(map[uint16]bool)
 	srcIPs := make(map[string]bool)
 	dstIPs := make(map[string]bool)
-	
+
 	var payloadEntropy float64
 	var entropyCount int
 
 	for i, flow := range fe.buffer {
 		metrics.PacketSizes = append(metrics.PacketSizes, flow.PacketSize)
 		totalBytes += int64(flow.PacketSize)
-		
+
 		if flow.Protocol == "tcp" {
 			metrics.TCPFlags = append(metrics.TCPFlags, flow.TCPFlags)
 		}
@@ -157,7 +155,7 @@ func (fe *FeatureExtractor) calculateMetrics() ConnectionMetrics {
 	metrics.Duration = fe.buffer[len(fe.buffer)-1].Timestamp.Sub(fe.buffer[0].Timestamp)
 	metrics.PortDiversity = len(srcPorts) + len(dstPorts)
 	metrics.IPDiversity = len(srcIPs) + len(dstIPs)
-	
+
 	if entropyCount > 0 {
 		metrics.PayloadEntropy = payloadEntropy / float64(entropyCount)
 	}
@@ -169,7 +167,7 @@ func (fe *FeatureExtractor) calculateMean(values []int) float64 {
 	if len(values) == 0 {
 		return 0
 	}
-	
+
 	sum := 0
 	for _, v := range values {
 		sum += v
@@ -181,15 +179,15 @@ func (fe *FeatureExtractor) calculateStd(values []int) float64 {
 	if len(values) <= 1 {
 		return 0
 	}
-	
+
 	mean := fe.calculateMean(values)
 	sumSquares := 0.0
-	
+
 	for _, v := range values {
 		diff := float64(v) - mean
 		sumSquares += diff * diff
 	}
-	
+
 	return math.Sqrt(sumSquares / float64(len(values)-1))
 }
 
@@ -197,7 +195,7 @@ func (fe *FeatureExtractor) calculateMeanDuration(durations []time.Duration) flo
 	if len(durations) == 0 {
 		return 0
 	}
-	
+
 	sum := time.Duration(0)
 	for _, d := range durations {
 		sum += d
@@ -209,15 +207,15 @@ func (fe *FeatureExtractor) calculateStdDuration(durations []time.Duration) floa
 	if len(durations) <= 1 {
 		return 0
 	}
-	
+
 	mean := fe.calculateMeanDuration(durations)
 	sumSquares := 0.0
-	
+
 	for _, d := range durations {
 		diff := float64(d)/float64(time.Millisecond) - mean
 		sumSquares += diff * diff
 	}
-	
+
 	return math.Sqrt(sumSquares / float64(len(durations)-1))
 }
 
@@ -225,24 +223,24 @@ func (fe *FeatureExtractor) calculateTCPFlagsEntropy(flags []uint8) float64 {
 	if len(flags) == 0 {
 		return 0
 	}
-	
+
 	// Count frequency of each flag combination
 	flagCounts := make(map[uint8]int)
 	for _, flag := range flags {
 		flagCounts[flag]++
 	}
-	
+
 	// Calculate Shannon entropy
 	entropy := 0.0
 	total := float64(len(flags))
-	
+
 	for _, count := range flagCounts {
 		if count > 0 {
 			p := float64(count) / total
 			entropy -= p * math.Log2(p)
 		}
 	}
-	
+
 	return entropy
 }
 
@@ -250,24 +248,24 @@ func (fe *FeatureExtractor) calculateShannonEntropy(data []byte) float64 {
 	if len(data) == 0 {
 		return 0
 	}
-	
+
 	// Count byte frequencies
 	freq := make(map[byte]int)
 	for _, b := range data {
 		freq[b]++
 	}
-	
+
 	// Calculate entropy
 	entropy := 0.0
 	total := float64(len(data))
-	
+
 	for _, count := range freq {
 		if count > 0 {
 			p := float64(count) / total
 			entropy -= p * math.Log2(p)
 		}
 	}
-	
+
 	return entropy
 }
 
@@ -306,22 +304,22 @@ func (fe *FeatureExtractor) getProcessSpawns() float64 {
 // Advanced feature extraction for specific attack patterns
 func (fe *FeatureExtractor) ExtractAdvancedFeatures() map[string]float64 {
 	features := make(map[string]float64)
-	
+
 	// Port scan detection
 	features["port_scan_score"] = fe.detectPortScan()
-	
+
 	// DDoS patterns
 	features["ddos_score"] = fe.detectDDoSPattern()
-	
+
 	// Tunneling behavior
 	features["tunnel_score"] = fe.detectTunneling()
-	
+
 	// Covert channel detection
 	features["covert_channel_score"] = fe.detectCovertChannel()
-	
+
 	// Timing attack patterns
 	features["timing_attack_score"] = fe.detectTimingAttack()
-	
+
 	return features
 }
 
@@ -329,15 +327,15 @@ func (fe *FeatureExtractor) detectPortScan() float64 {
 	if len(fe.buffer) < 10 {
 		return 0.0
 	}
-	
+
 	// Count unique destination ports per source IP
 	srcToPortCount := make(map[string]int)
-	
+
 	for _, flow := range fe.buffer {
 		srcIP := flow.SrcIP.String()
 		srcToPortCount[srcIP]++
 	}
-	
+
 	// High port diversity from single source indicates scanning
 	maxPorts := 0
 	for _, count := range srcToPortCount {
@@ -345,7 +343,7 @@ func (fe *FeatureExtractor) detectPortScan() float64 {
 			maxPorts = count
 		}
 	}
-	
+
 	// Normalize to 0-1 scale
 	return math.Min(float64(maxPorts)/100.0, 1.0)
 }
@@ -354,20 +352,20 @@ func (fe *FeatureExtractor) detectDDoSPattern() float64 {
 	if len(fe.buffer) < 50 {
 		return 0.0
 	}
-	
+
 	// High packet rate with low diversity indicates DDoS
 	timeWindow := 10 * time.Second
 	now := time.Now()
-	
+
 	recentCount := 0
 	for _, flow := range fe.buffer {
 		if now.Sub(flow.Timestamp) <= timeWindow {
 			recentCount++
 		}
 	}
-	
+
 	packetsPerSecond := float64(recentCount) / timeWindow.Seconds()
-	
+
 	// Normalize: >1000 pps = high DDoS score
 	return math.Min(packetsPerSecond/1000.0, 1.0)
 }
@@ -377,7 +375,7 @@ func (fe *FeatureExtractor) detectTunneling() float64 {
 	if len(fe.buffer) < 20 {
 		return 0.0
 	}
-	
+
 	// Check for DNS traffic with unusual patterns
 	dnsFlows := 0
 	for _, flow := range fe.buffer {
@@ -385,11 +383,11 @@ func (fe *FeatureExtractor) detectTunneling() float64 {
 			dnsFlows++
 		}
 	}
-	
+
 	if dnsFlows == 0 {
 		return 0.0
 	}
-	
+
 	// High DNS traffic ratio indicates potential tunneling
 	dnsRatio := float64(dnsFlows) / float64(len(fe.buffer))
 	return math.Min(dnsRatio*2.0, 1.0)
@@ -400,32 +398,32 @@ func (fe *FeatureExtractor) detectCovertChannel() float64 {
 	if len(fe.buffer) < 30 {
 		return 0.0
 	}
-	
+
 	// Calculate timing regularity
 	intervals := make([]float64, 0, len(fe.buffer)-1)
 	for i := 1; i < len(fe.buffer); i++ {
 		interval := fe.buffer[i].Timestamp.Sub(fe.buffer[i-1].Timestamp)
 		intervals = append(intervals, interval.Seconds())
 	}
-	
+
 	// Low variance in timing indicates potential covert channel
 	if len(intervals) == 0 {
 		return 0.0
 	}
-	
+
 	mean := 0.0
 	for _, interval := range intervals {
 		mean += interval
 	}
 	mean /= float64(len(intervals))
-	
+
 	variance := 0.0
 	for _, interval := range intervals {
 		diff := interval - mean
 		variance += diff * diff
 	}
 	variance /= float64(len(intervals))
-	
+
 	// Low variance = high covert channel score
 	if variance < 0.001 {
 		return 1.0
@@ -438,7 +436,7 @@ func (fe *FeatureExtractor) detectTimingAttack() float64 {
 	if len(fe.buffer) < 100 {
 		return 0.0
 	}
-	
+
 	// Look for very precise timing patterns
 	preciseTimings := 0
 	for i := 1; i < len(fe.buffer); i++ {
@@ -448,7 +446,7 @@ func (fe *FeatureExtractor) detectTimingAttack() float64 {
 			preciseTimings++
 		}
 	}
-	
+
 	precisionRatio := float64(preciseTimings) / float64(len(fe.buffer)-1)
 	return math.Min(precisionRatio*10.0, 1.0)
 }

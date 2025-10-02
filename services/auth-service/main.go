@@ -1,4 +1,3 @@
-package authservice
 package main
 
 import (

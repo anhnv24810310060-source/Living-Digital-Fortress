@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shadow-service
+  namespace: shieldx-system
+  labels:
+    app: shadow
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: shadow
+  template:
+    metadata:
+      labels:
+        app: shadow
+    spec:
+      containers:
+        - name: shadow
+          image: ghcr.io/shieldx/shadow-service:latest
+          ports:
+            - containerPort: 5005
+          env:
+            - name: PORT
+              value: "5005"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: shadow-db
+                  key: url
+            - name: SHADOW_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: shadow-api
+                  key: token
+            - name: HTTP_PATH_MODE
+              value: "strict"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5005
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5005
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: shadow-service
+  namespace: shieldx-system
+spec:
+  selector:
+    app: shadow
+  ports:
+    - name: http
+      port: 5005
+      targetPort: 5005
+  type: ClusterIP

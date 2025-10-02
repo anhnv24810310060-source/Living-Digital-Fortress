@@ -1,5 +1,4 @@
 package auth
-package auth
 
 import (
 	"context"
@@ -15,30 +14,30 @@ import (
 )
 
 var (
-	ErrInvalidToken      = errors.New("invalid token")
-	ErrExpiredToken      = errors.New("token has expired")
-	ErrInvalidSignature  = errors.New("invalid token signature")
-	ErrInvalidClaims     = errors.New("invalid token claims")
-	ErrTokenRevoked      = errors.New("token has been revoked")
+	ErrInvalidToken     = errors.New("invalid token")
+	ErrExpiredToken     = errors.New("token has expired")
+	ErrInvalidSignature = errors.New("invalid token signature")
+	ErrInvalidClaims    = errors.New("invalid token claims")
+	ErrTokenRevoked     = errors.New("token has been revoked")
 )
 
 // JWTManager handles JWT token creation, validation, and refresh
 type JWTManager struct {
-	privateKey       *rsa.PrivateKey
-	publicKey        *rsa.PublicKey
-	accessTokenTTL   time.Duration
-	refreshTokenTTL  time.Duration
-	issuer           string
-	revokedTokens    RevokedTokenStore
+	privateKey      *rsa.PrivateKey
+	publicKey       *rsa.PublicKey
+	accessTokenTTL  time.Duration
+	refreshTokenTTL time.Duration
+	issuer          string
+	revokedTokens   RevokedTokenStore
 }
 
 // JWTConfig configuration for JWT manager
 type JWTConfig struct {
-	PrivateKeyPEM    string
-	PublicKeyPEM     string
-	AccessTokenTTL   time.Duration
-	RefreshTokenTTL  time.Duration
-	Issuer           string
+	PrivateKeyPEM     string
+	PublicKeyPEM      string
+	AccessTokenTTL    time.Duration
+	RefreshTokenTTL   time.Duration
+	Issuer            string
 	RevokedTokenStore RevokedTokenStore
 }
 

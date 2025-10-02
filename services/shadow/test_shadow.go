@@ -6,16 +6,15 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 )
 
 func TestCreateShadowEval(t *testing.T) {
 	evaluator := &ShadowEvaluator{}
 
 	req := ShadowEvalRequest{
-		RuleID:     "test_rule_001",
-		RuleName:   "Test IP Blacklist",
-		RuleType:   "ip_blacklist",
+		RuleID:   "test_rule_001",
+		RuleName: "Test IP Blacklist",
+		RuleType: "ip_blacklist",
 		RuleConfig: map[string]interface{}{
 			"blacklisted_ips": []string{"192.168.1.100", "10.0.0.1"},
 		},
@@ -32,7 +31,7 @@ func TestCreateShadowEval(t *testing.T) {
 	if w.Code == http.StatusOK {
 		var response map[string]interface{}
 		json.NewDecoder(w.Body).Decode(&response)
-		
+
 		if success, ok := response["success"].(bool); ok && success {
 			t.Log("Shadow evaluation creation test passed")
 		} else {
@@ -187,8 +186,8 @@ func TestEvaluateRule(t *testing.T) {
 		t.Error("All confusion matrix values should be non-negative")
 	}
 
-	total := result.TruePositives + result.FalsePositives + 
-			result.TrueNegatives + result.FalseNegatives
+	total := result.TruePositives + result.FalsePositives +
+		result.TrueNegatives + result.FalseNegatives
 	if total != len(samples) {
 		t.Errorf("Confusion matrix total %d should equal sample size %d", total, len(samples))
 	}
@@ -205,10 +204,10 @@ func TestEvaluateRule(t *testing.T) {
 		t.Errorf("F1 Score should be between 0 and 1, got %f", result.F1Score)
 	}
 
-	t.Logf("Evaluation result: TP=%d, FP=%d, TN=%d, FN=%d", 
-		result.TruePositives, result.FalsePositives, 
+	t.Logf("Evaluation result: TP=%d, FP=%d, TN=%d, FN=%d",
+		result.TruePositives, result.FalsePositives,
 		result.TrueNegatives, result.FalseNegatives)
-	t.Logf("Metrics: Precision=%.3f, Recall=%.3f, F1=%.3f", 
+	t.Logf("Metrics: Precision=%.3f, Recall=%.3f, F1=%.3f",
 		result.Precision, result.Recall, result.F1Score)
 }
 
@@ -217,10 +216,10 @@ func TestGenerateRecommendations(t *testing.T) {
 
 	// Test high performance rule
 	highPerfResult := &ShadowEvalResult{
-		Precision:        0.95,
-		Recall:           0.90,
-		F1Score:          0.92,
-		EstimatedFPRate:  0.02,
+		Precision:       0.95,
+		Recall:          0.90,
+		F1Score:         0.92,
+		EstimatedFPRate: 0.02,
 	}
 
 	recommendations := evaluator.generateRecommendations(highPerfResult)
@@ -241,10 +240,10 @@ func TestGenerateRecommendations(t *testing.T) {
 
 	// Test low performance rule
 	lowPerfResult := &ShadowEvalResult{
-		Precision:        0.60,
-		Recall:           0.50,
-		F1Score:          0.55,
-		EstimatedFPRate:  0.15,
+		Precision:       0.60,
+		Recall:          0.50,
+		F1Score:         0.55,
+		EstimatedFPRate: 0.15,
 	}
 
 	recommendations = evaluator.generateRecommendations(lowPerfResult)
@@ -255,9 +254,9 @@ func TestGenerateRecommendations(t *testing.T) {
 	hasImprovementRec := false
 	for _, rec := range recommendations {
 		if rec == "Consider tightening rule criteria to reduce false positives" ||
-		   rec == "Consider broadening rule scope to catch more attacks" ||
-		   rec == "High false positive rate detected - review rule logic" ||
-		   rec == "Overall rule performance is low - consider redesigning" {
+			rec == "Consider broadening rule scope to catch more attacks" ||
+			rec == "High false positive rate detected - review rule logic" ||
+			rec == "Overall rule performance is low - consider redesigning" {
 			hasImprovementRec = true
 			break
 		}
@@ -285,8 +284,6 @@ func TestGetShadowEval(t *testing.T) {
 }
 
 func TestMockTrafficGeneration(t *testing.T) {
-	evaluator := &ShadowEvaluator{}
-
 	// Test that mock sample generation doesn't crash
 	// Note: This would require database connection in real implementation
 	t.Log("Mock traffic generation test - would generate samples in real implementation")
@@ -294,23 +291,23 @@ func TestMockTrafficGeneration(t *testing.T) {
 
 func TestRuleTypeValidation(t *testing.T) {
 	validRuleTypes := []string{"ip_blacklist", "signature_detection", "anomaly_detection", "rate_limiting"}
-	
+
 	for _, ruleType := range validRuleTypes {
 		t.Logf("Testing rule type: %s", ruleType)
-		
+
 		req := ShadowEvalRequest{
 			RuleType: ruleType,
 		}
-		
+
 		sample := TrafficSample{
 			SourceIP: "192.168.1.100",
 		}
-		
-		evaluator := &ShadowEvaluator{}
-		result := evaluator.applyRule(req, sample)
-		
+
+		se := &ShadowEvaluator{}
+		_ = se.applyRule(req, sample)
+
 		// Should return a boolean result
-		t.Logf("Rule type %s returned: %v", ruleType, result)
+		t.Logf("Rule type %s evaluated", ruleType)
 	}
 }
 
@@ -319,7 +316,7 @@ func TestPerformanceMetrics(t *testing.T) {
 	tp, fp := 85, 12
 	expectedPrecision := float64(tp) / float64(tp+fp)
 	actualPrecision := float64(85) / float64(85+12)
-	
+
 	if actualPrecision != expectedPrecision {
 		t.Errorf("Precision calculation error: expected %f, got %f", expectedPrecision, actualPrecision)
 	}
@@ -328,7 +325,7 @@ func TestPerformanceMetrics(t *testing.T) {
 	fn := 13
 	expectedRecall := float64(tp) / float64(tp+fn)
 	actualRecall := float64(85) / float64(85+13)
-	
+
 	if actualRecall != expectedRecall {
 		t.Errorf("Recall calculation error: expected %f, got %f", expectedRecall, actualRecall)
 	}
@@ -338,11 +335,11 @@ func TestPerformanceMetrics(t *testing.T) {
 	recall := actualRecall
 	expectedF1 := 2 * (precision * recall) / (precision + recall)
 	actualF1 := 2 * (precision * recall) / (precision + recall)
-	
+
 	if actualF1 != expectedF1 {
 		t.Errorf("F1 score calculation error: expected %f, got %f", expectedF1, actualF1)
 	}
 
-	t.Logf("Performance metrics test passed: Precision=%.3f, Recall=%.3f, F1=%.3f", 
+	t.Logf("Performance metrics test passed: Precision=%.3f, Recall=%.3f, F1=%.3f",
 		precision, recall, actualF1)
 }

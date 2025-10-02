@@ -1,3 +1,18 @@
+FROM golang:1.24 as build
+WORKDIR /app
+COPY . /app/services/camouflage-api
+COPY ../../ /app
+WORKDIR /app/services/camouflage-api
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    go build -trimpath -ldflags="-s -w" -o /out/camouflage-api
+
+FROM gcr.io/distroless/base-debian12
+WORKDIR /
+COPY --from=build /out/camouflage-api /usr/local/bin/camouflage-api
+USER nonroot:nonroot
+EXPOSE 8089
+ENTRYPOINT ["/usr/local/bin/camouflage-api"]
 FROM golang:1.22-alpine AS builder
 
 WORKDIR /app

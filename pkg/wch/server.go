@@ -1,9 +1,7 @@
 package wch
-package wch
 
 import (
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -23,17 +21,17 @@ type SessionManager struct {
 
 // Session represents an active WCH session
 type Session struct {
-	ID            string
-	ChannelID     string
-	ClientPubKey  []byte
+	ID              string
+	ChannelID       string
+	ClientPubKey    []byte
 	GuardianPrivKey []byte
 	GuardianPubKey  []byte
-	SharedSecret  []byte
-	CreatedAt     time.Time
-	ExpiresAt     time.Time
-	LastActivity  time.Time
-	RekeyCounter  int
-	Metadata      map[string]interface{}
+	SharedSecret    []byte
+	CreatedAt       time.Time
+	ExpiresAt       time.Time
+	LastActivity    time.Time
+	RekeyCounter    int
+	Metadata        map[string]interface{}
 }
 
 // NewSessionManager creates a new session manager
@@ -367,14 +365,14 @@ func (h *WCHHandler) HandleMetrics(w http.ResponseWriter, r *http.Request) {
 	defer h.metrics.mu.RUnlock()
 
 	metrics := map[string]interface{}{
-		"connections_total":   h.metrics.ConnectionsTotal,
-		"envelopes_sent":      h.metrics.EnvelopesSent,
-		"envelopes_received":  h.metrics.EnvelopesReceived,
-		"encryption_errors":   h.metrics.EncryptionErrors,
-		"decryption_errors":   h.metrics.DecryptionErrors,
-		"sessions_created":    h.metrics.SessionsCreated,
-		"sessions_expired":    h.metrics.SessionsExpired,
-		"sessions_active":     h.sessionMgr.GetActiveSessionsCount(),
+		"connections_total":  h.metrics.ConnectionsTotal,
+		"envelopes_sent":     h.metrics.EnvelopesSent,
+		"envelopes_received": h.metrics.EnvelopesReceived,
+		"encryption_errors":  h.metrics.EncryptionErrors,
+		"decryption_errors":  h.metrics.DecryptionErrors,
+		"sessions_created":   h.metrics.SessionsCreated,
+		"sessions_expired":   h.metrics.SessionsExpired,
+		"sessions_active":    h.sessionMgr.GetActiveSessionsCount(),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -393,11 +391,11 @@ func SetupWCHServer(ctx context.Context, config WCHServerConfig) error {
 	var rateLimiter RateLimiter
 	if config.RedisAddr != "" {
 		rateLimiter, err = NewRedisRateLimiter(RateLimiterConfig{
-			RedisAddr:  config.RedisAddr,
-			KeyPrefix:  "wch:ratelimit:",
-			Limit:      config.RateLimit,
-			Window:     1 * time.Minute,
-			Algorithm:  "sliding_window",
+			RedisAddr: config.RedisAddr,
+			KeyPrefix: "wch:ratelimit:",
+			Limit:     config.RateLimit,
+			Window:    1 * time.Minute,
+			Algorithm: "sliding_window",
 		})
 		if err != nil {
 			log.Printf("Warning: Failed to create Redis rate limiter, using in-memory: %v", err)
@@ -427,14 +425,14 @@ func SetupWCHServer(ctx context.Context, config WCHServerConfig) error {
 
 	// Create QUIC server
 	quicServer, err := NewQUICServer(QUICConfig{
-		Addr:                config.Addr,
-		TLSConfig:           tlsConfig,
-		MaxIdleTimeout:      30 * time.Second,
-		MaxIncomingStreams:  100,
-		EnableDatagrams:     true,
-		RateLimiter:         rateLimiter,
-		SessionManager:      sessionMgr,
-		CamouflageEngine:    camouflage,
+		Addr:               config.Addr,
+		TLSConfig:          tlsConfig,
+		MaxIdleTimeout:     30 * time.Second,
+		MaxIncomingStreams: 100,
+		EnableDatagrams:    true,
+		RateLimiter:        rateLimiter,
+		SessionManager:     sessionMgr,
+		CamouflageEngine:   camouflage,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create QUIC server: %w", err)

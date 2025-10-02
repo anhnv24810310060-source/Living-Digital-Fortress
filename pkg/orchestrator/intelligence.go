@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"fmt"
 	"sync"
 	"time"
 )
@@ -13,17 +14,17 @@ type ThreatIntelligence struct {
 }
 
 type TIFederation struct {
-	nodes     map[string]*FederationNode
+	nodes      map[string]*FederationNode
 	aggregator *SecureAggregator
-	mu        sync.RWMutex
+	mu         sync.RWMutex
 }
 
 type FederationNode struct {
-	ID       string
-	Endpoint string
+	ID        string
+	Endpoint  string
 	PublicKey []byte
-	LastSeen time.Time
-	Trust    float64
+	LastSeen  time.Time
+	Trust     float64
 }
 
 type SecureAggregator struct {
@@ -56,10 +57,10 @@ type Technique struct {
 }
 
 type Tactic struct {
-	ID          string
-	Name        string
-	Techniques  []string
-	Phase       string
+	ID         string
+	Name       string
+	Techniques []string
+	Phase      string
 }
 
 type TechniqueEdge struct {
@@ -114,39 +115,39 @@ func NewTIFederation() *TIFederation {
 func (tif *TIFederation) AddNode(id, endpoint string, pubKey []byte) {
 	tif.mu.Lock()
 	defer tif.mu.Unlock()
-	
+
 	tif.nodes[id] = &FederationNode{
-		ID:       id,
-		Endpoint: endpoint,
+		ID:        id,
+		Endpoint:  endpoint,
 		PublicKey: pubKey,
-		LastSeen: time.Now(),
-		Trust:    0.5,
+		LastSeen:  time.Now(),
+		Trust:     0.5,
 	}
 }
 
 func (tif *TIFederation) ContributeThreatData(nodeID string, data []byte, signature []byte) error {
 	tif.mu.Lock()
 	defer tif.mu.Unlock()
-	
+
 	node := tif.nodes[nodeID]
 	if node == nil {
 		return fmt.Errorf("unknown node: %s", nodeID)
 	}
-	
+
 	contribution := &Contribution{
 		NodeID:    nodeID,
 		Data:      data,
 		Signature: signature,
 		Timestamp: time.Now(),
 	}
-	
+
 	tif.aggregator.contributions[nodeID] = contribution
 	node.LastSeen = time.Now()
-	
+
 	if len(tif.aggregator.contributions) >= tif.aggregator.threshold {
 		go tif.performSecureAggregation()
 	}
-	
+
 	return nil
 }
 
@@ -162,7 +163,7 @@ func NewMITREGraph() *MITREGraph {
 		tactics:    make(map[string]*Tactic),
 		edges:      make([]TechniqueEdge, 0),
 	}
-	
+
 	mg.loadMITREData()
 	return mg
 }
@@ -177,7 +178,7 @@ func (mg *MITREGraph) loadMITREData() {
 		Indicators:  []string{"web_exploit", "sql_injection", "xss"},
 		Confidence:  0.9,
 	}
-	
+
 	mg.techniques["T1059"] = &Technique{
 		ID:          "T1059",
 		Name:        "Command and Scripting Interpreter",
@@ -186,14 +187,14 @@ func (mg *MITREGraph) loadMITREData() {
 		Indicators:  []string{"cmd_injection", "powershell", "bash"},
 		Confidence:  0.8,
 	}
-	
+
 	mg.tactics["TA0001"] = &Tactic{
 		ID:         "TA0001",
 		Name:       "Initial Access",
 		Techniques: []string{"T1190", "T1566", "T1078"},
 		Phase:      "Entry",
 	}
-	
+
 	mg.edges = append(mg.edges, TechniqueEdge{
 		From:   "T1190",
 		To:     "T1059",
@@ -204,9 +205,9 @@ func (mg *MITREGraph) loadMITREData() {
 func (mg *MITREGraph) AnalyzeTechniques(indicators []string) []*Technique {
 	mg.mu.RLock()
 	defer mg.mu.RUnlock()
-	
+
 	matches := make([]*Technique, 0)
-	
+
 	for _, technique := range mg.techniques {
 		for _, indicator := range indicators {
 			for _, techIndicator := range technique.Indicators {
@@ -217,16 +218,16 @@ func (mg *MITREGraph) AnalyzeTechniques(indicators []string) []*Technique {
 			}
 		}
 	}
-	
+
 	return matches
 }
 
 func (mg *MITREGraph) PredictNextTechniques(currentTechnique string) []*Technique {
 	mg.mu.RLock()
 	defer mg.mu.RUnlock()
-	
+
 	predictions := make([]*Technique, 0)
-	
+
 	for _, edge := range mg.edges {
 		if edge.From == currentTechnique {
 			if technique := mg.techniques[edge.To]; technique != nil {
@@ -234,7 +235,7 @@ func (mg *MITREGraph) PredictNextTechniques(currentTechnique string) []*Techniqu
 			}
 		}
 	}
-	
+
 	return predictions
 }
 
@@ -248,7 +249,7 @@ func NewTTPrealTimeCorrelator() *TTPrealTimeCorrelator {
 func (ttc *TTPrealTimeCorrelator) CorrelateTechniques(tenantID string, techniques []string, timestamps []time.Time) *Campaign {
 	ttc.mu.Lock()
 	defer ttc.mu.Unlock()
-	
+
 	// Find existing campaign or create new one
 	for _, campaign := range ttc.campaigns {
 		if ttc.matchesCampaign(techniques, campaign.Techniques) {
@@ -257,7 +258,7 @@ func (ttc *TTPrealTimeCorrelator) CorrelateTechniques(tenantID string, technique
 			return campaign
 		}
 	}
-	
+
 	// Create new campaign
 	campaignID := fmt.Sprintf("campaign_%d", time.Now().UnixNano())
 	campaign := &Campaign{
@@ -269,12 +270,12 @@ func (ttc *TTPrealTimeCorrelator) CorrelateTechniques(tenantID string, technique
 		LastUpdate: time.Now(),
 		Confidence: 0.6,
 	}
-	
+
 	ttc.campaigns[campaignID] = campaign
-	
+
 	// Update attack patterns
 	ttc.updateAttackPatterns(techniques, timestamps)
-	
+
 	return campaign
 }
 
@@ -282,7 +283,7 @@ func (ttc *TTPrealTimeCorrelator) matchesCampaign(techniques1, techniques2 []str
 	if len(techniques1) == 0 || len(techniques2) == 0 {
 		return false
 	}
-	
+
 	matches := 0
 	for _, t1 := range techniques1 {
 		for _, t2 := range techniques2 {
@@ -292,13 +293,13 @@ func (ttc *TTPrealTimeCorrelator) matchesCampaign(techniques1, techniques2 []str
 			}
 		}
 	}
-	
+
 	return float64(matches)/float64(len(techniques1)) >= 0.5
 }
 
 func (ttc *TTPrealTimeCorrelator) calculateConfidence(campaign *Campaign, newTechniques []string) float64 {
 	baseConfidence := campaign.Confidence
-	
+
 	// Increase confidence with more matching techniques
 	matches := 0
 	for _, nt := range newTechniques {
@@ -309,25 +310,29 @@ func (ttc *TTPrealTimeCorrelator) calculateConfidence(campaign *Campaign, newTec
 			}
 		}
 	}
-	
+
 	matchRatio := float64(matches) / float64(len(newTechniques))
-	return min(baseConfidence+matchRatio*0.2, 1.0)
+	v := baseConfidence + matchRatio*0.2
+	if v > 1.0 {
+		v = 1.0
+	}
+	return v
 }
 
 func (ttc *TTPrealTimeCorrelator) updateAttackPatterns(techniques []string, timestamps []time.Time) {
 	if len(techniques) < 2 {
 		return
 	}
-	
+
 	// Calculate timing between techniques
 	timings := make([]time.Duration, len(timestamps)-1)
 	for i := 1; i < len(timestamps); i++ {
 		timings[i-1] = timestamps[i].Sub(timestamps[i-1])
 	}
-	
+
 	patternID := fmt.Sprintf("pattern_%s", techniques[0])
 	pattern := ttc.patterns[patternID]
-	
+
 	if pattern == nil {
 		pattern = &AttackPattern{
 			ID:         patternID,
@@ -339,30 +344,29 @@ func (ttc *TTPrealTimeCorrelator) updateAttackPatterns(techniques []string, time
 		ttc.patterns[patternID] = pattern
 	} else {
 		pattern.Frequency++
-		pattern.Confidence = min(pattern.Confidence+0.1, 1.0)
+		if pattern.Confidence+0.1 > 1.0 {
+			pattern.Confidence = 1.0
+		} else {
+			pattern.Confidence = pattern.Confidence + 0.1
+		}
 	}
 }
 
 func (ti *ThreatIntelligence) GetGlobalThreatLevel() float64 {
 	ti.mu.RLock()
 	defer ti.mu.RUnlock()
-	
+
 	totalCampaigns := len(ti.correlator.campaigns)
 	if totalCampaigns == 0 {
 		return 0.0
 	}
-	
+
 	totalConfidence := 0.0
 	for _, campaign := range ti.correlator.campaigns {
 		totalConfidence += campaign.Confidence
 	}
-	
+
 	return totalConfidence / float64(totalCampaigns)
 }
 
-func min(a, b float64) float64 {
-	if a < b {
-		return a
-	}
-	return b
-}
+// min removed to avoid conflicts with other package-level min definitions

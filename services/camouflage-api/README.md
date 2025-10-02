@@ -1,4 +1,23 @@
-# Camouflage API Service
+# Camouflage API
+
+High-performance deception selection service. Provides optimal decoy selection using UCB1 multi-armed bandit and accepts feedback for continuous adaptation.
+
+Endpoints:
+- POST/GET /select -> returns a decoy template and a one-time token
+- POST /feedback { node_id, reward } -> reward in [-1,1]
+- GET /graph -> JSON metrics of current nodes and effectiveness
+- GET /health, GET /metrics
+
+Env:
+- PORT (default 8089)
+- CAMOUFLAGE_API_KEY (optional bearer token; health/metrics are public)
+
+Run:
+- go run .
+
+Security notes:
+- Input validated, metrics and auth middleware included.
+- Decoy selection is stateful but in-memory; for HA, back it with Redis/DB.# Camouflage API Service
 
 ## Overview
 

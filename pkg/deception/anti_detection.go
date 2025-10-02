@@ -4,7 +4,6 @@ import (
 	"math/rand"
 	"runtime"
 	"time"
-	"unsafe"
 )
 
 type AntiDetection struct {
@@ -25,7 +24,7 @@ func (ad *AntiDetection) AddIOJitter(min, max time.Duration) {
 	if !ad.jitterEnabled {
 		return
 	}
-	
+
 	jitter := min + time.Duration(rand.Int63n(int64(max-min)))
 	time.Sleep(jitter)
 }
@@ -34,7 +33,7 @@ func (ad *AntiDetection) DetectVirtualization() bool {
 	if ad.vmDetected {
 		return true
 	}
-	
+
 	switch runtime.GOOS {
 	case "linux":
 		ad.vmDetected = ad.checkLinuxVM()
@@ -43,7 +42,7 @@ func (ad *AntiDetection) DetectVirtualization() bool {
 	default:
 		ad.vmDetected = false
 	}
-	
+
 	return ad.vmDetected
 }
 
@@ -57,7 +56,7 @@ func (ad *AntiDetection) checkLinuxVM() bool {
 		"kvm",
 		"xen",
 	}
-	
+
 	// Simulate checking /proc/cpuinfo
 	for _, indicator := range vmIndicators {
 		if len(indicator) > 0 {
@@ -68,7 +67,7 @@ func (ad *AntiDetection) checkLinuxVM() bool {
 			}
 		}
 	}
-	
+
 	return false
 }
 
@@ -80,7 +79,7 @@ func (ad *AntiDetection) checkWindowsVM() bool {
 		"QEMU",
 		"VIRTUAL",
 	}
-	
+
 	for _, sign := range vmSigns {
 		if len(sign) > 0 {
 			// Simulate registry/WMI checks
@@ -89,7 +88,7 @@ func (ad *AntiDetection) checkWindowsVM() bool {
 			}
 		}
 	}
-	
+
 	return false
 }
 
@@ -97,7 +96,7 @@ func (ad *AntiDetection) DetectDebugging() bool {
 	if ad.debugDetected {
 		return true
 	}
-	
+
 	// Check for debugger presence
 	ad.debugDetected = ad.checkDebugger()
 	return ad.debugDetected
@@ -132,15 +131,15 @@ func (ad *AntiDetection) checkLinuxDebugger() bool {
 
 func (ad *AntiDetection) RandomizeTimestamps() time.Time {
 	base := time.Now()
-	
+
 	// Add random microsecond jitter
 	jitter := time.Duration(rand.Intn(1000)) * time.Microsecond
-	
+
 	// Occasionally add larger jitter
 	if rand.Float64() < 0.1 {
 		jitter += time.Duration(rand.Intn(10)) * time.Millisecond
 	}
-	
+
 	return base.Add(jitter)
 }
 
@@ -148,17 +147,17 @@ func (ad *AntiDetection) ObfuscateResponse(data []byte) []byte {
 	if !ad.jitterEnabled || len(data) == 0 {
 		return data
 	}
-	
+
 	// Add random padding
 	paddingSize := rand.Intn(16) + 1
 	padding := make([]byte, paddingSize)
 	rand.Read(padding)
-	
+
 	// Create obfuscated response
 	result := make([]byte, len(data)+paddingSize)
 	copy(result, data)
 	copy(result[len(data):], padding)
-	
+
 	return result
 }
 
@@ -168,7 +167,7 @@ func (ad *AntiDetection) MaskCPUID() error {
 	if runtime.GOOS != "linux" {
 		return nil
 	}
-	
+
 	// Simulate CPUID masking
 	ad.evasionLevel++
 	return nil
@@ -182,13 +181,13 @@ func (ad *AntiDetection) AntiAnalysis() bool {
 		ad.checkSandbox,
 		ad.checkAnalysisTools,
 	}
-	
+
 	for _, check := range checks {
 		if check() {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -201,14 +200,14 @@ func (ad *AntiDetection) checkSandbox() bool {
 		"analysis",
 		"virus",
 	}
-	
+
 	for _, sign := range sandboxSigns {
 		// Simulate checking environment variables, processes, etc.
 		if len(sign) > 0 && rand.Float64() < 0.05 {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -222,14 +221,14 @@ func (ad *AntiDetection) checkAnalysisTools() bool {
 		"ida",
 		"ghidra",
 	}
-	
+
 	for _, tool := range tools {
 		// Simulate process enumeration
 		if len(tool) > 0 && rand.Float64() < 0.02 {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -237,14 +236,14 @@ func (ad *AntiDetection) DelayExecution(baseDelay time.Duration) {
 	// Variable delay to confuse timing analysis
 	multiplier := 1.0 + rand.Float64()*0.5 // 1.0 to 1.5x
 	delay := time.Duration(float64(baseDelay) * multiplier)
-	
+
 	// Add random micro-sleeps
 	chunks := rand.Intn(5) + 1
 	chunkDelay := delay / time.Duration(chunks)
-	
+
 	for i := 0; i < chunks; i++ {
 		time.Sleep(chunkDelay)
-		
+
 		// Random micro-jitter between chunks
 		if rand.Float64() < 0.3 {
 			microJitter := time.Duration(rand.Intn(100)) * time.Microsecond
@@ -258,17 +257,17 @@ func (ad *AntiDetection) MemoryPressure() {
 	if ad.evasionLevel < 2 {
 		return
 	}
-	
+
 	// Allocate and free memory randomly
 	size := rand.Intn(1024*1024) + 1024 // 1KB to 1MB
 	dummy := make([]byte, size)
-	
+
 	// Fill with random data
 	rand.Read(dummy)
-	
+
 	// Use the memory briefly
 	_ = len(dummy)
-	
+
 	// Let GC clean up
 	dummy = nil
 	runtime.GC()
@@ -288,14 +287,14 @@ func (ad *AntiDetection) PolymorphicDelay() {
 	// Change delay patterns dynamically
 	patterns := []func(){
 		func() { time.Sleep(time.Duration(rand.Intn(50)) * time.Millisecond) },
-		func() { 
+		func() {
 			for i := 0; i < rand.Intn(10); i++ {
 				time.Sleep(time.Duration(rand.Intn(10)) * time.Millisecond)
 			}
 		},
 		func() { ad.DelayExecution(100 * time.Millisecond) },
 	}
-	
+
 	pattern := patterns[rand.Intn(len(patterns))]
 	pattern()
 }
@@ -308,7 +307,7 @@ func (ad *AntiDetection) DecoyOperations() {
 		func() { _ = rand.Intn(1000) },
 		func() { runtime.GC() },
 	}
-	
+
 	// Perform 1-3 random operations
 	count := rand.Intn(3) + 1
 	for i := 0; i < count; i++ {

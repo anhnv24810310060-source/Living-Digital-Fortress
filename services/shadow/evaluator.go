@@ -7,6 +7,8 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -18,50 +20,50 @@ type ShadowEvaluator struct {
 }
 
 type ShadowEvalRequest struct {
-	RuleID      string                 `json:"rule_id"`
-	RuleName    string                 `json:"rule_name"`
-	RuleType    string                 `json:"rule_type"`
-	RuleConfig  map[string]interface{} `json:"rule_config"`
-	SampleSize  int                    `json:"sample_size"`
-	TimeWindow  string                 `json:"time_window"`
-	TenantID    string                 `json:"tenant_id"`
+	RuleID     string                 `json:"rule_id"`
+	RuleName   string                 `json:"rule_name"`
+	RuleType   string                 `json:"rule_type"`
+	RuleConfig map[string]interface{} `json:"rule_config"`
+	SampleSize int                    `json:"sample_size"`
+	TimeWindow string                 `json:"time_window"`
+	TenantID   string                 `json:"tenant_id"`
 }
 
 type ShadowEvalResult struct {
-	EvalID           string    `json:"eval_id"`
-	RuleID           string    `json:"rule_id"`
-	Status           string    `json:"status"`
-	SampleSize       int       `json:"sample_size"`
-	TruePositives    int       `json:"true_positives"`
-	FalsePositives   int       `json:"false_positives"`
-	TrueNegatives    int       `json:"true_negatives"`
-	FalseNegatives   int       `json:"false_negatives"`
-	Precision        float64   `json:"precision"`
-	Recall           float64   `json:"recall"`
-	F1Score          float64   `json:"f1_score"`
-	EstimatedFPRate  float64   `json:"estimated_fp_rate"`
-	EstimatedTPRate  float64   `json:"estimated_tp_rate"`
-	Recommendations  []string  `json:"recommendations"`
-	ExecutionTime    int64     `json:"execution_time_ms"`
-	CreatedAt        time.Time `json:"created_at"`
-	CompletedAt      *time.Time `json:"completed_at"`
+	EvalID          string     `json:"eval_id"`
+	RuleID          string     `json:"rule_id"`
+	Status          string     `json:"status"`
+	SampleSize      int        `json:"sample_size"`
+	TruePositives   int        `json:"true_positives"`
+	FalsePositives  int        `json:"false_positives"`
+	TrueNegatives   int        `json:"true_negatives"`
+	FalseNegatives  int        `json:"false_negatives"`
+	Precision       float64    `json:"precision"`
+	Recall          float64    `json:"recall"`
+	F1Score         float64    `json:"f1_score"`
+	EstimatedFPRate float64    `json:"estimated_fp_rate"`
+	EstimatedTPRate float64    `json:"estimated_tp_rate"`
+	Recommendations []string   `json:"recommendations"`
+	ExecutionTime   int64      `json:"execution_time_ms"`
+	CreatedAt       time.Time  `json:"created_at"`
+	CompletedAt     *time.Time `json:"completed_at"`
 }
 
 type TrafficSample struct {
-	ID          string                 `json:"id"`
-	Timestamp   time.Time              `json:"timestamp"`
-	SourceIP    string                 `json:"source_ip"`
-	DestIP      string                 `json:"dest_ip"`
-	Protocol    string                 `json:"protocol"`
-	Port        int                    `json:"port"`
-	Payload     string                 `json:"payload"`
-	Headers     map[string]string      `json:"headers"`
-	UserAgent   string                 `json:"user_agent"`
-	Method      string                 `json:"method"`
-	URI         string                 `json:"uri"`
-	IsAttack    bool                   `json:"is_attack"`
-	AttackType  string                 `json:"attack_type"`
-	Metadata    map[string]interface{} `json:"metadata"`
+	ID         string                 `json:"id"`
+	Timestamp  time.Time              `json:"timestamp"`
+	SourceIP   string                 `json:"source_ip"`
+	DestIP     string                 `json:"dest_ip"`
+	Protocol   string                 `json:"protocol"`
+	Port       int                    `json:"port"`
+	Payload    string                 `json:"payload"`
+	Headers    map[string]string      `json:"headers"`
+	UserAgent  string                 `json:"user_agent"`
+	Method     string                 `json:"method"`
+	URI        string                 `json:"uri"`
+	IsAttack   bool                   `json:"is_attack"`
+	AttackType string                 `json:"attack_type"`
+	Metadata   map[string]interface{} `json:"metadata"`
 }
 
 func NewShadowEvaluator(dbURL string) (*ShadowEvaluator, error) {
@@ -79,6 +81,10 @@ func NewShadowEvaluator(dbURL string) (*ShadowEvaluator, error) {
 	db.SetConnMaxLifetime(5 * time.Minute)
 
 	evaluator := &ShadowEvaluator{db: db}
+	if os.Getenv("MIGRATE_ON_START") != "true" {
+		log.Printf("Skipping DB migrations for shadow (set MIGRATE_ON_START=true after backup)")
+		return evaluator, nil
+	}
 	if err := evaluator.migrate(); err != nil {
 		return nil, fmt.Errorf("migration failed: %w", err)
 	}
@@ -165,15 +171,15 @@ func (se *ShadowEvaluator) CreateShadowEval(w http.ResponseWriter, r *http.Reque
 	}
 
 	evalID := uuid.New().String()
-	
+
 	ruleConfigJSON, _ := json.Marshal(req.RuleConfig)
-	
+
 	_, err := se.db.Exec(`
 		INSERT INTO shadow_evaluations 
 		(eval_id, rule_id, rule_name, rule_type, rule_config, tenant_id, sample_size, status)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending')`,
 		evalID, req.RuleID, req.RuleName, req.RuleType, string(ruleConfigJSON), req.TenantID, req.SampleSize)
-	
+
 	if err != nil {
 		log.Printf("Failed to create shadow evaluation: %v", err)
 		http.Error(w, "Failed to create evaluation", http.StatusInternalServerError)
@@ -221,9 +227,84 @@ func (se *ShadowEvaluator) GetShadowEval(w http.ResponseWriter, r *http.Request)
 	json.NewEncoder(w).Encode(result)
 }
 
+// GetShadowEvalByPath supports GET /shadow/results/:id
+func (se *ShadowEvaluator) GetShadowEvalByPath(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	// Path: /shadow/results/{id}
+	path := r.URL.Path
+	parts := strings.Split(strings.TrimPrefix(path, "/shadow/results/"), "/")
+	if len(parts) == 0 || parts[0] == "" {
+		http.Error(w, "Missing eval id", http.StatusBadRequest)
+		return
+	}
+	evalID := parts[0]
+	result, err := se.getShadowEvalResult(evalID)
+	if err != nil {
+		log.Printf("Failed to get shadow evaluation: %v", err)
+		http.Error(w, "Failed to get evaluation", http.StatusInternalServerError)
+		return
+	}
+	if result == nil {
+		http.Error(w, "Evaluation not found", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+// DeployRule gates deployment: only allow if precision and recall meet thresholds
+func (se *ShadowEvaluator) DeployRule(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		EvalID       string  `json:"eval_id"`
+		MinPrecision float64 `json:"min_precision"`
+		MinRecall    float64 `json:"min_recall"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+	if body.EvalID == "" {
+		http.Error(w, "eval_id is required", http.StatusBadRequest)
+		return
+	}
+	if body.MinPrecision == 0 {
+		body.MinPrecision = 0.8
+	}
+	if body.MinRecall == 0 {
+		body.MinRecall = 0.7
+	}
+	res, err := se.getShadowEvalResult(body.EvalID)
+	if err != nil || res == nil {
+		http.Error(w, "evaluation not found", http.StatusNotFound)
+		return
+	}
+	allowed := res.Precision >= body.MinPrecision && res.Recall >= body.MinRecall && res.F1Score >= 0.75
+	status := "rejected"
+	if allowed {
+		status = "approved"
+	}
+	// Do NOT deploy if rejected; if approved, we would signal orchestrator via DB/queue (omitted here)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"eval_id":   body.EvalID,
+		"status":    status,
+		"precision": res.Precision,
+		"recall":    res.Recall,
+		"f1":        res.F1Score,
+		"approved":  allowed,
+	})
+}
+
 func (se *ShadowEvaluator) runShadowEvaluation(evalID string, req ShadowEvalRequest) {
 	startTime := time.Now()
-	
+
 	log.Printf("Starting shadow evaluation %s for rule %s", evalID, req.RuleID)
 
 	_, err := se.db.Exec(`
@@ -251,13 +332,13 @@ func (se *ShadowEvaluator) runShadowEvaluation(evalID string, req ShadowEvalRequ
 	result := se.evaluateRule(req, samples)
 	result.EvalID = evalID
 	result.ExecutionTime = time.Since(startTime).Milliseconds()
-	
+
 	completedAt := time.Now()
 	result.CompletedAt = &completedAt
 
 	se.updateEvaluationStatus(evalID, "completed", result)
-	
-	log.Printf("Completed shadow evaluation %s: TP=%d, FP=%d, Precision=%.2f", 
+
+	log.Printf("Completed shadow evaluation %s: TP=%d, FP=%d, Precision=%.2f",
 		evalID, result.TruePositives, result.FalsePositives, result.Precision)
 }
 
@@ -270,7 +351,7 @@ func (se *ShadowEvaluator) evaluateRule(req ShadowEvalRequest, samples []Traffic
 
 	for _, sample := range samples {
 		ruleMatched := se.applyRule(req, sample)
-		
+
 		if sample.IsAttack && ruleMatched {
 			result.TruePositives++
 		} else if sample.IsAttack && !ruleMatched {
@@ -339,8 +420,8 @@ func (se *ShadowEvaluator) applySignatureRule(config map[string]interface{}, sam
 	}
 
 	for _, sig := range signatures {
-		if sigStr, ok := sig.(string); ok {
-			if sample.Payload != "" && len(sample.Payload) > 0 {
+		if s, ok := sig.(string); ok {
+			if s != "" && sample.Payload != "" && strings.Contains(strings.ToLower(sample.Payload), strings.ToLower(s)) {
 				return true
 			}
 		}
@@ -395,16 +476,30 @@ func (se *ShadowEvaluator) generateRecommendations(result *ShadowEvalResult) []s
 }
 
 func (se *ShadowEvaluator) getTrafficSamples(sampleSize int, timeWindow string) ([]TrafficSample, error) {
-	query := `
-		SELECT id, timestamp, source_ip, dest_ip, protocol, port, 
-			   COALESCE(payload, '') as payload, COALESCE(headers, '{}') as headers,
-			   COALESCE(user_agent, '') as user_agent, COALESCE(method, '') as method,
-			   COALESCE(uri, '') as uri, is_attack, COALESCE(attack_type, '') as attack_type,
-			   COALESCE(metadata, '{}') as metadata
-		FROM traffic_samples 
-		WHERE timestamp > NOW() - INTERVAL '24 hours'
-		ORDER BY RANDOM()
-		LIMIT $1`
+	// Prefer TABLESAMPLE for performance if table is large; fallback to ORDER BY RANDOM() for small sets
+	query := `SELECT id, timestamp, source_ip, dest_ip, protocol, port,
+			   COALESCE(payload, '') AS payload, COALESCE(headers, '{}') AS headers,
+			   COALESCE(user_agent, '') AS user_agent, COALESCE(method, '') AS method,
+			   COALESCE(uri, '') AS uri, is_attack, COALESCE(attack_type, '') AS attack_type,
+			   COALESCE(metadata, '{}') AS metadata
+			  FROM traffic_samples
+			  WHERE timestamp > NOW() - INTERVAL '24 hours'
+			  ORDER BY timestamp DESC
+			  LIMIT $1`
+
+	// Estimate row count in window; if big, use TABLESAMPLE SYSTEM
+	var est int
+	_ = se.db.QueryRow(`SELECT COALESCE((SELECT reltuples::bigint FROM pg_class WHERE relname = 'traffic_samples'), 0)`).Scan(&est)
+	if est > sampleSize*50 {
+		query = `SELECT id, timestamp, source_ip, dest_ip, protocol, port,
+				 COALESCE(payload, '') AS payload, COALESCE(headers, '{}') AS headers,
+				 COALESCE(user_agent, '') AS user_agent, COALESCE(method, '') AS method,
+				 COALESCE(uri, '') AS uri, is_attack, COALESCE(attack_type, '') AS attack_type,
+				 COALESCE(metadata, '{}') AS metadata
+				 FROM traffic_samples TABLESAMPLE SYSTEM (1)
+				 WHERE timestamp > NOW() - INTERVAL '24 hours'
+				 LIMIT $1`
+	}
 
 	rows, err := se.db.Query(query, sampleSize)
 	if err != nil {
@@ -440,15 +535,15 @@ func (se *ShadowEvaluator) generateMockSamples(count int) {
 
 	for i := 0; i < count; i++ {
 		sample := TrafficSample{
-			Timestamp:  time.Now().Add(-time.Duration(rand.Intn(86400)) * time.Second),
-			SourceIP:   fmt.Sprintf("192.168.%d.%d", rand.Intn(255), rand.Intn(255)),
-			DestIP:     fmt.Sprintf("10.0.%d.%d", rand.Intn(255), rand.Intn(255)),
-			Protocol:   []string{"HTTP", "HTTPS", "TCP", "UDP"}[rand.Intn(4)],
-			Port:       []int{80, 443, 22, 21, 3389}[rand.Intn(5)],
-			Method:     []string{"GET", "POST", "PUT", "DELETE"}[rand.Intn(4)],
-			URI:        []string{"/", "/login", "/admin", "/api/data"}[rand.Intn(4)],
-			UserAgent:  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-			IsAttack:   rand.Float64() < 0.2,
+			Timestamp: time.Now().Add(-time.Duration(rand.Intn(86400)) * time.Second),
+			SourceIP:  fmt.Sprintf("192.168.%d.%d", rand.Intn(255), rand.Intn(255)),
+			DestIP:    fmt.Sprintf("10.0.%d.%d", rand.Intn(255), rand.Intn(255)),
+			Protocol:  []string{"HTTP", "HTTPS", "TCP", "UDP"}[rand.Intn(4)],
+			Port:      []int{80, 443, 22, 21, 3389}[rand.Intn(5)],
+			Method:    []string{"GET", "POST", "PUT", "DELETE"}[rand.Intn(4)],
+			URI:       []string{"/", "/login", "/admin", "/api/data"}[rand.Intn(4)],
+			UserAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+			IsAttack:  rand.Float64() < 0.2,
 		}
 
 		if sample.IsAttack {
@@ -491,7 +586,7 @@ func (se *ShadowEvaluator) getShadowEvalResult(evalID string) (*ShadowEvalResult
 
 	var result ShadowEvalResult
 	var recommendationsJSON string
-	
+
 	err := se.db.QueryRow(query, evalID).Scan(
 		&result.EvalID, &result.RuleID, &result.Status, &result.SampleSize,
 		&result.TruePositives, &result.FalsePositives, &result.TrueNegatives,
@@ -523,7 +618,7 @@ func (se *ShadowEvaluator) updateEvaluationStatus(evalID, status string, result 
 	}
 
 	recommendationsJSON, _ := json.Marshal(result.Recommendations)
-	
+
 	_, err := se.db.Exec(`
 		UPDATE shadow_evaluations 
 		SET status = $1, true_positives = $2, false_positives = $3,

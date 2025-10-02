@@ -1,7 +1,9 @@
+//go:build tools || redteam
+// +build tools redteam
+
 package main
 
 import (
-	"bytes"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
@@ -15,10 +17,10 @@ import (
 )
 
 type RedTeamTest struct {
-	baseURL    string
-	client     *http.Client
-	results    []TestResult
-	mu         sync.Mutex
+	baseURL string
+	client  *http.Client
+	results []TestResult
+	mu      sync.Mutex
 }
 
 type TestResult struct {
@@ -46,7 +48,7 @@ func NewRedTeamTest(baseURL string) *RedTeamTest {
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
-	
+
 	return &RedTeamTest{
 		baseURL: baseURL,
 		client: &http.Client{
@@ -59,38 +61,38 @@ func NewRedTeamTest(baseURL string) *RedTeamTest {
 
 func (rt *RedTeamTest) RunAllTests() {
 	log.Println("Starting Red Team Security Assessment...")
-	
+
 	// SQL Injection Tests
 	rt.runSQLInjectionTests()
-	
+
 	// XSS Tests
 	rt.runXSSTests()
-	
+
 	// Authentication Bypass Tests
 	rt.runAuthBypassTests()
-	
+
 	// Rate Limiting Tests
 	rt.runRateLimitTests()
-	
+
 	// Directory Traversal Tests
 	rt.runDirectoryTraversalTests()
-	
+
 	// Command Injection Tests
 	rt.runCommandInjectionTests()
-	
+
 	// CSRF Tests
 	rt.runCSRFTests()
-	
+
 	// Container Escape Tests
 	rt.runContainerEscapeTests()
-	
+
 	// Generate Report
 	rt.generateReport()
 }
 
 func (rt *RedTeamTest) runSQLInjectionTests() {
 	log.Println("Running SQL Injection Tests...")
-	
+
 	vectors := []AttackVector{
 		{
 			Name:        "Basic SQL Injection",
@@ -118,7 +120,7 @@ func (rt *RedTeamTest) runSQLInjectionTests() {
 			Description: "Time-based blind SQL injection",
 		},
 	}
-	
+
 	for _, vector := range vectors {
 		rt.executeTest(vector)
 	}
@@ -126,7 +128,7 @@ func (rt *RedTeamTest) runSQLInjectionTests() {
 
 func (rt *RedTeamTest) runXSSTests() {
 	log.Println("Running XSS Tests...")
-	
+
 	vectors := []AttackVector{
 		{
 			Name:        "Reflected XSS",
@@ -154,7 +156,7 @@ func (rt *RedTeamTest) runXSSTests() {
 			Description: "DOM-based XSS in profile name",
 		},
 	}
-	
+
 	for _, vector := range vectors {
 		rt.executeTest(vector)
 	}
@@ -162,7 +164,7 @@ func (rt *RedTeamTest) runXSSTests() {
 
 func (rt *RedTeamTest) runAuthBypassTests() {
 	log.Println("Running Authentication Bypass Tests...")
-	
+
 	vectors := []AttackVector{
 		{
 			Name:        "JWT Token Manipulation",
@@ -193,7 +195,7 @@ func (rt *RedTeamTest) runAuthBypassTests() {
 			Description: "Privilege escalation attempt",
 		},
 	}
-	
+
 	for _, vector := range vectors {
 		rt.executeTest(vector)
 	}
@@ -201,14 +203,14 @@ func (rt *RedTeamTest) runAuthBypassTests() {
 
 func (rt *RedTeamTest) runRateLimitTests() {
 	log.Println("Running Rate Limiting Tests...")
-	
+
 	// Concurrent requests to test rate limiting
 	var wg sync.WaitGroup
 	for i := 0; i < 100; i++ {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
-			
+
 			vector := AttackVector{
 				Name:        fmt.Sprintf("Rate Limit Test %d", id),
 				Method:      "POST",
@@ -218,7 +220,7 @@ func (rt *RedTeamTest) runRateLimitTests() {
 				Severity:    "Medium",
 				Description: "Brute force login attempt",
 			}
-			
+
 			rt.executeTest(vector)
 		}(i)
 	}
@@ -227,7 +229,7 @@ func (rt *RedTeamTest) runRateLimitTests() {
 
 func (rt *RedTeamTest) runDirectoryTraversalTests() {
 	log.Println("Running Directory Traversal Tests...")
-	
+
 	vectors := []AttackVector{
 		{
 			Name:        "Path Traversal - etc/passwd",
@@ -254,7 +256,7 @@ func (rt *RedTeamTest) runDirectoryTraversalTests() {
 			Description: "Null byte injection for path traversal",
 		},
 	}
-	
+
 	for _, vector := range vectors {
 		rt.executeTest(vector)
 	}
@@ -262,7 +264,7 @@ func (rt *RedTeamTest) runDirectoryTraversalTests() {
 
 func (rt *RedTeamTest) runCommandInjectionTests() {
 	log.Println("Running Command Injection Tests...")
-	
+
 	vectors := []AttackVector{
 		{
 			Name:        "OS Command Injection",
@@ -283,7 +285,7 @@ func (rt *RedTeamTest) runCommandInjectionTests() {
 			Description: "Blind command injection with time delay",
 		},
 	}
-	
+
 	for _, vector := range vectors {
 		rt.executeTest(vector)
 	}
@@ -291,7 +293,7 @@ func (rt *RedTeamTest) runCommandInjectionTests() {
 
 func (rt *RedTeamTest) runCSRFTests() {
 	log.Println("Running CSRF Tests...")
-	
+
 	vectors := []AttackVector{
 		{
 			Name:        "CSRF - Password Change",
@@ -311,7 +313,7 @@ func (rt *RedTeamTest) runCSRFTests() {
 			Description: "CSRF attack to delete user account",
 		},
 	}
-	
+
 	for _, vector := range vectors {
 		rt.executeTest(vector)
 	}
@@ -319,7 +321,7 @@ func (rt *RedTeamTest) runCSRFTests() {
 
 func (rt *RedTeamTest) runContainerEscapeTests() {
 	log.Println("Running Container Escape Tests...")
-	
+
 	vectors := []AttackVector{
 		{
 			Name:        "Docker Socket Access",
@@ -347,7 +349,7 @@ func (rt *RedTeamTest) runContainerEscapeTests() {
 			Description: "Access to container process information",
 		},
 	}
-	
+
 	for _, vector := range vectors {
 		rt.executeTest(vector)
 	}
@@ -355,10 +357,10 @@ func (rt *RedTeamTest) runContainerEscapeTests() {
 
 func (rt *RedTeamTest) executeTest(vector AttackVector) {
 	start := time.Now()
-	
+
 	var req *http.Request
 	var err error
-	
+
 	if vector.Body != "" {
 		req, err = http.NewRequest(vector.Method, rt.baseURL+vector.Path, strings.NewReader(vector.Body))
 		if err != nil {
@@ -373,37 +375,37 @@ func (rt *RedTeamTest) executeTest(vector AttackVector) {
 			return
 		}
 	}
-	
+
 	// Add custom headers
 	for key, value := range vector.Headers {
 		req.Header.Set(key, value)
 	}
-	
+
 	// Add attack signatures to User-Agent
 	req.Header.Set("User-Agent", "RedTeam-Scanner/1.0 (Security-Test)")
-	
+
 	resp, err := rt.client.Do(req)
 	if err != nil {
 		rt.recordResult(vector.Name, "error", err.Error(), time.Since(start).Milliseconds(), vector.Severity, vector.Description)
 		return
 	}
 	defer resp.Body.Close()
-	
+
 	body, _ := io.ReadAll(resp.Body)
 	responseText := string(body)
-	
+
 	// Analyze response
 	status := rt.analyzeResponse(resp.StatusCode, responseText, vector.Expected)
-	
-	rt.recordResult(vector.Name, status, fmt.Sprintf("HTTP %d: %s", resp.StatusCode, responseText), 
+
+	rt.recordResult(vector.Name, status, fmt.Sprintf("HTTP %d: %s", resp.StatusCode, responseText),
 		time.Since(start).Milliseconds(), vector.Severity, vector.Description)
 }
 
 func (rt *RedTeamTest) analyzeResponse(statusCode int, body, expected string) string {
 	switch expected {
 	case "blocked":
-		if statusCode == 403 || statusCode == 406 || statusCode == 429 || 
-		   strings.Contains(body, "blocked") || strings.Contains(body, "forbidden") {
+		if statusCode == 403 || statusCode == 406 || statusCode == 429 ||
+			strings.Contains(body, "blocked") || strings.Contains(body, "forbidden") {
 			return "PASS"
 		}
 		return "FAIL"
@@ -423,7 +425,7 @@ func (rt *RedTeamTest) analyzeResponse(statusCode int, body, expected string) st
 func (rt *RedTeamTest) recordResult(name, status, response string, duration int64, severity, description string) {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
-	
+
 	result := TestResult{
 		TestName:    name,
 		Status:      status,
@@ -433,16 +435,16 @@ func (rt *RedTeamTest) recordResult(name, status, response string, duration int6
 		Severity:    severity,
 		Description: description,
 	}
-	
+
 	rt.results = append(rt.results, result)
-	
+
 	// Log result
 	log.Printf("[%s] %s: %s (%dms)", severity, name, status, duration)
 }
 
 func (rt *RedTeamTest) generateReport() {
 	log.Println("Generating Red Team Assessment Report...")
-	
+
 	report := map[string]interface{}{
 		"assessment_date": time.Now().Format(time.RFC3339),
 		"target_url":      rt.baseURL,
@@ -451,19 +453,19 @@ func (rt *RedTeamTest) generateReport() {
 		"results":         rt.results,
 		"recommendations": rt.generateRecommendations(),
 	}
-	
+
 	// Write to file
 	reportJSON, _ := json.MarshalIndent(report, "", "  ")
 	filename := fmt.Sprintf("red-team-report-%s.json", time.Now().Format("20060102-150405"))
-	
+
 	err := os.WriteFile(filename, reportJSON, 0644)
 	if err != nil {
 		log.Printf("Failed to write report: %v", err)
 		return
 	}
-	
+
 	log.Printf("Red Team Assessment Report saved to: %s", filename)
-	
+
 	// Print summary
 	summary := rt.generateSummary()
 	log.Printf("Assessment Summary:")
@@ -478,7 +480,7 @@ func (rt *RedTeamTest) generateReport() {
 
 func (rt *RedTeamTest) generateSummary() map[string]interface{} {
 	var passed, failed, errors, critical, high, medium, low int
-	
+
 	for _, result := range rt.results {
 		switch result.Status {
 		case "PASS":
@@ -488,7 +490,7 @@ func (rt *RedTeamTest) generateSummary() map[string]interface{} {
 		case "error":
 			errors++
 		}
-		
+
 		switch result.Severity {
 		case "Critical":
 			critical++
@@ -500,10 +502,10 @@ func (rt *RedTeamTest) generateSummary() map[string]interface{} {
 			low++
 		}
 	}
-	
+
 	total := len(rt.results)
 	securityScore := float64(passed) / float64(total) * 100
-	
+
 	return map[string]interface{}{
 		"total_tests":    total,
 		"passed":         passed,
@@ -519,29 +521,29 @@ func (rt *RedTeamTest) generateSummary() map[string]interface{} {
 
 func (rt *RedTeamTest) generateRecommendations() []string {
 	recommendations := []string{}
-	
+
 	summary := rt.generateSummary()
-	
+
 	if summary["failed"].(int) > 0 {
 		recommendations = append(recommendations, "Implement additional input validation and sanitization")
 	}
-	
+
 	if summary["critical"].(int) > 0 {
 		recommendations = append(recommendations, "Address critical security vulnerabilities immediately")
 	}
-	
+
 	if summary["high"].(int) > 0 {
 		recommendations = append(recommendations, "Implement additional security controls for high-risk areas")
 	}
-	
+
 	if summary["security_score"].(float64) < 90 {
 		recommendations = append(recommendations, "Enhance overall security posture - target 90%+ security score")
 	}
-	
+
 	recommendations = append(recommendations, "Regular security assessments and penetration testing")
 	recommendations = append(recommendations, "Implement Web Application Firewall (WAF) rules")
 	recommendations = append(recommendations, "Enable comprehensive security monitoring and alerting")
-	
+
 	return recommendations
 }
 
@@ -550,11 +552,11 @@ func main() {
 	if baseURL == "" {
 		baseURL = "https://localhost:8443"
 	}
-	
+
 	log.Printf("Starting Red Team Assessment against: %s", baseURL)
-	
+
 	redTeam := NewRedTeamTest(baseURL)
 	redTeam.RunAllTests()
-	
+
 	log.Println("Red Team Assessment completed!")
 }

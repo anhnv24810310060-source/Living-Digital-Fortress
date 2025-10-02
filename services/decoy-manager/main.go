@@ -4,6 +4,7 @@ import (
     "context"
     "encoding/json"
     "fmt"
+    "bytes"
     "io"
     "log"
     "math/rand"
@@ -15,7 +16,7 @@ import (
     "sync"
     "time"
 
-    "github.com/docker/docker/api/types"
+    imagetypes "github.com/docker/docker/api/types/image"
     "github.com/docker/docker/api/types/container"
     "github.com/docker/docker/client"
     "github.com/docker/go-connections/nat"
@@ -219,7 +220,7 @@ func pickFreePort() (int, error) {
 func spawnHTTPContainer(ctx context.Context, image string, cport nat.Port, hostPort int, labels map[string]string) (string, error) {
     if dockerCli == nil { return "", fmt.Errorf("docker not available") }
     // ensure image
-    rc, err := dockerCli.ImagePull(ctx, image, types.ImagePullOptions{})
+    rc, err := dockerCli.ImagePull(ctx, image, imagetypes.PullOptions{})
     if err == nil { io.Copy(io.Discard, rc); rc.Close() } // ignore pull errors if already present
     // port bindings
     pb := nat.PortMap{cport: []nat.PortBinding{{HostIP: "127.0.0.1", HostPort: strconv.Itoa(hostPort)}}}
@@ -232,14 +233,15 @@ func spawnHTTPContainer(ctx context.Context, image string, cport nat.Port, hostP
         AutoRemove:   true,
     }, nil, nil, "")
     if err != nil { return "", err }
-    if err := dockerCli.ContainerStart(ctx, resp.ID, types.ContainerStartOptions{}); err != nil { return "", err }
+    if err := dockerCli.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil { return "", err }
     return resp.ID, nil
 }
 
 func stopContainer(id string) {
     if dockerCli == nil || id == "" { return }
-    timeout := time.Second * 2
-    _ = dockerCli.ContainerStop(context.Background(), id, &timeout)
+    // Use StopOptions with Timeout seconds
+    sec := 2
+    _ = dockerCli.ContainerStop(context.Background(), id, container.StopOptions{Timeout: &sec})
     mRunning.Add(^uint64(0)) // decrement by 1
 }
 

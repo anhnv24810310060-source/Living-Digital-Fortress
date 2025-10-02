@@ -27,12 +27,12 @@ type RateLimitInfo struct {
 
 // RedisRateLimiter implements distributed rate limiting with Redis
 type RedisRateLimiter struct {
-	client       *redis.Client
-	keyPrefix    string
-	limit        int
-	window       time.Duration
-	burstLimit   int
-	algorithm    string // "fixed_window", "sliding_window", "token_bucket"
+	client     *redis.Client
+	keyPrefix  string
+	limit      int
+	window     time.Duration
+	burstLimit int
+	algorithm  string // "fixed_window", "sliding_window", "token_bucket"
 }
 
 // RateLimiterConfig configuration for rate limiter
@@ -58,7 +58,7 @@ func NewRedisRateLimiter(config RateLimiterConfig) (*RedisRateLimiter, error) {
 	// Test connection
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	
+
 	if err := client.Ping(ctx).Err(); err != nil {
 		return nil, fmt.Errorf("failed to connect to Redis: %w", err)
 	}
@@ -106,7 +106,7 @@ func (rl *RedisRateLimiter) Allow(ctx context.Context, key string) (bool, error)
 // allowFixedWindow implements fixed window algorithm
 func (rl *RedisRateLimiter) allowFixedWindow(ctx context.Context, key string) (bool, error) {
 	redisKey := rl.keyPrefix + key
-	
+
 	// Increment counter
 	count, err := rl.client.Incr(ctx, redisKey).Result()
 	if err != nil {
@@ -128,22 +128,22 @@ func (rl *RedisRateLimiter) allowSlidingWindow(ctx context.Context, key string) 
 	windowStart := now.Add(-rl.window)
 
 	pipe := rl.client.Pipeline()
-	
+
 	// Remove old entries
 	pipe.ZRemRangeByScore(ctx, redisKey, "0", fmt.Sprintf("%d", windowStart.UnixNano()))
-	
+
 	// Count current window
 	countCmd := pipe.ZCard(ctx, redisKey)
-	
+
 	// Add current request
 	pipe.ZAdd(ctx, redisKey, redis.Z{
 		Score:  float64(now.UnixNano()),
 		Member: fmt.Sprintf("%d", now.UnixNano()),
 	})
-	
+
 	// Set expiration
 	pipe.Expire(ctx, redisKey, rl.window+1*time.Second)
-	
+
 	_, err := pipe.Exec(ctx)
 	if err != nil {
 		return false, fmt.Errorf("failed to execute pipeline: %w", err)
@@ -196,8 +196,8 @@ func (rl *RedisRateLimiter) allowTokenBucket(ctx context.Context, key string) (b
 	`)
 
 	refillRate := float64(rl.limit) / rl.window.Seconds()
-	
-	result, err := script.Run(ctx, rl.client, []string{redisKey}, 
+
+	result, err := script.Run(ctx, rl.client, []string{redisKey},
 		rl.burstLimit, refillRate, now.Unix(), 1).Result()
 	if err != nil {
 		return false, fmt.Errorf("failed to execute token bucket script: %w", err)
@@ -205,7 +205,7 @@ func (rl *RedisRateLimiter) allowTokenBucket(ctx context.Context, key string) (b
 
 	resultSlice := result.([]interface{})
 	allowed := resultSlice[0].(int64)
-	
+
 	return allowed == 1, nil
 }
 
@@ -218,14 +218,14 @@ func (rl *RedisRateLimiter) Reset(ctx context.Context, key string) error {
 // GetInfo returns rate limit information for a key
 func (rl *RedisRateLimiter) GetInfo(ctx context.Context, key string) (*RateLimitInfo, error) {
 	redisKey := rl.keyPrefix + key
-	
+
 	switch rl.algorithm {
 	case "sliding_window":
 		now := time.Now()
 		windowStart := now.Add(-rl.window)
-		
-		count, err := rl.client.ZCount(ctx, redisKey, 
-			fmt.Sprintf("%d", windowStart.UnixNano()), 
+
+		count, err := rl.client.ZCount(ctx, redisKey,
+			fmt.Sprintf("%d", windowStart.UnixNano()),
 			fmt.Sprintf("%d", now.UnixNano())).Result()
 		if err != nil {
 			return nil, err
@@ -285,9 +285,9 @@ type InMemoryRateLimiter struct {
 }
 
 type bucket struct {
-	count     int
-	resetAt   time.Time
-	mu        sync.Mutex
+	count   int
+	resetAt time.Time
+	mu      sync.Mutex
 }
 
 // NewInMemoryRateLimiter creates a new in-memory rate limiter
@@ -398,7 +398,7 @@ func RateLimitMiddleware(limiter RateLimiter) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Use client IP as key
 			key := r.RemoteAddr
-			
+
 			allowed, err := limiter.Allow(r.Context(), key)
 			if err != nil {
 				http.Error(w, "Rate limiter error", http.StatusInternalServerError)

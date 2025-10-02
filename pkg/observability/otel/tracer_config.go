@@ -1,9 +1,9 @@
 package otelobs
-package otelobs
 
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	"go.opentelemetry.io/otel"
@@ -19,7 +19,7 @@ type TracerConfig struct {
 	ServiceName    string
 	ServiceVersion string
 	Environment    string
-	Endpoint       string // OTLP endpoint (default: localhost:4318)
+	Endpoint       string  // OTLP endpoint (default: localhost:4318)
 	SamplingRate   float64 // 0.0 to 1.0 (default: 0.1 for 10%)
 }
 
@@ -97,7 +97,8 @@ func GetTracerConfigFromEnv(serviceName, serviceVersion string) TracerConfig {
 }
 
 func getEnv(key, defaultValue string) string {
-	// This is a placeholder - would need to import os
-	// For now, return default
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
 	return defaultValue
 }

@@ -1,0 +1,1 @@
+{"ts":"2025-10-02T15:35:49.240223976Z","service":"ingress","type":"policy.shadow_decision","data":{"action":"allow","scope":"api","tenant":"t1"}}

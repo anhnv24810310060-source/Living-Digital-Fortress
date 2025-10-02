@@ -1,13 +1,22 @@
 package main
 
 import (
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
+
+	"math"
+
+	"shieldx/pkg/security/cryptoatrest"
 
 	_ "github.com/lib/pq"
 )
@@ -69,30 +78,33 @@ type DeviceFingerprint struct {
 }
 
 type RiskScore struct {
-	SessionID        string    `json:"session_id"`
-	OverallScore     float64   `json:"overall_score"`
-	KeystrokeScore   float64   `json:"keystroke_score"`
-	MouseScore       float64   `json:"mouse_score"`
-	LocationScore    float64   `json:"location_score"`
-	DeviceScore      float64   `json:"device_score"`
-	BehaviorScore    float64   `json:"behavior_score"`
-	ReputationScore  float64   `json:"reputation_score"`
-	RiskFactors      []string  `json:"risk_factors"`
-	Recommendation   string    `json:"recommendation"`
-	CalculatedAt     time.Time `json:"calculated_at"`
+	SessionID       string    `json:"session_id"`
+	OverallScore    float64   `json:"overall_score"`
+	KeystrokeScore  float64   `json:"keystroke_score"`
+	MouseScore      float64   `json:"mouse_score"`
+	LocationScore   float64   `json:"location_score"`
+	DeviceScore     float64   `json:"device_score"`
+	BehaviorScore   float64   `json:"behavior_score"`
+	ReputationScore float64   `json:"reputation_score"`
+	RiskFactors     []string  `json:"risk_factors"`
+	Recommendation  string    `json:"recommendation"`
+	CalculatedAt    time.Time `json:"calculated_at"`
 }
 
 type AuthDecision struct {
-	SessionID   string    `json:"session_id"`
-	Action      string    `json:"action"`
-	Confidence  float64   `json:"confidence"`
-	Reason      string    `json:"reason"`
-	Challenge   string    `json:"challenge,omitempty"`
-	ExpiresAt   time.Time `json:"expires_at"`
+	SessionID  string    `json:"session_id"`
+	Action     string    `json:"action"`
+	Confidence float64   `json:"confidence"`
+	Reason     string    `json:"reason"`
+	Challenge  string    `json:"challenge,omitempty"`
+	ExpiresAt  time.Time `json:"expires_at"`
 }
 
 type ContAuthCollector struct {
-	db *sql.DB
+	db  *sql.DB
+	enc *cryptoatrest.Encryptor
+	// in-memory cache to avoid repeated DB hits for hot sessions
+	cache *riskCache
 }
 
 func NewContAuthCollector(dbURL string) (*ContAuthCollector, error) {
@@ -109,7 +121,12 @@ func NewContAuthCollector(dbURL string) (*ContAuthCollector, error) {
 	db.SetMaxIdleConns(5)
 	db.SetConnMaxLifetime(5 * time.Minute)
 
-	collector := &ContAuthCollector{db: db}
+	enc, err := cryptoatrest.NewFromEnv("CONTAUTH_ENC_KEY")
+	if err != nil {
+		// To respect constraint "encrypt telemetry at rest", fail fast if key missing
+		return nil, fmt.Errorf("encryption key missing: %w", err)
+	}
+	collector := &ContAuthCollector{db: db, enc: enc, cache: newRiskCache(parseTTL(getenv("CONTAUTH_RISK_TTL"), 2*time.Minute), 8192)}
 	if err := collector.migrate(); err != nil {
 		return nil, fmt.Errorf("migration failed: %w", err)
 	}
@@ -201,11 +218,36 @@ func (c *ContAuthCollector) CollectTelemetry(w http.ResponseWriter, r *http.Requ
 	}
 
 	telemetry.Timestamp = time.Now()
+	// Constraint: do not store raw biometric data; hash or extract features only
+	// Compute feature summaries
+	avgInt, avgDur := summarizeKeystrokes(telemetry.KeystrokeData)
+	avgMouseVel := summarizeMouse(telemetry.MouseData)
+	kHash := hashKeystrokes(telemetry.KeystrokeData)
+	mHash := hashMouse(telemetry.MouseData)
+	// Keep only minimal, non-identifying summaries
+	telemetry.KeystrokeData = nil
+	telemetry.MouseData = nil
+	if telemetry.Metadata == nil {
+		telemetry.Metadata = map[string]interface{}{}
+	}
+	telemetry.Metadata["ks_sig"] = kHash
+	telemetry.Metadata["mouse_sig"] = mHash
+	telemetry.Metadata["ks_avg_interval"] = avgInt
+	telemetry.Metadata["ks_avg_duration"] = avgDur
+	telemetry.Metadata["mouse_avg_velocity"] = avgMouseVel
 
 	if err := c.storeTelemetry(telemetry); err != nil {
 		log.Printf("Failed to store telemetry: %v", err)
 		http.Error(w, "Failed to store telemetry", http.StatusInternalServerError)
 		return
+	}
+	// Update behavioral baselines asynchronously (no raw biometrics)
+	if c.db != nil {
+		go func(user string) {
+			if err := c.updateBaselineFromMetadata(user); err != nil {
+				log.Printf("[contauth] update baseline: %v", err)
+			}
+		}(telemetry.UserID)
 	}
 
 	response := map[string]interface{}{
@@ -240,6 +282,15 @@ func (c *ContAuthCollector) CalculateRiskScore(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	// Fast path: if cached risk exists and still valid, return it directly
+	if c.cache != nil {
+		if rs, ok := c.cache.Get(request.SessionID); ok {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(rs)
+			return
+		}
+	}
+
 	telemetry, err := c.getRecentTelemetry(request.SessionID)
 	if err != nil {
 		log.Printf("Failed to get telemetry: %v", err)
@@ -254,8 +305,42 @@ func (c *ContAuthCollector) CalculateRiskScore(w http.ResponseWriter, r *http.Re
 
 	riskScore := c.calculateRisk(*telemetry)
 
+	// Optional: consult ML Orchestrator for ensemble anomaly score
+	if mlURL := getenv("MLO_URL"); mlURL != "" {
+		if ens := c.queryMLO(*telemetry, mlURL); ens != nil {
+			// Combine conservatively: weighted average and max guard
+			wgt := parseFloat(getenv("MLO_WEIGHT"), 0.35)
+			combined := wgt*ens.Score + (1-wgt)*riskScore.OverallScore
+			if ens.IsAnomaly {
+				combined = maxFloat(combined, 0.7) // bump if strong anomaly flagged
+			}
+			// Clamp
+			if combined < 0 {
+				combined = 0
+			} else if combined > 1 {
+				combined = 1
+			}
+			riskScore.OverallScore = combined
+			// Adjust recommendation accordingly
+			if combined > 0.8 {
+				riskScore.Recommendation = "block"
+				riskScore.RiskFactors = appendUnique(riskScore.RiskFactors, "ml_anomaly_high")
+			} else if combined > 0.6 {
+				riskScore.Recommendation = "challenge"
+				riskScore.RiskFactors = appendUnique(riskScore.RiskFactors, "ml_anomaly_elevated")
+			}
+		}
+	}
+
 	if err := c.storeRiskScore(riskScore); err != nil {
 		log.Printf("Failed to store risk score: %v", err)
+	}
+	// Security event log (no PII): session, score, recommendation
+	log.Printf("[contauth] risk session=%s overall=%.3f rec=%s", sanitizeID(request.SessionID), riskScore.OverallScore, riskScore.Recommendation)
+
+	// populate cache
+	if c.cache != nil {
+		c.cache.Set(request.SessionID, riskScore)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -271,11 +356,29 @@ func (c *ContAuthCollector) GetAuthDecision(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	riskScore, err := c.getLatestRiskScore(sessionID)
-	if err != nil {
-		log.Printf("Failed to get risk score: %v", err)
-		http.Error(w, "Failed to get risk assessment", http.StatusInternalServerError)
-		return
+	// prefer cached risk to reduce DB load
+	var riskScore *RiskScore
+	if c.cache != nil {
+		if rs, ok := c.cache.Get(sessionID); ok {
+			tmp := rs
+			riskScore = &tmp
+		} else {
+			var err error
+			riskScore, err = c.getLatestRiskScore(sessionID)
+			if err != nil {
+				log.Printf("Failed to get risk score: %v", err)
+				http.Error(w, "Failed to get risk assessment", http.StatusInternalServerError)
+				return
+			}
+		}
+	} else {
+		var err error
+		riskScore, err = c.getLatestRiskScore(sessionID)
+		if err != nil {
+			log.Printf("Failed to get risk score: %v", err)
+			http.Error(w, "Failed to get risk assessment", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	if riskScore == nil {
@@ -288,6 +391,8 @@ func (c *ContAuthCollector) GetAuthDecision(w http.ResponseWriter, r *http.Reque
 	if err := c.storeAuthDecision(decision); err != nil {
 		log.Printf("Failed to store auth decision: %v", err)
 	}
+	// Security decision log
+	log.Printf("[contauth] decision session=%s action=%s conf=%.2f", sanitizeID(sessionID), decision.Action, decision.Confidence)
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(decision); err != nil {
@@ -296,12 +401,16 @@ func (c *ContAuthCollector) GetAuthDecision(w http.ResponseWriter, r *http.Reque
 }
 
 func (c *ContAuthCollector) storeTelemetry(telemetry SessionTelemetry) error {
+	if c.db == nil {
+		return nil
+	}
 	query := `
 	INSERT INTO session_telemetry 
 	(session_id, user_id, device_id, ip_address, user_agent, keystroke_data, 
 	 mouse_data, access_patterns, geolocation_data, device_metrics, metadata, timestamp)
 	VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`
 
+	// Encrypt blobs at rest
 	keystrokeJSON, _ := json.Marshal(telemetry.KeystrokeData)
 	mouseJSON, _ := json.Marshal(telemetry.MouseData)
 	accessJSON, _ := json.Marshal(telemetry.AccessPatterns)
@@ -309,17 +418,48 @@ func (c *ContAuthCollector) storeTelemetry(telemetry SessionTelemetry) error {
 	deviceJSON, _ := json.Marshal(telemetry.DeviceMetrics)
 	metadataJSON, _ := json.Marshal(telemetry.Metadata)
 
+	encKS, encMS, encAP, encGeo, encDev, encMeta := string(keystrokeJSON), string(mouseJSON), string(accessJSON), string(geoJSON), string(deviceJSON), string(metadataJSON)
+	if c.enc != nil {
+		if v, err := c.enc.Encrypt(keystrokeJSON); err == nil {
+			b, _ := json.Marshal(v)
+			encKS = string(b)
+		}
+		if v, err := c.enc.Encrypt(mouseJSON); err == nil {
+			b, _ := json.Marshal(v)
+			encMS = string(b)
+		}
+		if v, err := c.enc.Encrypt(accessJSON); err == nil {
+			b, _ := json.Marshal(v)
+			encAP = string(b)
+		}
+		if v, err := c.enc.Encrypt(geoJSON); err == nil {
+			b, _ := json.Marshal(v)
+			encGeo = string(b)
+		}
+		if v, err := c.enc.Encrypt(deviceJSON); err == nil {
+			b, _ := json.Marshal(v)
+			encDev = string(b)
+		}
+		if v, err := c.enc.Encrypt(metadataJSON); err == nil {
+			b, _ := json.Marshal(v)
+			encMeta = string(b)
+		}
+	}
+
 	_, err := c.db.Exec(query,
 		telemetry.SessionID, telemetry.UserID, telemetry.DeviceID,
 		telemetry.IPAddress, telemetry.UserAgent,
-		string(keystrokeJSON), string(mouseJSON), string(accessJSON),
-		string(geoJSON), string(deviceJSON), string(metadataJSON),
+		encKS, encMS, encAP,
+		encGeo, encDev, encMeta,
 		telemetry.Timestamp)
 
 	return err
 }
 
 func (c *ContAuthCollector) getRecentTelemetry(sessionID string) (*SessionTelemetry, error) {
+	if c.db == nil {
+		return nil, fmt.Errorf("database disabled")
+	}
 	query := `
 	SELECT session_id, user_id, device_id, ip_address, user_agent,
 		   keystroke_data, mouse_data, access_patterns, geolocation_data,
@@ -346,12 +486,48 @@ func (c *ContAuthCollector) getRecentTelemetry(sessionID string) (*SessionTeleme
 		return nil, err
 	}
 
-	json.Unmarshal([]byte(keystrokeJSON), &telemetry.KeystrokeData)
-	json.Unmarshal([]byte(mouseJSON), &telemetry.MouseData)
-	json.Unmarshal([]byte(accessJSON), &telemetry.AccessPatterns)
-	json.Unmarshal([]byte(geoJSON), &telemetry.GeolocationData)
-	json.Unmarshal([]byte(deviceJSON), &telemetry.DeviceMetrics)
-	json.Unmarshal([]byte(metadataJSON), &telemetry.Metadata)
+	// Decrypt blobs
+	if c.enc != nil {
+		// Unquote JSON string to raw base64 before decrypt
+		if b64 := unquoteIfQuoted(keystrokeJSON); b64 != "" {
+			if b, err := c.enc.Decrypt(b64); err == nil {
+				_ = json.Unmarshal(b, &telemetry.KeystrokeData)
+			}
+		}
+		if b64 := unquoteIfQuoted(mouseJSON); b64 != "" {
+			if b, err := c.enc.Decrypt(b64); err == nil {
+				_ = json.Unmarshal(b, &telemetry.MouseData)
+			}
+		}
+		if b64 := unquoteIfQuoted(accessJSON); b64 != "" {
+			if b, err := c.enc.Decrypt(b64); err == nil {
+				_ = json.Unmarshal(b, &telemetry.AccessPatterns)
+			}
+		}
+		if b64 := unquoteIfQuoted(geoJSON); b64 != "" {
+			if b, err := c.enc.Decrypt(b64); err == nil {
+				_ = json.Unmarshal(b, &telemetry.GeolocationData)
+			}
+		}
+		if b64 := unquoteIfQuoted(deviceJSON); b64 != "" {
+			if b, err := c.enc.Decrypt(b64); err == nil {
+				_ = json.Unmarshal(b, &telemetry.DeviceMetrics)
+			}
+		}
+		if b64 := unquoteIfQuoted(metadataJSON); b64 != "" {
+			if b, err := c.enc.Decrypt(b64); err == nil {
+				_ = json.Unmarshal(b, &telemetry.Metadata)
+			}
+		}
+	} else {
+		// fallback: assume plaintext JSON (tests)
+		_ = json.Unmarshal([]byte(keystrokeJSON), &telemetry.KeystrokeData)
+		_ = json.Unmarshal([]byte(mouseJSON), &telemetry.MouseData)
+		_ = json.Unmarshal([]byte(accessJSON), &telemetry.AccessPatterns)
+		_ = json.Unmarshal([]byte(geoJSON), &telemetry.GeolocationData)
+		_ = json.Unmarshal([]byte(deviceJSON), &telemetry.DeviceMetrics)
+		_ = json.Unmarshal([]byte(metadataJSON), &telemetry.Metadata)
+	}
 
 	return &telemetry, nil
 }
@@ -379,13 +555,13 @@ func (c *ContAuthCollector) calculateRisk(telemetry SessionTelemetry) RiskScore 
 		"reputation": 0.10,
 	}
 
-	riskScore.OverallScore = 
+	riskScore.OverallScore =
 		riskScore.KeystrokeScore*weights["keystroke"] +
-		riskScore.MouseScore*weights["mouse"] +
-		riskScore.LocationScore*weights["location"] +
-		riskScore.DeviceScore*weights["device"] +
-		riskScore.BehaviorScore*weights["behavior"] +
-		riskScore.ReputationScore*weights["reputation"]
+			riskScore.MouseScore*weights["mouse"] +
+			riskScore.LocationScore*weights["location"] +
+			riskScore.DeviceScore*weights["device"] +
+			riskScore.BehaviorScore*weights["behavior"] +
+			riskScore.ReputationScore*weights["reputation"]
 
 	if riskScore.OverallScore > 0.8 {
 		riskScore.Recommendation = "block"
@@ -402,6 +578,12 @@ func (c *ContAuthCollector) calculateRisk(telemetry SessionTelemetry) RiskScore 
 
 func (c *ContAuthCollector) calculateKeystrokeRisk(keystrokes []KeystrokeEvent, userID string) float64 {
 	if len(keystrokes) < 5 {
+		// Fallback to aggregated metadata if available
+		base := c.getUserBaseline(userID)
+		if base != nil {
+			// Without raw data, default to moderate-low risk
+			return 0.35
+		}
 		return 0.5
 	}
 
@@ -416,21 +598,21 @@ func (c *ContAuthCollector) calculateKeystrokeRisk(keystrokes []KeystrokeEvent, 
 
 	avgInterval := average(intervals)
 	avgDuration := average(durations)
-	
+
 	intervalVariance := variance(intervals, avgInterval)
 	durationVariance := variance(durations, avgDuration)
 
 	baseline := c.getUserBaseline(userID)
-	
+
 	intervalDeviation := 0.0
 	durationDeviation := 0.0
-	
+
 	if baseline != nil {
 		if baseline.AvgKeystrokeInterval > 0 {
-			intervalDeviation = abs(avgInterval - baseline.AvgKeystrokeInterval) / baseline.AvgKeystrokeInterval
+			intervalDeviation = abs(avgInterval-baseline.AvgKeystrokeInterval) / baseline.AvgKeystrokeInterval
 		}
 		if baseline.AvgKeystrokeDuration > 0 {
-			durationDeviation = abs(avgDuration - baseline.AvgKeystrokeDuration) / baseline.AvgKeystrokeDuration
+			durationDeviation = abs(avgDuration-baseline.AvgKeystrokeDuration) / baseline.AvgKeystrokeDuration
 		}
 	}
 
@@ -439,8 +621,31 @@ func (c *ContAuthCollector) calculateKeystrokeRisk(keystrokes []KeystrokeEvent, 
 	return min(riskScore, 1.0)
 }
 
+// hashKeystrokes produces a stable feature hash; does not store raw keys
+func hashKeystrokes(ks []KeystrokeEvent) string {
+	h := sha256.New()
+	for _, e := range ks {
+		// Only timing features; no raw key values
+		fmt.Fprintf(h, "%d:%f:%f|", e.Timestamp, e.Duration, e.Pressure)
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// hashMouse summarizes mouse behavior without raw coordinates
+func hashMouse(ms []MouseEvent) string {
+	h := sha256.New()
+	for _, e := range ms {
+		fmt.Fprintf(h, "%d:%f:%s|", e.Timestamp, e.Velocity, e.EventType)
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
 func (c *ContAuthCollector) calculateMouseRisk(mouseEvents []MouseEvent, userID string) float64 {
 	if len(mouseEvents) < 10 {
+		base := c.getUserBaseline(userID)
+		if base != nil {
+			return 0.25
+		}
 		return 0.3
 	}
 
@@ -460,9 +665,9 @@ func (c *ContAuthCollector) calculateMouseRisk(mouseEvents []MouseEvent, userID 
 
 	baseline := c.getUserBaseline(userID)
 	velocityDeviation := 0.0
-	
+
 	if baseline != nil && baseline.TypicalMouseVelocity > 0 {
-		velocityDeviation = abs(avgVelocity - baseline.TypicalMouseVelocity) / baseline.TypicalMouseVelocity
+		velocityDeviation = abs(avgVelocity-baseline.TypicalMouseVelocity) / baseline.TypicalMouseVelocity
 	}
 
 	riskScore := (velocityVariance/10000 + velocityDeviation) / 2
@@ -523,7 +728,7 @@ func (c *ContAuthCollector) calculateBehaviorRisk(accessPatterns []AccessEvent, 
 	}
 
 	riskScore := 0.0
-	
+
 	failureCount := 0
 	for _, event := range accessPatterns {
 		if !event.Success {
@@ -541,7 +746,7 @@ func (c *ContAuthCollector) calculateBehaviorRisk(accessPatterns []AccessEvent, 
 
 func (c *ContAuthCollector) calculateReputationRisk(ipAddress, userAgent string) float64 {
 	riskScore := 0.0
-	
+
 	suspiciousAgents := []string{"bot", "crawler", "scanner"}
 	for _, suspicious := range suspiciousAgents {
 		if strings.Contains(strings.ToLower(userAgent), suspicious) {
@@ -582,6 +787,9 @@ func (c *ContAuthCollector) makeAuthDecision(riskScore RiskScore) AuthDecision {
 }
 
 func (c *ContAuthCollector) storeRiskScore(riskScore RiskScore) error {
+	if c.db == nil {
+		return nil
+	}
 	query := `
 	INSERT INTO risk_scores 
 	(session_id, overall_score, keystroke_score, mouse_score, location_score,
@@ -600,6 +808,9 @@ func (c *ContAuthCollector) storeRiskScore(riskScore RiskScore) error {
 }
 
 func (c *ContAuthCollector) storeAuthDecision(decision AuthDecision) error {
+	if c.db == nil {
+		return nil
+	}
 	query := `
 	INSERT INTO auth_decisions (session_id, action, confidence, reason, challenge, expires_at)
 	VALUES ($1, $2, $3, $4, $5, $6)`
@@ -612,6 +823,9 @@ func (c *ContAuthCollector) storeAuthDecision(decision AuthDecision) error {
 }
 
 func (c *ContAuthCollector) getLatestRiskScore(sessionID string) (*RiskScore, error) {
+	if c.db == nil {
+		return nil, fmt.Errorf("database disabled")
+	}
 	query := `
 	SELECT session_id, overall_score, keystroke_score, mouse_score, location_score,
 		   device_score, behavior_score, reputation_score, risk_factors, 
@@ -642,18 +856,18 @@ func (c *ContAuthCollector) getLatestRiskScore(sessionID string) (*RiskScore, er
 }
 
 type UserBaseline struct {
-	UserID                  string
-	AvgKeystrokeInterval    float64
-	AvgKeystrokeDuration    float64
-	TypicalMouseVelocity    float64
+	UserID               string
+	AvgKeystrokeInterval float64
+	AvgKeystrokeDuration float64
+	TypicalMouseVelocity float64
 }
 
 func (c *ContAuthCollector) getUserBaseline(userID string) *UserBaseline {
 	return &UserBaseline{
-		UserID:                  userID,
-		AvgKeystrokeInterval:    150.0,
-		AvgKeystrokeDuration:    80.0,
-		TypicalMouseVelocity:    500.0,
+		UserID:               userID,
+		AvgKeystrokeInterval: 150.0,
+		AvgKeystrokeDuration: 80.0,
+		TypicalMouseVelocity: 500.0,
 	}
 }
 
@@ -695,4 +909,244 @@ func min(a, b float64) float64 {
 
 func (c *ContAuthCollector) Close() error {
 	return c.db.Close()
+}
+
+// updateBaselineFromMetadata computes aggregated per-user baselines from metadata fields
+// ks_avg_interval, ks_avg_duration, mouse_avg_velocity across recent N sessions and UPSERTs into user_baselines.
+func (c *ContAuthCollector) updateBaselineFromMetadata(userID string) error {
+	if c.db == nil || userID == "" {
+		return nil
+	}
+	// Aggregate last 100 rows to limit cost
+	q := `
+		WITH recent AS (
+			SELECT metadata
+			FROM session_telemetry
+			WHERE user_id = $1
+			ORDER BY timestamp DESC
+			LIMIT 100
+		)
+		SELECT 
+			AVG( (metadata->>'ks_avg_interval')::double precision ) AS avg_int,
+			AVG( (metadata->>'ks_avg_duration')::double precision ) AS avg_dur,
+			AVG( (metadata->>'mouse_avg_velocity')::double precision ) AS avg_mouse
+		FROM recent;`
+	var avgInt, avgDur, avgMouse sql.NullFloat64
+	if err := c.db.QueryRow(q, userID).Scan(&avgInt, &avgDur, &avgMouse); err != nil {
+		return err
+	}
+	// Upsert into user_baselines
+	uq := `
+		INSERT INTO user_baselines (user_id, avg_keystroke_interval, avg_keystroke_duration, typical_mouse_velocity, last_updated)
+		VALUES ($1, $2, $3, $4, NOW())
+		ON CONFLICT (user_id) DO UPDATE SET
+			avg_keystroke_interval = EXCLUDED.avg_keystroke_interval,
+			avg_keystroke_duration = EXCLUDED.avg_keystroke_duration,
+			typical_mouse_velocity = EXCLUDED.typical_mouse_velocity,
+			last_updated = NOW();`
+	_, err := c.db.Exec(uq,
+		userID,
+		nullOrZero(avgInt),
+		nullOrZero(avgDur),
+		nullOrZero(avgMouse),
+	)
+	return err
+}
+
+func nullOrZero(n sql.NullFloat64) float64 { if n.Valid { return n.Float64 }; return 0 }
+
+// summarizeKeystrokes returns average inter-key interval and average key duration.
+func summarizeKeystrokes(keystrokes []KeystrokeEvent) (avgInterval float64, avgDuration float64) {
+	if len(keystrokes) < 2 {
+		if len(keystrokes) == 1 {
+			return 0, keystrokes[0].Duration
+		}
+		return 0, 0
+	}
+	intervals := make([]float64, 0, len(keystrokes)-1)
+	durations := make([]float64, 0, len(keystrokes))
+	for i := 1; i < len(keystrokes); i++ {
+		intervals = append(intervals, float64(keystrokes[i].Timestamp-keystrokes[i-1].Timestamp))
+	}
+	for _, k := range keystrokes {
+		durations = append(durations, k.Duration)
+	}
+	return average(intervals), average(durations)
+}
+
+// summarizeMouse returns average velocity.
+func summarizeMouse(events []MouseEvent) float64 {
+	if len(events) == 0 {
+		return 0
+	}
+	v := make([]float64, 0, len(events))
+	for _, e := range events {
+		if e.Velocity > 0 {
+			v = append(v, e.Velocity)
+		}
+	}
+	return average(v)
+}
+
+// unquoteIfQuoted removes surrounding quotes from a JSON string value if present.
+func unquoteIfQuoted(s string) string {
+	if len(s) >= 2 && ((s[0] == '"' && s[len(s)-1] == '"') || (s[0] == '\'' && s[len(s)-1] == '\'')) {
+		var out string
+		if err := json.Unmarshal([]byte(s), &out); err == nil {
+			return out
+		}
+	}
+	return s
+}
+
+// -------------- High-performance helpers and ML integration --------------
+
+// Minimal TTL cache for RiskScore keyed by sessionID
+type riskCache struct {
+	mu    sync.RWMutex
+	data  map[string]cachedRisk
+	ttl   time.Duration
+	maxSz int
+}
+type cachedRisk struct {
+	v   RiskScore
+	exp time.Time
+}
+
+func newRiskCache(ttl time.Duration, max int) *riskCache {
+	if ttl <= 0 {
+		ttl = 2 * time.Minute
+	}
+	if max < 1024 {
+		max = 1024
+	}
+	return &riskCache{data: make(map[string]cachedRisk, max), ttl: ttl, maxSz: max}
+}
+func (rc *riskCache) Get(k string) (RiskScore, bool) {
+	rc.mu.RLock()
+	cr, ok := rc.data[k]
+	rc.mu.RUnlock()
+	if !ok || time.Now().After(cr.exp) {
+		if ok {
+			rc.mu.Lock(); delete(rc.data, k); rc.mu.Unlock()
+		}
+		return RiskScore{}, false
+	}
+	return cr.v, true
+}
+func (rc *riskCache) Set(k string, v RiskScore) {
+	rc.mu.Lock()
+	defer rc.mu.Unlock()
+	if len(rc.data) >= rc.maxSz {
+		// simple random eviction to keep O(1)
+		for kk := range rc.data {
+			delete(rc.data, kk)
+			break
+		}
+	}
+	rc.data[k] = cachedRisk{v: v, exp: time.Now().Add(rc.ttl)}
+}
+
+// ML orchestrator client (best-effort, no internals exposed)
+type mlAnalyzeResult struct {
+	IsAnomaly  bool    `json:"is_anomaly"`
+	Score      float64 `json:"score"`
+	Confidence float64 `json:"confidence"`
+}
+
+func (c *ContAuthCollector) queryMLO(t SessionTelemetry, baseURL string) *mlAnalyzeResult {
+	// Build features from privacy-safe summaries only
+	ksInt, ksDur := summarizeKeystrokes(t.KeystrokeData)
+	mVel := summarizeMouse(t.MouseData)
+	failRate := 0.0
+	if n := len(t.AccessPatterns); n > 0 {
+		fails := 0
+		for _, a := range t.AccessPatterns {
+			if !a.Success {
+				fails++
+			}
+		}
+		failRate = float64(fails) / float64(n)
+	}
+	deviceCompleteness := 0.0
+	total := 5.0
+	miss := 0.0
+	if t.DeviceMetrics.ScreenResolution == "" {
+		miss++
+	}
+	if t.DeviceMetrics.Timezone == "" {
+		miss++
+	}
+	if t.DeviceMetrics.Language == "" {
+		miss++
+	}
+	if t.DeviceMetrics.Platform == "" {
+		miss++
+	}
+	if t.DeviceMetrics.CPUCores <= 0 {
+		miss++
+	}
+	deviceCompleteness = 1.0 - miss/total
+	repRisk := c.calculateReputationRisk(t.IPAddress, t.UserAgent)
+
+	feat := []float64{ksInt, ksDur, mVel, failRate, deviceCompleteness, repRisk}
+	payload := map[string]any{
+		"timestamp": time.Now(),
+		"source":    "contauth",
+		"event_type": "contauth_session",
+		"tenant_id":  t.UserID,
+		"features":   feat,
+		"threat_score": 0,
+	}
+	b, _ := json.Marshal(payload)
+	// timeout and small client to avoid blocking
+	to := time.Duration(parseInt(getenv("MLO_TIMEOUT_MS"), 500)) * time.Millisecond
+	req, _ := http.NewRequest(http.MethodPost, strings.TrimRight(baseURL, "/")+"/analyze", strings.NewReader(string(b)))
+	req.Header.Set("Content-Type", "application/json")
+	cli := &http.Client{Timeout: to}
+	resp, err := cli.Do(req)
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		return nil
+	}
+	var out mlAnalyzeResult
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil
+	}
+	// sanitize
+	if out.Score < 0 || out.Score > 1 || math.IsNaN(out.Score) || math.IsInf(out.Score, 0) {
+		return nil
+	}
+	return &out
+}
+
+// env helpers (localized)
+func getenv(key string) string { return strings.TrimSpace(os.Getenv(key)) }
+func parseFloat(s string, def float64) float64 {
+	if s == "" { return def }
+	if v, err := strconv.ParseFloat(s, 64); err == nil { return v }
+	return def
+}
+func parseInt(s string, def int) int {
+	if s == "" { return def }
+	if v, err := strconv.Atoi(s); err == nil { return v }
+	return def
+}
+func parseTTL(s string, def time.Duration) time.Duration {
+	if s == "" { return def }
+	if d, err := time.ParseDuration(s); err == nil { return d }
+	return def
+}
+func maxFloat(a, b float64) float64 { if a > b { return a }; return b }
+func appendUnique(arr []string, v string) []string {
+	for _, x := range arr { if x == v { return arr } }
+	return append(arr, v)
+}
+// sanitize identifiers before logging (truncate)
+func sanitizeID(id string) string {
+	if len(id) > 12 { return id[:12] + "*" }
+	return id
 }

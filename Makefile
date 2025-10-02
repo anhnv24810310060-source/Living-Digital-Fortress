@@ -69,6 +69,7 @@ build-services:
 	go build -o bin/anchor ./services/anchor
 	go build -o bin/shapeshifter ./services/shapeshifter
 	go build -o bin/sinkhole ./services/sinkhole
+	go build -o bin/camouflage-api ./services/camouflage-api
 
 # Build eBPF programs
 build-ebpf:

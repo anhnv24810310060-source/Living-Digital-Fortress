@@ -1,5 +1,4 @@
 package auth
-package auth
 
 import (
 	"context"
@@ -11,9 +10,9 @@ import (
 )
 
 var (
-	ErrAccessDenied      = errors.New("access denied")
-	ErrInvalidPolicy     = errors.New("invalid policy")
-	ErrPolicyEvaluation  = errors.New("policy evaluation failed")
+	ErrAccessDenied     = errors.New("access denied")
+	ErrInvalidPolicy    = errors.New("invalid policy")
+	ErrPolicyEvaluation = errors.New("policy evaluation failed")
 )
 
 // Permission represents a granular permission

@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 )
 
 func TestConsumeCredits(t *testing.T) {
@@ -127,7 +126,7 @@ func TestGetBalance(t *testing.T) {
 	if w.Code == http.StatusOK {
 		var response map[string]interface{}
 		json.NewDecoder(w.Body).Decode(&response)
-		
+
 		if tenantID, ok := response["tenant_id"].(string); ok && tenantID == "test_tenant" {
 			t.Log("Get balance test passed")
 		} else {
@@ -142,9 +141,9 @@ func TestConcurrentConsumption(t *testing.T) {
 	ledger := &CreditLedger{}
 	numGoroutines := 5
 	consumeAmount := int64(5)
-	
+
 	results := make(chan bool, numGoroutines)
-	
+
 	for i := 0; i < numGoroutines; i++ {
 		go func(id int) {
 			req := ConsumeRequest{
@@ -152,27 +151,27 @@ func TestConcurrentConsumption(t *testing.T) {
 				Amount:    consumeAmount,
 				Reference: "concurrent_test",
 			}
-			
+
 			jsonData, _ := json.Marshal(req)
 			httpReq := httptest.NewRequest("POST", "/credits/consume", bytes.NewBuffer(jsonData))
 			w := httptest.NewRecorder()
-			
+
 			ledger.ConsumeCredits(w, httpReq)
-			
+
 			var response CreditResponse
 			json.NewDecoder(w.Body).Decode(&response)
-			
+
 			results <- response.Success
 		}(i)
 	}
-	
+
 	successCount := 0
 	for i := 0; i < numGoroutines; i++ {
 		if <-results {
 			successCount++
 		}
 	}
-	
+
 	t.Logf("Concurrent consumption test: %d/%d successful", successCount, numGoroutines)
 }
 
@@ -187,7 +186,7 @@ func TestPaymentProcessing(t *testing.T) {
 	}
 
 	result, err := ledger.processPayment(req)
-	
+
 	if err != nil {
 		t.Errorf("Payment processing failed: %v", err)
 		return
@@ -217,7 +216,7 @@ func TestInvalidPayment(t *testing.T) {
 	}
 
 	_, err := ledger.processPayment(req)
-	
+
 	if err == nil {
 		t.Error("Expected payment processing to fail with invalid data")
 		return
@@ -230,7 +229,7 @@ func TestHasSufficientCredits(t *testing.T) {
 	ledger := &CreditLedger{}
 
 	hasSufficient, err := ledger.HasSufficientCredits("test_tenant", 100)
-	
+
 	if err != nil {
 		t.Logf("HasSufficientCredits returned error: %v", err)
 	} else {
