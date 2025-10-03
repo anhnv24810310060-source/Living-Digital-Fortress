@@ -12,8 +12,12 @@ import (
 	"strings"
 	"time"
 
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 
 	"shieldx/pkg/ledger"
@@ -141,6 +145,8 @@ func (cl *CreditLedger) setBalanceCache(tenant string, bal int64) {
 
 func (cl *CreditLedger) migrate() error {
 	query := `
+    -- required for gen_random_uuid()
+    CREATE EXTENSION IF NOT EXISTS pgcrypto;
 	CREATE TABLE IF NOT EXISTS credit_accounts (
 		tenant_id VARCHAR(255) PRIMARY KEY,
 		balance BIGINT NOT NULL DEFAULT 0,
@@ -318,34 +324,50 @@ func (cl *CreditLedger) ConsumeCredits(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	txnID, err := cl.consumeCreditsAtomic(req.TenantID, req.Amount, req.Description, req.Reference, req.IdempotencyKey)
+	var txnID string
+	var err error
+	for attempt := 0; attempt < 3; attempt++ {
+		txnID, err = cl.consumeCreditsAtomic(req.TenantID, req.Amount, req.Description, req.Reference, req.IdempotencyKey)
+		if err == nil || !isRetryableTxErr(err) {
+			break
+		}
+		time.Sleep(time.Duration(50*(attempt+1)) * time.Millisecond)
+	}
 	if err != nil {
 		log.Printf("Failed to consume credits: %v", err)
 
+		var status = http.StatusInternalServerError
 		var response CreditResponse
 		if strings.Contains(err.Error(), "insufficient") {
-			response = CreditResponse{
-				Success: false,
-				Error:   "Insufficient credits",
-			}
+			status = http.StatusPaymentRequired
+			response = CreditResponse{Success: false, Error: "Insufficient credits"}
 			if cl.metrics != nil {
 				cl.metrics.Ops.Inc(map[string]string{"op": "consume", "result": "insufficient"})
 			}
 		} else {
-			response = CreditResponse{
-				Success: false,
-				Error:   "Failed to consume credits",
-			}
+			response = CreditResponse{Success: false, Error: "Failed to consume credits"}
 			if cl.metrics != nil {
 				cl.metrics.Ops.Inc(map[string]string{"op": "consume", "result": "error"})
 			}
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
+		w.WriteHeader(status)
+		_ = json.NewEncoder(w).Encode(response)
 		return
 	}
 
+	// Append security event log (masking reference) and invalidate cache before reading fresh balance
+	maskedRef := req.Reference
+	if len(maskedRef) > 6 {
+		maskedRef = maskedRef[:2] + "***" + maskedRef[len(maskedRef)-2:]
+	}
+	_ = ledger.AppendJSONLine("data/ledger-credits.log", "credits", "consume", map[string]any{
+		"tenant_id": req.TenantID,
+		"amount":    req.Amount,
+		"ref":       maskedRef,
+		"txn_id":    txnID,
+	})
 	// Invalidate cache before reading fresh balance
 	cl.delBalanceCache(req.TenantID)
 	balance, _ := cl.getBalance(req.TenantID)
@@ -415,9 +437,17 @@ func (cl *CreditLedger) PurchaseCredits(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	txnID, err := cl.addCreditsAtomic(req.TenantID, req.Amount, "purchase",
+	var txnID string
+	txnID, err = cl.addCreditsAtomic(req.TenantID, req.Amount, "purchase",
 		fmt.Sprintf("Credit purchase via %s", req.PaymentMethod),
 		paymentResult.Reference, req.IdempotencyKey)
+	if isRetryableTxErr(err) {
+		// simple retry once for purchases
+		time.Sleep(75 * time.Millisecond)
+		txnID, err = cl.addCreditsAtomic(req.TenantID, req.Amount, "purchase",
+			fmt.Sprintf("Credit purchase via %s", req.PaymentMethod),
+			paymentResult.Reference, req.IdempotencyKey)
+	}
 
 	if err != nil {
 		log.Printf("Failed to add credits: %v", err)
@@ -430,6 +460,18 @@ func (cl *CreditLedger) PurchaseCredits(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Append audit log for purchase with masked payment reference
+	maskedRef := paymentResult.Reference
+	if len(maskedRef) > 6 {
+		maskedRef = maskedRef[:2] + "***" + maskedRef[len(maskedRef)-2:]
+	}
+	_ = ledger.AppendJSONLine("data/ledger-credits.log", "credits", "purchase", map[string]any{
+		"tenant_id": req.TenantID,
+		"amount":    req.Amount,
+		"method":    req.PaymentMethod,
+		"ref":       maskedRef,
+		"txn_id":    txnID,
+	})
 	cl.delBalanceCache(req.TenantID)
 	balance, _ := cl.getBalance(req.TenantID)
 	response := CreditResponse{
@@ -467,16 +509,39 @@ func (cl *CreditLedger) ReserveCredits(w http.ResponseWriter, r *http.Request) {
 	if req.IdempotencyKey == "" {
 		req.IdempotencyKey = r.Header.Get("Idempotency-Key")
 	}
-	id, err := cl.reserveAtomic(req.TenantID, req.Amount, time.Duration(req.TTLSeconds)*time.Second, req.IdempotencyKey)
+	var id string
+	var err error
+	for attempt := 0; attempt < 3; attempt++ {
+		id, err = cl.reserveAtomic(req.TenantID, req.Amount, time.Duration(req.TTLSeconds)*time.Second, req.IdempotencyKey)
+		if err == nil || !isRetryableTxErr(err) {
+			break
+		}
+		time.Sleep(time.Duration(50*(attempt+1)) * time.Millisecond)
+	}
 	if err != nil {
 		log.Printf("reserve failed: %v", err)
 		if strings.Contains(err.Error(), "insufficient") {
+			if cl.metrics != nil {
+				cl.metrics.Ops.Inc(map[string]string{"op": "reserve", "result": "insufficient"})
+			}
 			writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": "Insufficient credits"})
 			return
+		}
+		if cl.metrics != nil {
+			cl.metrics.Ops.Inc(map[string]string{"op": "reserve", "result": "error"})
 		}
 		http.Error(w, "Failed to reserve", http.StatusInternalServerError)
 		return
 	}
+	if cl.metrics != nil {
+		cl.metrics.Ops.Inc(map[string]string{"op": "reserve", "result": "ok"})
+	}
+	_ = ledger.AppendJSONLine("data/ledger-credits.log", "credits", "reserve", map[string]any{
+		"tenant_id":      req.TenantID,
+		"amount":         req.Amount,
+		"reservation_id": id,
+		"ttl_sec":        req.TTLSeconds,
+	})
 	cl.delBalanceCache(req.TenantID)
 	bal, _ := cl.getBalance(req.TenantID)
 	writeJSON(w, http.StatusOK, map[string]any{"success": true, "reservation_id": id, "balance": bal})
@@ -500,12 +565,31 @@ func (cl *CreditLedger) CommitReservation(w http.ResponseWriter, r *http.Request
 	if req.IdempotencyKey == "" {
 		req.IdempotencyKey = r.Header.Get("Idempotency-Key")
 	}
-	txnID, err := cl.commitReservationAtomic(req.TenantID, req.ReservationID, req.IdempotencyKey)
+	var txnID string
+	var err error
+	for attempt := 0; attempt < 3; attempt++ {
+		txnID, err = cl.commitReservationAtomic(req.TenantID, req.ReservationID, req.IdempotencyKey)
+		if err == nil || !isRetryableTxErr(err) {
+			break
+		}
+		time.Sleep(time.Duration(50*(attempt+1)) * time.Millisecond)
+	}
 	if err != nil {
 		log.Printf("commit failed: %v", err)
+		if cl.metrics != nil {
+			cl.metrics.Ops.Inc(map[string]string{"op": "commit", "result": "error"})
+		}
 		http.Error(w, "Failed to commit", http.StatusBadRequest)
 		return
 	}
+	if cl.metrics != nil {
+		cl.metrics.Ops.Inc(map[string]string{"op": "commit", "result": "ok"})
+	}
+	_ = ledger.AppendJSONLine("data/ledger-credits.log", "credits", "commit", map[string]any{
+		"tenant_id":      req.TenantID,
+		"reservation_id": req.ReservationID,
+		"txn_id":         txnID,
+	})
 	cl.delBalanceCache(req.TenantID)
 	bal, _ := cl.getBalance(req.TenantID)
 	writeJSON(w, http.StatusOK, map[string]any{"success": true, "transaction_id": txnID, "balance": bal})
@@ -526,10 +610,28 @@ func (cl *CreditLedger) CancelReservation(w http.ResponseWriter, r *http.Request
 		http.Error(w, "Missing required fields", http.StatusBadRequest)
 		return
 	}
-	if err := cl.cancelReservationAtomic(req.TenantID, req.ReservationID); err != nil {
+	var err error
+	for attempt := 0; attempt < 3; attempt++ {
+		err = cl.cancelReservationAtomic(req.TenantID, req.ReservationID)
+		if err == nil || !isRetryableTxErr(err) {
+			break
+		}
+		time.Sleep(time.Duration(50*(attempt+1)) * time.Millisecond)
+	}
+	if err != nil {
+		if cl.metrics != nil {
+			cl.metrics.Ops.Inc(map[string]string{"op": "cancel", "result": "error"})
+		}
 		http.Error(w, "Failed to cancel", http.StatusBadRequest)
 		return
 	}
+	if cl.metrics != nil {
+		cl.metrics.Ops.Inc(map[string]string{"op": "cancel", "result": "ok"})
+	}
+	_ = ledger.AppendJSONLine("data/ledger-credits.log", "credits", "cancel", map[string]any{
+		"tenant_id":      req.TenantID,
+		"reservation_id": req.ReservationID,
+	})
 	cl.delBalanceCache(req.TenantID)
 	bal, _ := cl.getBalance(req.TenantID)
 	writeJSON(w, http.StatusOK, map[string]any{"success": true, "balance": bal})
@@ -577,6 +679,11 @@ func (cl *CreditLedger) consumeCreditsAtomic(tenantID string, amount int64, desc
 		return "", fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	defer tx.Rollback()
+
+	// Enforce strongest isolation to prevent write skew and ensure no negative balances under concurrency
+	if _, err := tx.Exec(`SET TRANSACTION ISOLATION LEVEL SERIALIZABLE`); err != nil {
+		return "", fmt.Errorf("failed to set isolation level: %w", err)
+	}
 
 	_, err = tx.Exec(`
 		INSERT INTO credit_accounts (tenant_id) 
@@ -640,6 +747,11 @@ func (cl *CreditLedger) addCreditsAtomic(tenantID string, amount int64, txnType,
 	}
 	defer tx.Rollback()
 
+	// Enforce strongest isolation to ensure invariants under concurrency
+	if _, err := tx.Exec(`SET TRANSACTION ISOLATION LEVEL SERIALIZABLE`); err != nil {
+		return "", fmt.Errorf("failed to set isolation level: %w", err)
+	}
+
 	_, err = tx.Exec(`
 		INSERT INTO credit_accounts (tenant_id) 
 		VALUES ($1) 
@@ -659,13 +771,21 @@ func (cl *CreditLedger) addCreditsAtomic(tenantID string, amount int64, txnType,
 		return "", fmt.Errorf("failed to update balance: %w", err)
 	}
 
+	// Optionally encrypt sensitive payment reference at-rest (PCI)
+	encRef := reference
+	if strings.EqualFold(txnType, "purchase") {
+		if r2, err := cl.encryptAtRest(reference); err == nil && r2 != "" {
+			encRef = r2
+		}
+	}
+
 	// Then record transaction
 	var txnID string
 	err = tx.QueryRow(`
 		INSERT INTO credit_transactions (tenant_id, type, amount, description, reference, status, processed_at)
 		VALUES ($1, $2, $3, $4, $5, 'completed', NOW())
 		RETURNING transaction_id`,
-		tenantID, txnType, amount, description, reference).Scan(&txnID)
+		tenantID, txnType, amount, description, encRef).Scan(&txnID)
 	if err != nil {
 		return "", fmt.Errorf("failed to create transaction: %w", err)
 	}
@@ -722,6 +842,10 @@ func (cl *CreditLedger) reserveAtomic(tenantID string, amount int64, ttl time.Du
 	}
 	defer tx.Rollback()
 
+	if _, err := tx.Exec(`SET TRANSACTION ISOLATION LEVEL SERIALIZABLE`); err != nil {
+		return "", fmt.Errorf("failed to set isolation level: %w", err)
+	}
+
 	_, err = tx.Exec(`INSERT INTO credit_accounts (tenant_id) VALUES ($1) ON CONFLICT (tenant_id) DO NOTHING`, tenantID)
 	if err != nil {
 		return "", err
@@ -755,6 +879,10 @@ func (cl *CreditLedger) commitReservationAtomic(tenantID, reservationID, idempot
 		return "", err
 	}
 	defer tx.Rollback()
+
+	if _, err := tx.Exec(`SET TRANSACTION ISOLATION LEVEL SERIALIZABLE`); err != nil {
+		return "", fmt.Errorf("failed to set isolation level: %w", err)
+	}
 
 	var amount int64
 	var status string
@@ -798,6 +926,10 @@ func (cl *CreditLedger) cancelReservationAtomic(tenantID, reservationID string) 
 		return err
 	}
 	defer tx.Rollback()
+
+	if _, err := tx.Exec(`SET TRANSACTION ISOLATION LEVEL SERIALIZABLE`); err != nil {
+		return fmt.Errorf("failed to set isolation level: %w", err)
+	}
 	var amount int64
 	var status string
 	if err := tx.QueryRow(`SELECT amount, status FROM credit_reservations WHERE reservation_id=$1 AND tenant_id=$2 FOR UPDATE`, reservationID, tenantID).Scan(&amount, &status); err != nil {
@@ -891,13 +1023,40 @@ func (cl *CreditLedger) GetHistory(w http.ResponseWriter, r *http.Request) {
 			limit = parsed
 		}
 	}
+	cursor := r.URL.Query().Get("cursor")
 
-	rows, err := cl.db.Query(`
-		SELECT transaction_id, type, amount, COALESCE(description,''), COALESCE(reference,''), created_at
-		FROM credit_transactions
-		WHERE tenant_id=$1
-		ORDER BY created_at DESC
-		LIMIT $2`, tenantID, limit)
+	// If cursor provided, fetch its created_at to build keyset pagination predicate
+	var cutoff time.Time
+	var haveCutoff bool
+	if cursor != "" {
+		var err error
+		cutoff, err = cl.lookupTxnCreatedAt(tenantID, cursor)
+		if err != nil {
+			http.Error(w, "invalid cursor", http.StatusBadRequest)
+			return
+		}
+		haveCutoff = true
+	}
+
+	// Keyset pagination for stable high-performance paging
+	// Order by created_at DESC, transaction_id DESC to disambiguate ties
+	var rows *sql.Rows
+	var err error
+	if haveCutoff {
+		rows, err = cl.db.Query(`
+			SELECT transaction_id, type, amount, COALESCE(description,''), COALESCE(reference,''), created_at
+			FROM credit_transactions
+			WHERE tenant_id=$1 AND (created_at < $2 OR (created_at = $2 AND transaction_id < $3))
+			ORDER BY created_at DESC, transaction_id DESC
+			LIMIT $4`, tenantID, cutoff, cursor, limit)
+	} else {
+		rows, err = cl.db.Query(`
+			SELECT transaction_id, type, amount, COALESCE(description,''), COALESCE(reference,''), created_at
+			FROM credit_transactions
+			WHERE tenant_id=$1
+			ORDER BY created_at DESC, transaction_id DESC
+			LIMIT $2`, tenantID, limit)
+	}
 	if err != nil {
 		log.Printf("Failed to fetch history: %v", err)
 		http.Error(w, "Failed to fetch history", http.StatusInternalServerError)
@@ -914,22 +1073,43 @@ func (cl *CreditLedger) GetHistory(w http.ResponseWriter, r *http.Request) {
 		CreatedAt     time.Time `json:"created_at"`
 	}
 	out := make([]item, 0, limit)
+	var lastTxn string
 	for rows.Next() {
 		var it item
 		if err := rows.Scan(&it.TransactionID, &it.Type, &it.Amount, &it.Description, &it.Reference, &it.CreatedAt); err == nil {
-			// Mask reference to avoid leaking payment info
-			if len(it.Reference) > 6 {
+			// Mask or suppress reference to avoid leaking payment info
+			if strings.HasPrefix(it.Reference, "enc:v1:") {
+				// Encrypted at rest; do not expose
+				it.Reference = "****"
+			} else if len(it.Reference) > 6 {
 				it.Reference = it.Reference[:2] + "***" + it.Reference[len(it.Reference)-2:]
 			}
 			out = append(out, it)
+			lastTxn = it.TransactionID
 		}
+	}
+	// Compute next cursor if page full
+	nextCursor := ""
+	if len(out) == limit && lastTxn != "" {
+		nextCursor = lastTxn
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"tenant_id": tenantID,
-		"items":     out,
-		"count":     len(out),
+		"tenant_id":   tenantID,
+		"items":       out,
+		"count":       len(out),
+		"next_cursor": nextCursor,
 	})
+}
+
+// lookupTxnCreatedAt finds the created_at timestamp for a given transaction id within a tenant.
+func (cl *CreditLedger) lookupTxnCreatedAt(tenantID, txnID string) (time.Time, error) {
+	var ts time.Time
+	err := cl.db.QueryRow(`SELECT created_at FROM credit_transactions WHERE tenant_id=$1 AND transaction_id=$2`, tenantID, txnID).Scan(&ts)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return ts, nil
 }
 
 type PaymentResult struct {
@@ -985,6 +1165,10 @@ func (cl *CreditLedger) expireReservations() error {
 		return err
 	}
 	defer tx.Rollback()
+
+	if _, err := tx.Exec(`SET TRANSACTION ISOLATION LEVEL SERIALIZABLE`); err != nil {
+		return fmt.Errorf("failed to set isolation level: %w", err)
+	}
 	rows, err := tx.Query(`SELECT reservation_id, tenant_id, amount FROM credit_reservations WHERE status='active' AND expires_at <= NOW() FOR UPDATE SKIP LOCKED`)
 	if err != nil {
 		return err
@@ -1007,6 +1191,15 @@ func (cl *CreditLedger) expireReservations() error {
 	return tx.Commit()
 }
 
+// isRetryableTxErr detects serialization/deadlock errors that can be retried safely
+func isRetryableTxErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := strings.ToLower(err.Error())
+	return strings.Contains(s, "could not serialize access") || strings.Contains(s, "deadlock detected") || strings.Contains(s, "serialization failure")
+}
+
 // backupDatabaseOnce performs a best-effort pg_dump of the provided database URL
 func backupDatabaseOnce(dbURL string) error {
 	if cmd := os.Getenv("BACKUP_CMD"); cmd != "" {
@@ -1025,3 +1218,41 @@ func backupDatabaseOnce(dbURL string) error {
 // indirections for testability
 var execCommand = func(name string, arg ...string) *exec.Cmd { return exec.Command(name, arg...) }
 var execLookPath = exec.LookPath
+
+// encryptAtRest encrypts sensitive strings using AES-GCM if PAYMENT_ENC_KEY is configured.
+// Output format: enc:v1:<base64(nonce||ciphertext)>. If key missing/invalid, returns plaintext.
+func (cl *CreditLedger) encryptAtRest(plaintext string) (string, error) {
+	if plaintext == "" {
+		return plaintext, nil
+	}
+	keyStr := os.Getenv("PAYMENT_ENC_KEY")
+	if keyStr == "" {
+		return plaintext, nil
+	}
+	// Accept raw base64 or with base64: prefix
+	keyStr = strings.TrimPrefix(keyStr, "base64:")
+	key, err := base64.StdEncoding.DecodeString(keyStr)
+	if err != nil {
+		// Fallback: use bytes directly, but require valid AES key size
+		key = []byte(keyStr)
+	}
+	if !(len(key) == 16 || len(key) == 24 || len(key) == 32) {
+		// invalid key length, skip encryption quietly
+		return plaintext, nil
+	}
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return plaintext, nil
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return plaintext, nil
+	}
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		return plaintext, nil
+	}
+	ct := gcm.Seal(nil, nonce, []byte(plaintext), nil)
+	payload := append(nonce, ct...)
+	return "enc:v1:" + base64.StdEncoding.EncodeToString(payload), nil
+}

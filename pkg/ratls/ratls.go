@@ -175,6 +175,25 @@ func (ai *AutoIssuer) ServerTLSConfig(requireClientCert bool, expectedTrustDomai
     }
 }
 
+// ServerTLSConfigWithPeerVerifier returns a tls.Config like ServerTLSConfig and applies extra peer verification after
+// the base verification logic succeeds. If extraVerify returns an error, the handshake fails.
+func (ai *AutoIssuer) ServerTLSConfigWithPeerVerifier(requireClientCert bool, expectedTrustDomain string, extraVerify func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error) *tls.Config {
+    cfg := ai.ServerTLSConfig(requireClientCert, expectedTrustDomain)
+    if extraVerify == nil {
+        return cfg
+    }
+    baseVerify := cfg.VerifyPeerCertificate
+    cfg.VerifyPeerCertificate = func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
+        if baseVerify != nil {
+            if err := baseVerify(rawCerts, verifiedChains); err != nil {
+                return err
+            }
+        }
+        return extraVerify(rawCerts, verifiedChains)
+    }
+    return cfg
+}
+
 // ClientTLSConfig returns a tls.Config with client cert and the CA roots for mTLS to peers.
 func (ai *AutoIssuer) ClientTLSConfig() *tls.Config {
     return &tls.Config{

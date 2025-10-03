@@ -2,7 +2,10 @@ package main
 
 import (
 	"context"
+	crand "crypto/rand"
 	"crypto/tls"
+	"crypto/x509"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -30,6 +33,7 @@ import (
 	otelobs "shieldx/pkg/observability/otel"
 	"shieldx/pkg/policy"
 	"shieldx/pkg/ratls"
+	tlsutil "shieldx/pkg/security/tls"
 )
 
 // Service constants
@@ -277,6 +281,10 @@ func main() {
 	// wrap middlewares: metrics + admission + rate limit + tracing
 	httpMetrics := metrics.NewHTTPMetrics(reg, serviceName)
 	base := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Correlation-ID: accept incoming or generate, and propagate via header + context
+		cid := getOrMakeCorrelationID(r)
+		w.Header().Set("X-Correlation-ID", cid)
+		r = r.WithContext(context.WithValue(r.Context(), ctxKeyCorrID{}, cid))
 		// Admission header check if configured
 		if sec := os.Getenv("ADMISSION_SECRET"); sec != "" {
 			if !guard.VerifyHeader(r, sec, os.Getenv("ADMISSION_HEADER"), serviceName) {
@@ -287,6 +295,7 @@ func main() {
 		// Basic IP rate limit (use Redis if configured)
 		ip := clientIP(r)
 		if !allowRate(ip) {
+			_ = ledger.AppendJSONLine(ledgerPath, serviceName, "ratelimit.ip", map[string]any{"ip": ip, "path": r.URL.Path, "corrId": getCorrID(r)})
 			http.Error(w, "rate limit", http.StatusTooManyRequests)
 			return
 		}
@@ -311,9 +320,71 @@ func main() {
 	var certFile, keyFile string
 	var useStatic bool
 	if issuer != nil {
-		tlsCfg = issuer.ServerTLSConfig(true, envStr("RATLS_TRUST_DOMAIN", "shieldx.local"))
+		// Enforce client SPIFFE trust domain and optional SAN allowlist prefixes
+		allowed := envStr("ORCH_ALLOWED_CLIENT_SAN_PREFIXES", "")
+		if strings.TrimSpace(allowed) != "" {
+			verifier := func(rawCerts [][]byte, chains [][]*x509.Certificate) error {
+				// best-effort: check URI SAN prefixes
+				if len(rawCerts) == 0 {
+					return fmt.Errorf("no peer cert")
+				}
+				cert, err := x509.ParseCertificate(rawCerts[0])
+				if err != nil {
+					return err
+				}
+				prefs := splitCSV(allowed)
+				for _, u := range cert.URIs {
+					s := u.String()
+					for _, p := range prefs {
+						if strings.HasPrefix(s, p) {
+							return nil
+						}
+					}
+				}
+				for _, dns := range cert.DNSNames {
+					for _, p := range prefs {
+						if strings.HasPrefix(dns, p) {
+							return nil
+						}
+					}
+				}
+				for _, ip := range cert.IPAddresses {
+					s := ip.String()
+					for _, p := range prefs {
+						if strings.HasPrefix(s, p) {
+							return nil
+						}
+					}
+				}
+				if cert.Subject.CommonName != "" {
+					for _, p := range prefs {
+						if strings.HasPrefix(cert.Subject.CommonName, p) {
+							return nil
+						}
+					}
+				}
+				return fmt.Errorf("client SAN not allowed")
+			}
+			tlsCfg = issuer.ServerTLSConfigWithPeerVerifier(true, envStr("RATLS_TRUST_DOMAIN", "shieldx.local"), verifier)
+		} else {
+			tlsCfg = issuer.ServerTLSConfig(true, envStr("RATLS_TRUST_DOMAIN", "shieldx.local"))
+		}
 	} else if cert := os.Getenv("ORCH_TLS_CERT_FILE"); cert != "" && os.Getenv("ORCH_TLS_KEY_FILE") != "" {
-		tlsCfg = &tls.Config{MinVersion: tls.VersionTLS13}
+		// Static TLS mode: enforce mTLS and SAN allowlist if provided
+		allowed := envStr("ORCH_ALLOWED_CLIENT_SAN_PREFIXES", "")
+		ca := os.Getenv("ORCH_TLS_CLIENT_CA_FILE")
+		if ca == "" {
+			log.Fatalf("ORCH_TLS_CLIENT_CA_FILE required for mTLS static mode")
+		}
+		var err error
+		if strings.TrimSpace(allowed) != "" {
+			tlsCfg, err = tlsutil.LoadServerMTLSWithSANAllow(os.Getenv("ORCH_TLS_CERT_FILE"), os.Getenv("ORCH_TLS_KEY_FILE"), ca, allowed)
+		} else {
+			tlsCfg, err = tlsutil.LoadServerMTLS(os.Getenv("ORCH_TLS_CERT_FILE"), os.Getenv("ORCH_TLS_KEY_FILE"), ca)
+		}
+		if err != nil {
+			log.Fatalf("TLS load error: %v", err)
+		}
 		certFile, keyFile = os.Getenv("ORCH_TLS_CERT_FILE"), os.Getenv("ORCH_TLS_KEY_FILE")
 		useStatic = true
 	} else {
@@ -434,9 +505,28 @@ func handleRoute(w http.ResponseWriter, r *http.Request) {
 	}
 	if action == policy.ActionDeny {
 		mRouteDenied.Inc()
-		_ = ledger.AppendJSONLine(ledgerPath, serviceName, "route.denied", map[string]any{"tenant": req.Tenant, "scope": req.Scope, "path": req.Path})
+		_ = ledger.AppendJSONLine(ledgerPath, serviceName, "route.denied", map[string]any{"tenant": req.Tenant, "scope": req.Scope, "path": req.Path, "corrId": getCorrID(r)})
 		http.Error(w, "policy denied", http.StatusForbidden)
 		return
+	}
+	// Optional: get route hints from OPA (pool/algo/candidates override/augment)
+	if opaEng != nil {
+		if hint, ok, err := opaEng.EvaluateRoute(map[string]any{"tenant": req.Tenant, "scope": req.Scope, "path": req.Path, "ip": clientIP(r)}); err == nil && ok {
+			if v, ok := hint["algo"].(string); ok && v != "" {
+				req.Algo = v
+			}
+			if v, ok := hint["service"].(string); ok && v != "" {
+				req.Service = v
+			}
+			if arr, ok := hint["candidates"].([]any); ok && len(arr) > 0 {
+				req.Candidates = req.Candidates[:0]
+				for _, x := range arr {
+					if s, ok := x.(string); ok && strings.TrimSpace(s) != "" {
+						req.Candidates = append(req.Candidates, s)
+					}
+				}
+			}
+		}
 	}
 	// choose pool
 	p := buildPoolForRequest(req)
@@ -461,7 +551,7 @@ func handleRoute(w http.ResponseWriter, r *http.Request) {
 	mLBPick.Inc(map[string]string{"pool": p.name, "algo": string(algo), "healthy": strconv.FormatBool(b.Healthy.Load())})
 	// Audit log successful routing decision
 	_ = ledger.AppendJSONLine(ledgerPath, serviceName, "route.ok", map[string]any{
-		"tenant": req.Tenant, "scope": req.Scope, "path": req.Path, "algo": string(algo), "target": b.URL, "healthy": b.Healthy.Load(),
+		"tenant": req.Tenant, "scope": req.Scope, "path": req.Path, "algo": string(algo), "target": b.URL, "healthy": b.Healthy.Load(), "corrId": getCorrID(r),
 	})
 	writeJSON(w, 200, routeResponse{Target: b.URL, Algo: string(algo), Policy: string(action), Healthy: b.Healthy.Load()})
 }
@@ -1085,3 +1175,32 @@ func gcDPoPStore() {
 }
 
 // end of file
+
+// Correlation-ID helpers
+type ctxKeyCorrID struct{}
+
+func getCorrID(r *http.Request) string {
+	if v := r.Context().Value(ctxKeyCorrID{}); v != nil {
+		if s, ok := v.(string); ok {
+			return s
+		}
+	}
+	// fallback to header if context missing
+	if h := r.Header.Get("X-Correlation-ID"); h != "" {
+		return h
+	}
+	return ""
+}
+
+func getOrMakeCorrelationID(r *http.Request) string {
+	if cid := r.Header.Get("X-Correlation-ID"); cid != "" {
+		return cid
+	}
+	// generate cryptographically random 16 bytes, hex-encode
+	var b [16]byte
+	if _, err := crand.Read(b[:]); err == nil {
+		return hex.EncodeToString(b[:])
+	}
+	// fallback: time-based pseudo id
+	return fmt.Sprintf("cid-%d", time.Now().UnixNano())
+}

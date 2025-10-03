@@ -953,7 +953,12 @@ func (c *ContAuthCollector) updateBaselineFromMetadata(userID string) error {
 	return err
 }
 
-func nullOrZero(n sql.NullFloat64) float64 { if n.Valid { return n.Float64 }; return 0 }
+func nullOrZero(n sql.NullFloat64) float64 {
+	if n.Valid {
+		return n.Float64
+	}
+	return 0
+}
 
 // summarizeKeystrokes returns average inter-key interval and average key duration.
 func summarizeKeystrokes(keystrokes []KeystrokeEvent) (avgInterval float64, avgDuration float64) {
@@ -1028,7 +1033,9 @@ func (rc *riskCache) Get(k string) (RiskScore, bool) {
 	rc.mu.RUnlock()
 	if !ok || time.Now().After(cr.exp) {
 		if ok {
-			rc.mu.Lock(); delete(rc.data, k); rc.mu.Unlock()
+			rc.mu.Lock()
+			delete(rc.data, k)
+			rc.mu.Unlock()
 		}
 		return RiskScore{}, false
 	}
@@ -1091,11 +1098,11 @@ func (c *ContAuthCollector) queryMLO(t SessionTelemetry, baseURL string) *mlAnal
 
 	feat := []float64{ksInt, ksDur, mVel, failRate, deviceCompleteness, repRisk}
 	payload := map[string]any{
-		"timestamp": time.Now(),
-		"source":    "contauth",
-		"event_type": "contauth_session",
-		"tenant_id":  t.UserID,
-		"features":   feat,
+		"timestamp":    time.Now(),
+		"source":       "contauth",
+		"event_type":   "contauth_session",
+		"tenant_id":    t.UserID,
+		"features":     feat,
 		"threat_score": 0,
 	}
 	b, _ := json.Marshal(payload)
@@ -1126,27 +1133,51 @@ func (c *ContAuthCollector) queryMLO(t SessionTelemetry, baseURL string) *mlAnal
 // env helpers (localized)
 func getenv(key string) string { return strings.TrimSpace(os.Getenv(key)) }
 func parseFloat(s string, def float64) float64 {
-	if s == "" { return def }
-	if v, err := strconv.ParseFloat(s, 64); err == nil { return v }
+	if s == "" {
+		return def
+	}
+	if v, err := strconv.ParseFloat(s, 64); err == nil {
+		return v
+	}
 	return def
 }
 func parseInt(s string, def int) int {
-	if s == "" { return def }
-	if v, err := strconv.Atoi(s); err == nil { return v }
+	if s == "" {
+		return def
+	}
+	if v, err := strconv.Atoi(s); err == nil {
+		return v
+	}
 	return def
 }
 func parseTTL(s string, def time.Duration) time.Duration {
-	if s == "" { return def }
-	if d, err := time.ParseDuration(s); err == nil { return d }
+	if s == "" {
+		return def
+	}
+	if d, err := time.ParseDuration(s); err == nil {
+		return d
+	}
 	return def
 }
-func maxFloat(a, b float64) float64 { if a > b { return a }; return b }
+func maxFloat(a, b float64) float64 {
+	if a > b {
+		return a
+	}
+	return b
+}
 func appendUnique(arr []string, v string) []string {
-	for _, x := range arr { if x == v { return arr } }
+	for _, x := range arr {
+		if x == v {
+			return arr
+		}
+	}
 	return append(arr, v)
 }
+
 // sanitize identifiers before logging (truncate)
 func sanitizeID(id string) string {
-	if len(id) > 12 { return id[:12] + "*" }
+	if len(id) > 12 {
+		return id[:12] + "*"
+	}
 	return id
 }

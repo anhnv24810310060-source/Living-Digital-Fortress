@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sync"
 	"syscall"
 
@@ -20,43 +21,38 @@ type eBPFMonitor struct {
 	collection *ebpf.Collection
 	links      []link.Link
 	perfReader *perf.Reader
-	
-	syscalls    []SyscallEvent
-	networkIO   []NetworkEvent
-	fileAccess  []FileEvent
-	
-	// Enhanced metrics for observability
-	serviceLabel    string  // Service name for tagging
-	sandboxLabel    string  // Sandbox ID for isolation
-	containerLabel  string  // Container ID
-	
-	mu          sync.RWMutex
-	ctx         context.Context
-	cancel      context.CancelFunc
+
+	syscalls   []SyscallEvent
+	networkIO  []NetworkEvent
+	fileAccess []FileEvent
+
+	mu     sync.RWMutex
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
 // Dangerous syscalls that indicate potential exploit behavior
 var dangerousSyscalls = map[uint32]string{
-	syscall.SYS_EXECVE:        "execve",
-	syscall.SYS_PTRACE:        "ptrace", 
-	syscall.SYS_PRCTL:         "prctl",
-	syscall.SYS_SETUID:        "setuid",
-	syscall.SYS_SETGID:        "setgid",
-	syscall.SYS_MPROTECT:      "mprotect",
-	syscall.SYS_MMAP:          "mmap",
-	syscall.SYS_SOCKET:        "socket",
-	syscall.SYS_CONNECT:       "connect",
-	syscall.SYS_BIND:          "bind",
-	syscall.SYS_LISTEN:        "listen",
-	syscall.SYS_ACCEPT:        "accept",
-	syscall.SYS_SENDTO:        "sendto",
-	syscall.SYS_RECVFROM:      "recvfrom",
-	syscall.SYS_CLONE:         "clone",
-	syscall.SYS_FORK:          "fork",
-	syscall.SYS_VFORK:         "vfork",
-	syscall.SYS_KILL:          "kill",
-	syscall.SYS_TKILL:         "tkill",
-	syscall.SYS_TGKILL:        "tgkill",
+	syscall.SYS_EXECVE:   "execve",
+	syscall.SYS_PTRACE:   "ptrace",
+	syscall.SYS_PRCTL:    "prctl",
+	syscall.SYS_SETUID:   "setuid",
+	syscall.SYS_SETGID:   "setgid",
+	syscall.SYS_MPROTECT: "mprotect",
+	syscall.SYS_MMAP:     "mmap",
+	syscall.SYS_SOCKET:   "socket",
+	syscall.SYS_CONNECT:  "connect",
+	syscall.SYS_BIND:     "bind",
+	syscall.SYS_LISTEN:   "listen",
+	syscall.SYS_ACCEPT:   "accept",
+	syscall.SYS_SENDTO:   "sendto",
+	syscall.SYS_RECVFROM: "recvfrom",
+	syscall.SYS_CLONE:    "clone",
+	syscall.SYS_FORK:     "fork",
+	syscall.SYS_VFORK:    "vfork",
+	syscall.SYS_KILL:     "kill",
+	syscall.SYS_TKILL:    "tkill",
+	syscall.SYS_TGKILL:   "tgkill",
 }
 
 func NeweBPFMonitor() *eBPFMonitor {
@@ -69,21 +65,47 @@ func NeweBPFMonitor() *eBPFMonitor {
 
 func (e *eBPFMonitor) Start(ctx context.Context) error {
 	e.ctx, e.cancel = context.WithCancel(ctx)
-	
+
 	// Remove memory limit for eBPF
 	if err := rlimit.RemoveMemlock(); err != nil {
 		return fmt.Errorf("failed to remove memlock: %w", err)
 	}
 
+	// Resolve BPF object path (ENV override -> local paths)
+	objPath := os.Getenv("EBPF_OBJECT_PATH")
+	if objPath == "" {
+		// try common locations relative to repo and cwd
+		tries := []string{
+			"bpf/syscall_tracer.o",
+			"pkg/sandbox/bpf/syscall_tracer.o",
+			filepath.Join(filepath.Dir(os.Args[0]), "bpf", "syscall_tracer.o"),
+		}
+		for _, p := range tries {
+			if _, err := os.Stat(p); err == nil {
+				objPath = p
+				break
+			}
+		}
+	}
+	if objPath == "" {
+		return fmt.Errorf("eBPF object not found; set EBPF_OBJECT_PATH or build bpf/syscall_tracer.o")
+	}
 	// Load eBPF program
-	spec, err := ebpf.LoadCollectionSpec("bpf/syscall_tracer.o")
+	spec, err := ebpf.LoadCollectionSpec(objPath)
 	if err != nil {
-		return fmt.Errorf("failed to load eBPF spec: %w", err)
+		return fmt.Errorf("failed to load eBPF spec from %s: %w", objPath, err)
 	}
 
 	e.collection, err = ebpf.NewCollection(spec)
 	if err != nil {
 		return fmt.Errorf("failed to create eBPF collection: %w", err)
+	}
+
+	// Initialize default dangerous syscall set (best-effort)
+	_ = e.initDangerousSyscalls()
+	// Optionally monitor current process if EBPF_MONITOR_SELF=true (useful for smoke tests)
+	if os.Getenv("EBPF_MONITOR_SELF") == "true" {
+		_ = e.AddMonitoredPID(uint32(os.Getpid()))
 	}
 
 	// Attach tracepoints
@@ -103,15 +125,15 @@ func (e *eBPFMonitor) Stop() {
 	if e.cancel != nil {
 		e.cancel()
 	}
-	
+
 	if e.perfReader != nil {
 		e.perfReader.Close()
 	}
-	
+
 	for _, l := range e.links {
 		l.Close()
 	}
-	
+
 	if e.collection != nil {
 		e.collection.Close()
 	}
@@ -166,7 +188,7 @@ func (e *eBPFMonitor) readEvents() {
 			if err != nil {
 				continue
 			}
-			
+
 			e.processEvent(record.RawSample)
 		}
 	}
@@ -181,7 +203,7 @@ func (e *eBPFMonitor) processEvent(data []byte) {
 	eventType := binary.LittleEndian.Uint32(data[0:4])
 	timestamp := int64(binary.LittleEndian.Uint64(data[4:12]))
 	pid := binary.LittleEndian.Uint32(data[12:16])
-	
+
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -189,7 +211,7 @@ func (e *eBPFMonitor) processEvent(data []byte) {
 	case 1: // Syscall event
 		syscallNr := binary.LittleEndian.Uint32(data[16:20])
 		retCode := int64(binary.LittleEndian.Uint64(data[20:28]))
-		
+
 		syscallName, dangerous := dangerousSyscalls[syscallNr]
 		if syscallName == "" {
 			syscallName = fmt.Sprintf("syscall_%d", syscallNr)
@@ -203,7 +225,7 @@ func (e *eBPFMonitor) processEvent(data []byte) {
 			RetCode:     retCode,
 			Dangerous:   dangerous,
 		}
-		
+
 		// Parse args if available
 		if len(data) >= 80 {
 			for i := 0; i < 6; i++ {
@@ -211,7 +233,7 @@ func (e *eBPFMonitor) processEvent(data []byte) {
 				event.Args = append(event.Args, arg)
 			}
 		}
-		
+
 		e.syscalls = append(e.syscalls, event)
 
 	case 2: // Network event
@@ -221,7 +243,7 @@ func (e *eBPFMonitor) processEvent(data []byte) {
 				protocol = "udp"
 			}
 		}
-		
+
 		event := NetworkEvent{
 			Timestamp: timestamp,
 			Protocol:  protocol,
@@ -232,7 +254,7 @@ func (e *eBPFMonitor) processEvent(data []byte) {
 			Bytes:     int64(binary.LittleEndian.Uint32(data[20:24])),
 			Blocked:   true, // Network should be blocked in sandbox
 		}
-		
+
 		e.networkIO = append(e.networkIO, event)
 
 	case 3: // File event
@@ -240,7 +262,7 @@ func (e *eBPFMonitor) processEvent(data []byte) {
 		if len(data) > 24 && data[24] == 1 {
 			operation = "write"
 		}
-		
+
 		event := FileEvent{
 			Timestamp: timestamp,
 			Path:      "/unknown", // Parse from data
@@ -248,7 +270,7 @@ func (e *eBPFMonitor) processEvent(data []byte) {
 			Mode:      binary.LittleEndian.Uint32(data[20:24]),
 			Success:   data[24] == 0,
 		}
-		
+
 		e.fileAccess = append(e.fileAccess, event)
 	}
 }
@@ -256,7 +278,7 @@ func (e *eBPFMonitor) processEvent(data []byte) {
 func (e *eBPFMonitor) GetSyscalls() []SyscallEvent {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	
+
 	result := make([]SyscallEvent, len(e.syscalls))
 	copy(result, e.syscalls)
 	return result
@@ -265,7 +287,7 @@ func (e *eBPFMonitor) GetSyscalls() []SyscallEvent {
 func (e *eBPFMonitor) GetNetworkEvents() []NetworkEvent {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	
+
 	result := make([]NetworkEvent, len(e.networkIO))
 	copy(result, e.networkIO)
 	return result
@@ -274,8 +296,40 @@ func (e *eBPFMonitor) GetNetworkEvents() []NetworkEvent {
 func (e *eBPFMonitor) GetFileEvents() []FileEvent {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	
+
 	result := make([]FileEvent, len(e.fileAccess))
 	copy(result, e.fileAccess)
 	return result
+}
+
+// AddMonitoredPID inserts a PID into the monitored_pids map so that only these
+// processes will be observed by the eBPF programs. Best-effort; returns error if map missing.
+func (e *eBPFMonitor) AddMonitoredPID(pid uint32) error {
+	if e.collection == nil {
+		return fmt.Errorf("collection not initialized")
+	}
+	m := e.collection.Maps["monitored_pids"]
+	if m == nil {
+		return fmt.Errorf("monitored_pids map not found")
+	}
+	one := uint8(1)
+	return m.Update(&pid, &one, ebpf.UpdateAny)
+}
+
+// initDangerousSyscalls fills the dangerous_syscalls map with a curated set of
+// syscall numbers defined in dangerousSyscalls. Best-effort.
+func (e *eBPFMonitor) initDangerousSyscalls() error {
+	if e.collection == nil {
+		return fmt.Errorf("collection not initialized")
+	}
+	m := e.collection.Maps["dangerous_syscalls"]
+	if m == nil {
+		return fmt.Errorf("dangerous_syscalls map not found")
+	}
+	for nr := range dangerousSyscalls {
+		k := uint32(nr)
+		v := uint8(1)
+		_ = m.Update(&k, &v, ebpf.UpdateAny)
+	}
+	return nil
 }

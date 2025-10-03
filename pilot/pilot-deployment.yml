@@ -211,6 +211,8 @@ spec:
             secretKeyRef:
               name: pilot-secrets
               key: credits_database_url
+        - name: REDIS_ADDR
+          value: "shieldx-redis-pilot:6379"
         resources:
           requests:
             memory: "256Mi"
@@ -243,6 +245,235 @@ spec:
   ports:
   - port: 5004
     targetPort: 5004
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shieldx-shadow-pilot
+  namespace: shieldx-pilot
+  labels:
+    app: shieldx-shadow
+    environment: pilot
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: shieldx-shadow
+      environment: pilot
+  template:
+    metadata:
+      labels:
+        app: shieldx-shadow
+        environment: pilot
+      annotations:
+        seccomp.security.alpha.kubernetes.io/pod: localhost/shieldx-database
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "5005"
+        prometheus.io/path: "/metrics"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        fsGroup: 65534
+      containers:
+      - name: shadow
+        image: registry.shieldx.io/shieldx/shadow:v1.0.0-pilot
+        imagePullPolicy: Always
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 65534
+          capabilities:
+            drop:
+            - ALL
+        ports:
+        - containerPort: 5005
+          name: http
+        env:
+        - name: ENVIRONMENT
+          value: "pilot"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: pilot-secrets
+              key: shadow_database_url
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "200m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 5005
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 5005
+          initialDelaySeconds: 5
+          periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: shieldx-shadow-pilot
+  namespace: shieldx-pilot
+spec:
+  selector:
+    app: shieldx-shadow
+    environment: pilot
+  ports:
+  - port: 5005
+    targetPort: 5005
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shieldx-camouflage-pilot
+  namespace: shieldx-pilot
+  labels:
+    app: shieldx-camouflage
+    environment: pilot
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: shieldx-camouflage
+      environment: pilot
+  template:
+    metadata:
+      labels:
+        app: shieldx-camouflage
+        environment: pilot
+      annotations:
+        seccomp.security.alpha.kubernetes.io/pod: localhost/shieldx-default
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8089"
+        prometheus.io/path: "/metrics"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        fsGroup: 65534
+      containers:
+      - name: camouflage-api
+        image: registry.shieldx.io/shieldx/camouflage-api:v1.0.0-pilot
+        imagePullPolicy: Always
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 65534
+          capabilities:
+            drop:
+            - ALL
+        ports:
+        - containerPort: 8089
+          name: http
+        env:
+        - name: ENVIRONMENT
+          value: "pilot"
+        - name: PORT
+          value: "8089"
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "50m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8089
+          initialDelaySeconds: 15
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8089
+          initialDelaySeconds: 5
+          periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: shieldx-camouflage-pilot
+  namespace: shieldx-pilot
+spec:
+  selector:
+    app: shieldx-camouflage
+    environment: pilot
+  ports:
+  - port: 8089
+    targetPort: 8089
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shieldx-redis-pilot
+  namespace: shieldx-pilot
+  labels:
+    app: shieldx-redis
+    environment: pilot
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: shieldx-redis
+      environment: pilot
+  template:
+    metadata:
+      labels:
+        app: shieldx-redis
+        environment: pilot
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        fsGroup: 999
+      containers:
+      - name: redis
+        image: redis:7.2
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 6379
+          name: redis
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        livenessProbe:
+          tcpSocket:
+            port: 6379
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readinessProbe:
+          tcpSocket:
+            port: 6379
+          initialDelaySeconds: 5
+          periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: shieldx-redis-pilot
+  namespace: shieldx-pilot
+spec:
+  selector:
+    app: shieldx-redis
+    environment: pilot
+  ports:
+  - port: 6379
+    targetPort: 6379
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -354,6 +585,20 @@ spec:
             name: shieldx-contauth-pilot
             port:
               number: 5002
+      - path: /api/shadow
+        pathType: Prefix
+        backend:
+          service:
+            name: shieldx-shadow-pilot
+            port:
+              number: 5005
+      - path: /api/camouflage
+        pathType: Prefix
+        backend:
+          service:
+            name: shieldx-camouflage-pilot
+            port:
+              number: 8089
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -382,6 +627,10 @@ spec:
       port: 5002
     - protocol: TCP
       port: 5004
+    - protocol: TCP
+      port: 5005
+    - protocol: TCP
+      port: 8089
   egress:
   - to:
     - podSelector:
@@ -395,6 +644,8 @@ spec:
       port: 53    # DNS
     - protocol: UDP
       port: 53    # DNS
+    - protocol: TCP
+      port: 6379  # Redis
 ---
 apiVersion: v1
 kind: Secret

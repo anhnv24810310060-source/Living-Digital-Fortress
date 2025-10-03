@@ -157,12 +157,18 @@ func (f *FirecrackerRunner) executeWithForensics(ctx context.Context, machine *f
 		return err
 	}
 
-	// Start eBPF monitoring (implemented in next section)
-	monitor := NeweBPFMonitor()
-	if err := monitor.Start(ctx); err != nil {
-		return fmt.Errorf("failed to start eBPF monitor: %w", err)
+	// Start eBPF monitoring if enabled; degrade gracefully if not available
+	var monitor *eBPFMonitor
+	if os.Getenv("EBPF_ENABLE") == "true" {
+		m := NeweBPFMonitor()
+		if err := m.Start(ctx); err == nil {
+			monitor = m
+			defer monitor.Stop()
+		} else {
+			// Log only; do not fail sandbox execution due to missing kernel support
+			fmt.Fprintf(os.Stderr, "[sandbox] eBPF monitor disabled: %v\n", err)
+		}
 	}
-	defer monitor.Stop()
 
 	// Execute payload in VM
 	// This would use Firecracker's agent or SSH to execute commands
@@ -170,10 +176,12 @@ func (f *FirecrackerRunner) executeWithForensics(ctx context.Context, machine *f
 	result.ExitCode = 0
 	result.Stdout = "Payload executed successfully"
 
-	// Collect forensics data
-	result.Syscalls = monitor.GetSyscalls()
-	result.NetworkIO = monitor.GetNetworkEvents()
-	result.FileAccess = monitor.GetFileEvents()
+	// Collect forensics data if monitor active
+	if monitor != nil {
+		result.Syscalls = monitor.GetSyscalls()
+		result.NetworkIO = monitor.GetNetworkEvents()
+		result.FileAccess = monitor.GetFileEvents()
+	}
 
 	return nil
 }

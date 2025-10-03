@@ -6,14 +6,14 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strconv"
 	"shieldx/pkg/metrics"
 	logcorr "shieldx/pkg/observability/logcorr"
 	otelobs "shieldx/pkg/observability/otel"
 	"shieldx/pkg/ratls"
-	"time"
-	"sync"
+	"strconv"
 	"strings"
+	"sync"
+	"time"
 )
 
 func main() {
@@ -132,21 +132,30 @@ func parseDurationDefault(key string, def time.Duration) time.Duration {
 }
 func parseIntDefault(key string, def int) int {
 	if v := os.Getenv(key); v != "" {
-		if i, err := strconv.Atoi(v); err == nil { return i }
+		if i, err := strconv.Atoi(v); err == nil {
+			return i
+		}
 	}
 	return def
 }
 
 // Simple per-IP token bucket (count per minute window)
 func makeRateLimiter(reqPerMin int) func(http.HandlerFunc) http.HandlerFunc {
-	if reqPerMin <= 0 { reqPerMin = 240 }
-	type bucket struct{ count int; win int64 }
+	if reqPerMin <= 0 {
+		reqPerMin = 240
+	}
+	type bucket struct {
+		count int
+		win   int64
+	}
 	var mu sync.Mutex
 	buckets := map[string]*bucket{}
 	return func(next http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			ip := r.Header.Get("X-Forwarded-For")
-			if ip == "" { ip = strings.Split(r.RemoteAddr, ":")[0] }
+			if ip == "" {
+				ip = strings.Split(r.RemoteAddr, ":")[0]
+			}
 			now := time.Now().Unix() / 60
 			mu.Lock()
 			b := buckets[ip]

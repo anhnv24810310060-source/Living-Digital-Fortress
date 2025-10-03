@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"encoding/json"
@@ -23,6 +24,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/google/uuid"
 	quic "github.com/quic-go/quic-go"
 )
 
@@ -37,6 +39,9 @@ func getenvInt(key string, def int) int {
 	}
 	return n
 }
+
+// getenv returns the environment variable value or empty string if unset.
+func getenv(key string) string { return os.Getenv(key) }
 
 func main() {
 	// This is the real server protected behind ingress. It only listens on loopback.
@@ -58,6 +63,12 @@ func main() {
 	mUDPDir := metrics.NewCounter("guardian_udp_direct_total", "Direct UDP relays succeeded")
 	mUDPErr := metrics.NewCounter("guardian_udp_error_total", "UDP relay errors")
 	mRekeyGrace := metrics.NewCounter("guardian_rekey_grace_hits_total", "Decrypt succeeded using counter-1 grace window")
+	// job lifecycle metrics
+	mJobsCreated := metrics.NewCounter("guardian_jobs_created_total", "Jobs created")
+	mJobsCompleted := metrics.NewCounter("guardian_jobs_completed_total", "Jobs completed successfully")
+	mJobsTimeout := metrics.NewCounter("guardian_jobs_timeout_total", "Jobs timed out")
+	mJobsError := metrics.NewCounter("guardian_jobs_error_total", "Jobs ended with error")
+	gJobsActive := metrics.NewGauge("guardian_jobs_active", "Currently active jobs")
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "Guardian real service OK. Path=%s\n", r.URL.Path)
 	})
@@ -90,15 +101,18 @@ func main() {
 		jobTimeout jobStatus = "timeout"
 	)
 	type job struct {
-		ID          string    `json:"id"`
-		Status      jobStatus `json:"status"`
-		CreatedAt   time.Time `json:"created_at"`
-		CompletedAt time.Time `json:"completed_at,omitempty"`
-		Error       string    `json:"error,omitempty"`
-		Hash        string    `json:"hash,omitempty"`
-		Output      string    `json:"output,omitempty"`
-		Threat      float64   `json:"threat_score,omitempty"`
-		Duration    string    `json:"duration,omitempty"`
+		ID          string         `json:"id"`
+		Status      jobStatus      `json:"status"`
+		CreatedAt   time.Time      `json:"created_at"`
+		CompletedAt time.Time      `json:"completed_at,omitempty"`
+		Error       string         `json:"error,omitempty"`
+		Hash        string         `json:"hash,omitempty"`
+		Output      string         `json:"output,omitempty"`
+		Threat      float64        `json:"threat_score,omitempty"`     // normalized 0..1 (back-compat)
+		Threat100   int            `json:"threat_score_100,omitempty"` // 0..100 preferred for reports
+		Features    map[string]any `json:"features,omitempty"`         // summarized eBPF features if available
+		Backend     string         `json:"sandbox_backend,omitempty"`  // firecracker|noop|docker|wasm
+		Duration    string         `json:"duration,omitempty"`
 	}
 	var (
 		jobsMu sync.RWMutex
@@ -107,6 +121,74 @@ func main() {
 	// simple id counter
 	var idCtr uint64
 	nextID := func() string { idCtr++; return fmt.Sprintf("j-%d", idCtr) }
+	// TTL-based cleanup to avoid unbounded memory use
+	jobTTL := time.Duration(getenvInt("GUARDIAN_JOB_TTL_SEC", 600)) * time.Second
+	jobMax := getenvInt("GUARDIAN_JOB_MAX", 10000)
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			now := time.Now()
+			removed := 0
+			jobsMu.Lock()
+			// Size guard first
+			if len(jobs) > jobMax {
+				// remove oldest completed first
+				type kv struct {
+					id   string
+					t    time.Time
+					done bool
+				}
+				arr := make([]kv, 0, len(jobs))
+				for id, j := range jobs {
+					arr = append(arr, kv{id: id, t: j.CompletedAt, done: j.Status == jobDone || j.Status == jobError || j.Status == jobTimeout})
+				}
+				// simple selection: remove up to overflow count prioritizing done and oldest
+				overflow := len(jobs) - jobMax
+				// naive O(n^2) is fine for small overflow; else selection could be optimized
+				for overflow > 0 {
+					// pick victim
+					vi := -1
+					var vt time.Time
+					for i := range arr {
+						if arr[i].id == "" {
+							continue
+						}
+						if vi == -1 || (arr[i].done && (!arr[vi].done || arr[i].t.Before(vt))) || (!arr[vi].done && !arr[i].done && arr[i].t.Before(vt)) {
+							vi = i
+							vt = arr[i].t
+						}
+					}
+					if vi == -1 {
+						break
+					}
+					delete(jobs, arr[vi].id)
+					arr[vi].id = ""
+					overflow--
+					removed++
+				}
+			}
+			// TTL sweep
+			for id, j := range jobs {
+				if !j.CompletedAt.IsZero() && now.Sub(j.CompletedAt) > jobTTL {
+					delete(jobs, id)
+					removed++
+				}
+			}
+			// update active gauge
+			active := 0
+			for _, j := range jobs {
+				if j.Status == jobQueued || j.Status == jobRunning {
+					active++
+				}
+			}
+			jobsMu.Unlock()
+			gJobsActive.Set(uint64(active))
+			if removed > 0 {
+				log.Printf("[guardian] jobs cleanup removed=%d active=%d", removed, active)
+			}
+		}
+	}()
 	// POST /guardian/execute { payload: "..." } with simple per-IP RL
 	execLimiter := makeRLLimiter(getenvInt("GUARDIAN_RL_PER_MIN", 60))
 	mux.HandleFunc("/guardian/execute", execLimiter(func(w http.ResponseWriter, r *http.Request) {
@@ -115,7 +197,9 @@ func main() {
 			return
 		}
 		var body struct {
-			Payload string `json:"payload"`
+			Payload  string `json:"payload"`
+			TenantID string `json:"tenant_id"`
+			Cost     int64  `json:"cost"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, "bad json", 400)
@@ -129,11 +213,29 @@ func main() {
 			http.Error(w, "payload too large", http.StatusRequestEntityTooLarge)
 			return
 		}
+		// Optional credits pre-check
+		if body.TenantID != "" && getenv("GUARDIAN_CREDITS_URL") != "" {
+			cost := body.Cost
+			if cost <= 0 {
+				cost = int64(getenvInt("GUARDIAN_DEFAULT_COST", 1))
+			}
+			if ok, code := consumeCredits(getenv("GUARDIAN_CREDITS_URL"), body.TenantID, cost); !ok {
+				if code == 402 {
+					http.Error(w, "insufficient credits", http.StatusPaymentRequired)
+					return
+				}
+				http.Error(w, "credits service unavailable", http.StatusServiceUnavailable)
+				return
+			}
+		}
+
 		id := nextID()
 		jb := &job{ID: id, Status: jobQueued, CreatedAt: time.Now()}
 		jobsMu.Lock()
 		jobs[id] = jb
 		jobsMu.Unlock()
+		mJobsCreated.Add(1)
+		gJobsActive.Set(uint64(len(jobs)))
 		// run asynchronously with 30s timeout (enforced)
 		go func(j *job, payload string) {
 			j.Status = jobRunning
@@ -141,12 +243,14 @@ func main() {
 			// Use secure sandbox with hard timeout 30s
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
-			out, threat, err := runSecured(ctx, payload)
+			out, threat, sres, backend, err := runSecured(ctx, payload)
 			if err != nil {
 				if ctx.Err() == context.DeadlineExceeded {
 					j.Status = jobTimeout
+					mJobsTimeout.Add(1)
 				} else {
 					j.Status = jobError
+					mJobsError.Add(1)
 				}
 				j.Error = err.Error()
 				log.Printf("[guardian] execute id=%s status=%s err=%v", j.ID, j.Status, err)
@@ -160,12 +264,53 @@ func main() {
 					thr = 0
 				}
 				if thr == 0 {
-					if len(out) > 1024 { thr += 0.2 }
-					if strings.Contains(out, "exec") || strings.Contains(out, "/bin/sh") { thr += 0.5 }
-					if thr > 1.0 { thr = 1.0 }
+					if len(out) > 1024 {
+						thr += 0.2
+					}
+					if strings.Contains(out, "exec") || strings.Contains(out, "/bin/sh") {
+						thr += 0.5
+					}
+					if thr > 1.0 {
+						thr = 1.0
+					}
 				}
 				j.Threat = thr
+				j.Threat100 = int(thr * 100.0)
+				j.Backend = backend
+				// If we have a sandbox result (eBPF), summarize features for the report
+				if sres != nil {
+					feats := map[string]any{}
+					// Basic counts
+					feats["syscalls_total"] = len(sres.Syscalls)
+					// Count dangerous syscalls
+					dang := 0
+					for _, ev := range sres.Syscalls {
+						if ev.Dangerous {
+							dang++
+						}
+					}
+					feats["dangerous_syscalls"] = dang
+					feats["network_events"] = len(sres.NetworkIO)
+					// Count file writes
+					writes := 0
+					for _, fe := range sres.FileAccess {
+						if fe.Operation == "write" && fe.Success {
+							writes++
+						}
+					}
+					feats["file_writes"] = writes
+					// If ThreatScore provided on 0..100, prefer it for Threat100
+					if sres.ThreatScore >= 0 {
+						j.Threat100 = int(sres.ThreatScore)
+						if j.Threat100 > 100 {
+							j.Threat100 = 100
+						}
+						j.Threat = float64(j.Threat100) / 100.0
+					}
+					j.Features = feats
+				}
 				j.Status = jobDone
+				mJobsCompleted.Add(1)
 				log.Printf("[guardian] execute id=%s status=done threat=%.2f dur=%s", j.ID, j.Threat, time.Since(t0))
 			}
 			j.Duration = time.Since(t0).String()
@@ -204,14 +349,17 @@ func main() {
 			preview = preview[:256] + "..."
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"id":             j.ID,
-			"status":         j.Status,
-			"created_at":     j.CreatedAt,
-			"completed_at":   j.CompletedAt,
-			"hash":           j.Hash,
-			"threat_score":   j.Threat,
-			"duration":       j.Duration,
-			"output_preview": preview,
+			"id":               j.ID,
+			"status":           j.Status,
+			"created_at":       j.CreatedAt,
+			"completed_at":     j.CompletedAt,
+			"hash":             j.Hash,
+			"threat_score":     j.Threat,
+			"threat_score_100": j.Threat100,
+			"features":         j.Features,
+			"backend":          j.Backend,
+			"duration":         j.Duration,
+			"output_preview":   preview,
 		})
 	})
 	// Publish guardian public key (base64)
@@ -416,6 +564,10 @@ func main() {
 	reg.Register(mUDPDir)
 	reg.Register(mUDPErr)
 	reg.Register(mRekeyGrace)
+	reg.Register(mJobsCreated)
+	reg.Register(mJobsCompleted)
+	reg.Register(mJobsTimeout)
+	reg.Register(mJobsError)
 	mux.Handle("/metrics", reg)
 
 	// HTTP metrics middleware
@@ -543,16 +695,47 @@ func masqueSingleExchange(addrList, target string, payload []byte, timeoutMs int
 
 // sandboxRun is separated to avoid importing sandbox at top-level to keep existing build behavior.
 // sandboxRun keeps backward-compatibility with basic Runner
+// sandboxRun adapts to sandbox.Run returning either (string,error) or (*SandboxResult,error)
 func sandboxRun(ctx context.Context, payload string) (string, error) {
 	r := sandbox.NewFromEnv()
-	return r.Run(ctx, payload)
+	// The sandbox package offers different Runner types under build tags.
+	// Try a type switch to obtain stdout in both cases.
+	switch rr := any(r).(type) {
+	case interface {
+		Run(context.Context, string) (*sandbox.SandboxResult, error)
+	}:
+		res, err := rr.Run(ctx, payload)
+		if err != nil {
+			return "", err
+		}
+		if res == nil {
+			return "", fmt.Errorf("nil sandbox result")
+		}
+		return res.Stdout, nil
+	case interface {
+		Run(context.Context, string) (string, error)
+	}:
+		return rr.Run(ctx, payload)
+	default:
+		// Fallback attempt
+		type runStr interface {
+			Run(context.Context, string) (string, error)
+		}
+		if rr2, ok := any(r).(runStr); ok {
+			return rr2.Run(ctx, payload)
+		}
+		return "", fmt.Errorf("unsupported sandbox runner type")
+	}
 }
 
 // runSecured executes payload in the most secure available sandbox:
 // - If GUARDIAN_SANDBOX_BACKEND=firecracker and kernel/rootfs configured, run inside Firecracker with strict limits.
 // - Else, fallback to environment-provided runner.
-// Returns (stdout, threatScore[0..1], error)
-func runSecured(ctx context.Context, payload string) (string, float64, error) {
+// Returns (stdout, threatScore[0..1], sandboxResult, backend, error)
+func runSecured(ctx context.Context, payload string) (string, float64, *sandbox.SandboxResult, string, error) {
+	// Initialize threat scorer with optimized weights
+	scorer := sandbox.NewThreatScorer()
+
 	if os.Getenv("GUARDIAN_SANDBOX_BACKEND") == "firecracker" {
 		k := os.Getenv("FC_KERNEL_PATH")
 		rfs := os.Getenv("FC_ROOTFS_PATH")
@@ -564,18 +747,56 @@ func runSecured(ctx context.Context, payload string) (string, float64, error) {
 			fcr := sandbox.NewFirecrackerRunner(k, rfs, limits)
 			res, err := fcr.Run(ctx, payload)
 			if err != nil {
-				return "", 0, err
+				return "", 0, nil, "firecracker", err
 			}
-			// ThreatScore from Firecracker is 0..100; normalize to 0..1 safeguard
-			ts := res.ThreatScore / 100.0
-			if ts < 0 { ts = 0 }
-			if ts > 1 { ts = 1 }
-			return res.Stdout, ts, nil
+
+			// Use advanced threat scoring pipeline (P0 requirement)
+			threatScore100, explanation := scorer.CalculateScore(res)
+			res.ThreatScore = float64(threatScore100)
+
+			// Store explanation in artifacts for audit
+			if res.Artifacts == nil {
+				res.Artifacts = make(map[string][]byte)
+			}
+			res.Artifacts["threat_explanation"] = []byte(explanation)
+			res.Artifacts["risk_level"] = []byte(sandbox.RiskLevel(threatScore100))
+
+			// Normalize to 0..1 for backward compatibility
+			ts := float64(threatScore100) / 100.0
+			if ts < 0 {
+				ts = 0
+			}
+			if ts > 1 {
+				ts = 1
+			}
+
+			log.Printf("[guardian] sandbox execution: threat=%d/100 risk=%s reasons=%s",
+				threatScore100, sandbox.RiskLevel(threatScore100), explanation)
+
+			return res.Stdout, ts, res, "firecracker", nil
 		}
 		// If misconfigured, fall through to default runner
 	}
+
+	// Default runner (fallback with basic threat analysis)
 	out, err := sandboxRun(ctx, payload)
-	return out, 0, err
+	if err != nil {
+		return "", 0, nil, "default", err
+	}
+
+	// Apply threat scoring even for default runner
+	basicResult := &sandbox.SandboxResult{
+		Stdout:   out,
+		Duration: 0,                        // will be set by caller
+		Syscalls: []sandbox.SyscallEvent{}, // no eBPF in default mode
+	}
+	threatScore100, explanation := scorer.CalculateScore(basicResult)
+	basicResult.ThreatScore = float64(threatScore100)
+
+	log.Printf("[guardian] default execution: threat=%d/100 risk=%s reasons=%s",
+		threatScore100, sandbox.RiskLevel(threatScore100), explanation)
+
+	return out, float64(threatScore100) / 100.0, basicResult, "default", nil
 }
 
 // lightweight per-IP rate limiter for endpoints (req/min)
@@ -612,4 +833,51 @@ func makeRLLimiter(reqPerMin int) func(http.HandlerFunc) http.HandlerFunc {
 			next(w, r)
 		}
 	}
+}
+
+// consumeCredits attempts to consume "amount" credits for the given tenant using the Credits service.
+// Returns (ok, code). If the Credits service indicates insufficient funds, code will be 402.
+// baseURL example: http://localhost:5004
+func consumeCredits(baseURL, tenantID string, amount int64) (bool, int) {
+	if baseURL == "" || tenantID == "" || amount <= 0 {
+		return false, http.StatusBadRequest
+	}
+	// Build request payload
+	payload := map[string]any{
+		"tenant_id":       tenantID,
+		"amount":          amount,
+		"description":     "guardian_execute",
+		"reference":       "guardian",
+		"idempotency_key": uuid.New().String(),
+	}
+	b, _ := json.Marshal(payload)
+	req, err := http.NewRequest(http.MethodPost, strings.TrimRight(baseURL, "/")+"/credits/consume", bytes.NewReader(b))
+	if err != nil {
+		return false, http.StatusServiceUnavailable
+	}
+	req.Header.Set("Content-Type", "application/json")
+	// Tight timeout to avoid coupling Guardian to Credits latency
+	cli := &http.Client{Timeout: 2 * time.Second}
+	resp, err := cli.Do(req)
+	if err != nil {
+		return false, http.StatusServiceUnavailable
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		return false, resp.StatusCode
+	}
+	var cr struct {
+		Success bool   `json:"success"`
+		Error   string `json:"error"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&cr); err != nil {
+		return false, http.StatusBadGateway
+	}
+	if cr.Success {
+		return true, http.StatusOK
+	}
+	if strings.Contains(strings.ToLower(cr.Error), "insufficient") {
+		return false, http.StatusPaymentRequired
+	}
+	return false, http.StatusBadGateway
 }

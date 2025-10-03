@@ -3,7 +3,10 @@ package main
 import (
 	"bytes"
 	"context"
+	crand "crypto/rand"
 	"crypto/tls"
+	"crypto/x509"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -38,6 +41,7 @@ import (
 	// optional tracing
 	otelobs "shieldx/pkg/observability/otel"
 	"shieldx/pkg/ratls"
+	secTLS "shieldx/pkg/security/tls"
 )
 
 type connectRequest struct {
@@ -72,6 +76,8 @@ var (
 	mShadowDeny    = metrics.NewCounter("ingress_shadow_deny_total", "Shadow policy deny decisions")
 	mShadowDivert  = metrics.NewCounter("ingress_shadow_divert_total", "Shadow policy divert decisions")
 	mShadowTarpit  = metrics.NewCounter("ingress_shadow_tarpit_total", "Shadow policy tarpit decisions")
+	mDenyPath      = metrics.NewCounter("ingress_deny_path_total", "Requests denied by path prefix")
+	mDenyQuery     = metrics.NewCounter("ingress_deny_query_total", "Requests denied by query key")
 	opaEng         *policy.OPAEngine
 	opaEnforce     bool
 	// DPoP anti-replay store: jti -> expiry unix
@@ -103,6 +109,7 @@ var (
 	mWGRouteTeardown = metrics.NewCounter("wg_route_teardown_total", "WG route/NAT teardowns")
 	mWGTCConfigured  = metrics.NewCounter("wg_tc_config_total", "WG TC bandwidth class configured")
 	mWGPPSConfigured = metrics.NewCounter("wg_pps_config_total", "WG PPS nft limit configured")
+	mIPRateLimitHit  = metrics.NewCounter("ingress_ip_ratelimit_hit_total", "IP rate limit hits")
 	// RA-TLS
 	ratlsIssuer *ratls.AutoIssuer
 	gCertExpiry = metrics.NewGauge("ratls_cert_expiry_seconds", "Seconds until current RA-TLS cert expiry")
@@ -365,7 +372,7 @@ func connectHandler(w http.ResponseWriter, r *http.Request) {
 	chanReg.add(channelID, tenant, scope, exp)
 	// Reply with channel info and guardian pubkey for client ECDH
 	cr := wch.ConnectResponse{ChannelID: channelID, GuardianPubB64: pub.PubKey, Protocol: wch.Protocol, ExpiresAt: exp.Unix(), RebindHintMs: 500}
-	_ = ledger.AppendJSONLine(ledgerPath, serviceName, "channel.created", map[string]any{"channelId": channelID, "exp": exp})
+	_ = ledger.AppendJSONLine(ledgerPath, serviceName, "channel.created", map[string]any{"channelId": channelID, "exp": exp, "corrId": getCorrID(r)})
 	// Optional one-time redemption: revoke token after successful connect to prevent reuse
 	if os.Getenv("INGRESS_REDEEM_ONCE") == "1" {
 		go func(tok string) {
@@ -378,12 +385,11 @@ func connectHandler(w http.ResponseWriter, r *http.Request) {
 			if err == nil && resp != nil {
 				resp.Body.Close()
 			}
-			_ = ledger.AppendJSONLine(ledgerPath, serviceName, "connect.redeem_once", map[string]any{"channelId": channelID})
+			_ = ledger.AppendJSONLine(ledgerPath, serviceName, "connect.redeem_once", map[string]any{"channelId": channelID, "corrId": getCorrID(r)})
 		}(req.Token)
 	}
 	writeJSON(w, http.StatusOK, cr)
 }
-
 func main() {
 	port := getenvInt("INGRESS_PORT", 8081)
 	// OpenTelemetry tracing (no-op if OTEL_EXPORTER_OTLP_ENDPOINT unset)
@@ -938,6 +944,16 @@ func main() {
 		w.WriteHeader(resp.StatusCode)
 		io.Copy(w, resp.Body)
 	})
+	// Policy inspection endpoint
+	mux.HandleFunc("/policy", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, 200, map[string]any{
+			"allowAll":   pol.AllowAll,
+			"allowed":    pol.Allowed,
+			"advanced":   pol.Advanced,
+			"opaLoaded":  opaEng != nil,
+			"opaEnforce": opaEnforce,
+		})
+	})
 	// /metrics
 	reg.Register(mConnect)
 	reg.Register(mSend)
@@ -948,6 +964,8 @@ func main() {
 	reg.Register(mShadowDeny)
 	reg.Register(mShadowDivert)
 	reg.Register(mShadowTarpit)
+	reg.Register(mDenyPath)
+	reg.Register(mDenyQuery)
 	reg.Register(mWGAdd)
 	reg.Register(mWGRemove)
 	reg.Register(mWGRotate)
@@ -964,6 +982,7 @@ func main() {
 	reg.Register(mWGRouteTeardown)
 	reg.Register(mWGTCConfigured)
 	reg.Register(mWGPPSConfigured)
+	reg.Register(mIPRateLimitHit)
 	reg.RegisterGauge(gCertExpiry)
 	reg.Register(mOPACacheHit)
 	reg.Register(mOPACacheMiss)
@@ -1025,6 +1044,10 @@ func main() {
 	// HTTP metrics middleware
 	httpMetrics := metrics.NewHTTPMetrics(reg, serviceName)
 	baseH := httpMetrics.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Correlation-ID: accept incoming or generate and propagate
+		cid := getOrMakeCorrelationID(r)
+		w.Header().Set("X-Correlation-ID", cid)
+		r = r.WithContext(context.WithValue(r.Context(), ctxKeyCorrID{}, cid))
 		// Early L4-ish token guard (header-based) to drop before heavy work
 		if adm := os.Getenv("ADMISSION_SECRET"); adm != "" {
 			if !guard.VerifyHeader(r, adm, os.Getenv("ADMISSION_HEADER"), "ingress") {
@@ -1032,8 +1055,35 @@ func main() {
 				return
 			}
 		}
+		// Fast denylist filters
+		if dp := os.Getenv("INGRESS_DENY_PATH_PREFIXES"); dp != "" {
+			for _, p := range strings.Split(dp, ",") {
+				pp := strings.TrimSpace(p)
+				if pp != "" && strings.HasPrefix(r.URL.Path, pp) {
+					mDenyPath.Inc()
+					_ = ledger.AppendJSONLine(ledgerPath, serviceName, "deny.path", map[string]any{"path": r.URL.Path, "prefix": pp, "corrId": getCorrID(r)})
+					http.Error(w, "forbidden", http.StatusForbidden)
+					return
+				}
+			}
+		}
+		if dq := os.Getenv("INGRESS_DENY_QUERY_KEYS"); dq != "" {
+			q := r.URL.Query()
+			for _, k := range strings.Split(dq, ",") {
+				kk := strings.TrimSpace(k)
+				if kk == "" {
+					continue
+				}
+				if _, ok := q[kk]; ok {
+					mDenyQuery.Inc()
+					_ = ledger.AppendJSONLine(ledgerPath, serviceName, "deny.query", map[string]any{"key": kk, "path": r.URL.Path, "corrId": getCorrID(r)})
+					http.Error(w, "forbidden", http.StatusForbidden)
+					return
+				}
+			}
+		}
 		ip := clientIP(r)
-		if !rl.Allow(ip) {
+		if !allowIPRate(ip) {
 			http.Error(w, "rate limit", http.StatusTooManyRequests)
 			return
 		}
@@ -1066,7 +1116,53 @@ func main() {
 	// Use RA-TLS if enabled
 	if ratlsIssuer != nil {
 		reqClient := parseBoolDefault("RATLS_REQUIRE_CLIENT_CERT", true)
-		cfg := ratlsIssuer.ServerTLSConfig(reqClient, getenvDefault("RATLS_TRUST_DOMAIN", "shieldx.local"))
+		allowed := getenvDefault("INGRESS_ALLOWED_CLIENT_SAN_PREFIXES", "")
+		var cfg *tls.Config
+		if strings.TrimSpace(allowed) != "" {
+			prefs := allowed
+			cfg = ratlsIssuer.ServerTLSConfigWithPeerVerifier(reqClient, getenvDefault("RATLS_TRUST_DOMAIN", "shieldx.local"), func(rawCerts [][]byte, chains [][]*x509.Certificate) error {
+				if len(rawCerts) == 0 {
+					return fmt.Errorf("no peer cert")
+				}
+				cert, err := x509.ParseCertificate(rawCerts[0])
+				if err != nil {
+					return err
+				}
+				for _, u := range cert.URIs {
+					s := u.String()
+					for _, p := range strings.Split(prefs, ",") {
+						if pp := strings.TrimSpace(p); pp != "" && strings.HasPrefix(s, pp) {
+							return nil
+						}
+					}
+				}
+				for _, dns := range cert.DNSNames {
+					for _, p := range strings.Split(prefs, ",") {
+						if pp := strings.TrimSpace(p); pp != "" && strings.HasPrefix(dns, pp) {
+							return nil
+						}
+					}
+				}
+				for _, ip := range cert.IPAddresses {
+					s := ip.String()
+					for _, p := range strings.Split(prefs, ",") {
+						if pp := strings.TrimSpace(p); pp != "" && strings.HasPrefix(s, pp) {
+							return nil
+						}
+					}
+				}
+				if cert.Subject.CommonName != "" {
+					for _, p := range strings.Split(prefs, ",") {
+						if pp := strings.TrimSpace(p); pp != "" && strings.HasPrefix(cert.Subject.CommonName, pp) {
+							return nil
+						}
+					}
+				}
+				return fmt.Errorf("client SAN not allowed")
+			})
+		} else {
+			cfg = ratlsIssuer.ServerTLSConfig(reqClient, getenvDefault("RATLS_TRUST_DOMAIN", "shieldx.local"))
+		}
 		// enforce TLS 1.3 minimum
 		if cfg.MinVersion == 0 {
 			cfg.MinVersion = tls.VersionTLS13
@@ -1074,9 +1170,24 @@ func main() {
 		srv := &http.Server{Addr: addr, Handler: h, TLSConfig: cfg, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second}
 		log.Fatal(srv.ListenAndServeTLS("", ""))
 	} else if cert := os.Getenv("INGRESS_TLS_CERT_FILE"); cert != "" && os.Getenv("INGRESS_TLS_KEY_FILE") != "" {
-		// Enforce TLS 1.3 minimum and timeouts
-		srv := &http.Server{Addr: addr, Handler: h, TLSConfig: &tls.Config{MinVersion: tls.VersionTLS13}, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second}
-		log.Fatal(srv.ListenAndServeTLS(os.Getenv("INGRESS_TLS_CERT_FILE"), os.Getenv("INGRESS_TLS_KEY_FILE")))
+		// Static TLS mode: require client certs and optional SAN allowlist; needs client CA
+		ca := os.Getenv("INGRESS_TLS_CLIENT_CA_FILE")
+		if ca == "" {
+			log.Fatalf("INGRESS_TLS_CLIENT_CA_FILE required for mTLS static mode")
+		}
+		allowed := getenvDefault("INGRESS_ALLOWED_CLIENT_SAN_PREFIXES", "")
+		var cfg *tls.Config
+		var err error
+		if strings.TrimSpace(allowed) != "" {
+			cfg, err = secTLS.LoadServerMTLSWithSANAllow(os.Getenv("INGRESS_TLS_CERT_FILE"), os.Getenv("INGRESS_TLS_KEY_FILE"), ca, allowed)
+		} else {
+			cfg, err = secTLS.LoadServerMTLS(os.Getenv("INGRESS_TLS_CERT_FILE"), os.Getenv("INGRESS_TLS_KEY_FILE"), ca)
+		}
+		if err != nil {
+			log.Fatalf("TLS load error: %v", err)
+		}
+		srv := &http.Server{Addr: addr, Handler: h, TLSConfig: cfg, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second}
+		log.Fatal(srv.ListenAndServeTLS("", ""))
 	} else {
 		log.Fatalf("TLS required: set RATLS_ENABLE=true or provide INGRESS_TLS_CERT_FILE/INGRESS_TLS_KEY_FILE env vars")
 	}
@@ -1147,6 +1258,21 @@ func (r *rateLimiter) Allow(key string) bool {
 	b.remaining--
 	r.store[key] = b
 	return true
+}
+
+// allowIPRate applies a per-IP rate limit using Redis if available, else local token bucket.
+func allowIPRate(ip string) bool {
+	if rdb == nil {
+		return rl.Allow(ip)
+	}
+	ctx := context.Background()
+	k := "ing:ip:" + ip
+	cnt, _ := rdb.Incr(ctx, k).Result()
+	if cnt == 1 {
+		_ = rdb.Expire(ctx, k, time.Minute).Err()
+	}
+	burst := getenvInt("INGRESS_IP_BURST", 200)
+	return int(cnt) <= burst
 }
 
 func getenvInt(key string, def int) int {
@@ -1306,4 +1432,30 @@ func evaluateOPAWithCache(tenant, scope, path, ip string) (policy.Action, bool) 
 	opaCache[key] = opaCacheEntry{action: dec, exp: time.Now().Add(ttl).UnixNano()}
 	opaCacheMu.Unlock()
 	return dec, true
+}
+
+// Correlation-ID helpers
+type ctxKeyCorrID struct{}
+
+func getCorrID(r *http.Request) string {
+	if v := r.Context().Value(ctxKeyCorrID{}); v != nil {
+		if s, ok := v.(string); ok {
+			return s
+		}
+	}
+	if h := r.Header.Get("X-Correlation-ID"); h != "" {
+		return h
+	}
+	return ""
+}
+
+func getOrMakeCorrelationID(r *http.Request) string {
+	if cid := r.Header.Get("X-Correlation-ID"); cid != "" {
+		return cid
+	}
+	var b [16]byte
+	if _, err := crand.Read(b[:]); err == nil {
+		return hex.EncodeToString(b[:])
+	}
+	return fmt.Sprintf("cid-%d", time.Now().UnixNano())
 }

@@ -3,6 +3,28 @@ Tôi sẽ phân chia công việc cho 3 người dựa trên kiến trúc hệ t
 ## Phân Công Công Việc
 
 ### 👤 PERSON 1: Core Services & Orchestration Layer
+
+Công Việc Mới Nhất hãy cải nâng cấp tất cả hệ thống sửa dụng nhiều thuật toán tốt hơn, tối ưu tốt hơn, không rời rạc: 
+P0 (Blocking trước production)
+Bắt buộc TLS 1.3 + mTLS cho Ingress/Orchestrator; verify SAN cho client cert.
+Đầu ra: server start dùng tlsutil.*, có danh sách SAN cho từng service caller.
+Tiêu chí: curl mTLS pass, client SAN không thuộc allowlist bị chặn; MinVersion=TLS1.3.
+Health/metrics endpoints cho cả 2 service (8080/8081) với Prometheus counter/histogram cơ bản.
+Đầu ra: /health, /metrics hoạt động; export thành công metrics HTTP latency, req count.
+Rate limiting tại Ingress (token bucket/Redis nếu có sẵn) + input validation.
+Đầu ra: 429 khi vượt quota; validate JSON/schema cho POST /route.
+Policy-based routing với OPA (rego đơn giản) cho POST /route.
+Đầu ra: OPA bundle local, evaluate allow/deny + chọn upstream.
+P1
+Access log + security event log (mask PII).
+Load balancing (round-robin + least-connections).
+Request filtering (deny list path/query), cơ chế deny nhanh.
+Kiểm thử
+Unit test coverage ≥ 80% cho router, rate limit, OPA eval.
+Integration: kịch bản mTLS ok/fail, rate limit hit, policy allow/deny.
+Phụ thuộc
+TLS util (shared) — phối hợp PERSON 2/3 để nhận allowlist SAN theo service identity.
+
 **Trách nhiệm:** Gateway, Orchestrator, Ingress Services
 
 #### Khu vực làm việc:
@@ -49,7 +71,27 @@ Tôi sẽ phân chia công việc cho 3 người dựa trên kiến trúc hệ t
 
 ### 👤 PERSON 2: Security & ML Services
 **Trách nhiệm:** Guardian, ML Pipeline, ContAuth
-
+Công Việc Mới Nhất hãy cải nâng cấp tất cả hệ thống sửa dụng nhiều thuật toán tốt hơn, tối ưu tốt hơn, không rời rạc: 
+P0 (Blocking)
+Guardian sandbox isolation end-to-end với timeout 30s.
+Đầu ra: POST /guardian/execute chạy trong MicroVM (mock hợp lệ nếu chưa có Firecracker), force kill >30s.
+Tiêu chí: tuyệt đối không chạy code untrusted ngoài sandbox.
+eBPF syscall monitoring + minimal threat scoring pipeline.
+Đầu ra: thu thập một số syscall sự kiện, map thành feature, score 0–100, trả về trong GET /guardian/report/:id.
+ContAuth: chỉ lưu features đã băm; risk scoring cơ bản.
+Đầu ra: POST /contauth/collect (validate + hash), POST /contauth/score trả về score, GET /contauth/decision trả decision.
+Mã hóa at-rest cho telemetry (FS/DB) và masking trong logs.
+P1
+Model versioning + rollback; A/B testing flags.
+Anomaly detection baseline huấn luyện định kỳ (job).
+Kiểm thử
+Unit: scoring, sanitization, hashing, timeout.
+Integration: execute → status → report; data privacy checks (không bao giờ log raw biometrics).
+Ràng buộc
+Không expose nội bộ model qua API; RBAC nội bộ (nếu có).
+Phụ thuộc
+Credits (PERSON 3) để check quota trước khi execute sandbox.
+Orchestrator (PERSON 1) để route đúng dịch vụ.
 #### Khu vực làm việc:
 ```
 /workspaces/Living-Digital-Fortress/
@@ -109,7 +151,28 @@ Tôi sẽ phân chia công việc cho 3 người dựa trên kiến trúc hệ t
 
 ### 👤 PERSON 3: Business Logic & Infrastructure
 **Trách nhiệm:** Credits, Shadow, Deception, Database
+Công Việc Mới Nhất hãy cải nâng cấp tất cả hệ thống sửa dụng nhiều thuật toán tốt hơn, tối ưu tốt hơn, không rời rạc: 
+P0 (Blocking)
+Credits service với giao dịch DB (ACID), không bao giờ âm số dư, audit logs immutable.
+Đầu ra: POST /credits/consume, GET /credits/balance/:id, POST /credits/topup, GET /credits/history.
+Tiêu chí: dùng transaction, lock hợp lý; ghi log giao dịch; che thông tin thanh toán.
+Shadow evaluation pipeline tối thiểu (nhận rule, evaluate offline, lưu kết quả).
+Đầu ra: POST /shadow/evaluate, GET /shadow/results/:id.
+Camouflage/deception: stub API cho template/response động (không lộ payment info).
+P1
+Backup automation + migrations chuẩn; Redis cache hot paths.
+K8s manifests trong pilot/ với readiness/liveness, resource limits, PodSecurity.
+Kiểm thử
+Unit: credits arithmetic, idempotency, audit log.
+Integration: shadow evaluate trước deploy, rollback an toàn.
+Phụ thuộc
+Orchestrator (PERSON 1) route vào Credits/Shadow.
+Security (PERSON 2) có thể tiêu thụ credits trước sandbox run.
+Hạng mục chung (Shared P0, do PERSON 1 lead, 2/3 cùng review)
 
+TLS util bổ sung Verify SAN + client mTLS helper và áp dụng đồng bộ cho mọi service.
+Logging chuẩn (structured), correlation-id từ ingress.
+Observability: OTel/Prometheus cơ bản, dashboards tối thiểu
 #### Khu vực làm việc:
 ```
 /workspaces/Living-Digital-Fortress/

@@ -10,78 +10,82 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	"shieldx/core/maze_engine"
 	"shieldx/pkg/deception"
 	"shieldx/pkg/ledger"
 	"shieldx/pkg/metrics"
+
+	"github.com/google/uuid"
 )
 
 type CamouflageService struct {
-    dg   *deception.DeceptionGraph
-    mu   sync.RWMutex
-    mOps *metrics.LabeledCounter // labels: op,result
+	dg   *deception.DeceptionGraph
+	mu   sync.RWMutex
+	mOps *metrics.LabeledCounter // labels: op,result
 }
 
 func NewCamouflageService() *CamouflageService {
-    dg := deception.NewDeceptionGraph()
-    // Seed with a few decoys
-    dg.AddNode(deception.CreateWebServerDecoy())
-    dg.AddNode(deception.CreateSSHHoneypot())
-    dg.AddNode(deception.CreateDatabaseDecoy())
-    return &CamouflageService{dg: dg}
+	dg := deception.NewDeceptionGraph()
+	// Seed with a few decoys
+	dg.AddNode(deception.CreateWebServerDecoy())
+	dg.AddNode(deception.CreateSSHHoneypot())
+	dg.AddNode(deception.CreateDatabaseDecoy())
+	return &CamouflageService{dg: dg}
 }
 
 type SelectResponse struct {
-    Decoy deception.DeceptionNode `json:"decoy"`
-    Token string                  `json:"token"`
+	Decoy deception.DeceptionNode `json:"decoy"`
+	Token string                  `json:"token"`
 }
 
 type FeedbackRequest struct {
-    NodeID string  `json:"node_id"`
-    Reward float64 `json:"reward"`
+	NodeID string  `json:"node_id"`
+	Reward float64 `json:"reward"`
 }
 
 func (cs *CamouflageService) handleSelect(w http.ResponseWriter, r *http.Request) {
-    if r.Method != http.MethodPost && r.Method != http.MethodGet {
-        http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-        return
-    }
-    ctx := r.Context()
-    node, err := cs.dg.SelectOptimalDecoy(ctx)
-    if err != nil {
-        cs.mOps.Inc(map[string]string{"op": "select", "result": "empty"})
-        http.Error(w, "no decoys", http.StatusServiceUnavailable)
-        return
-    }
-    // One-time token for feedback pairing (no auth state here to keep simple)
-    token := uuid.New().String()
-    cs.mOps.Inc(map[string]string{"op": "select", "result": "ok"})
-    writeJSON(w, http.StatusOK, SelectResponse{Decoy: *node, Token: token})
+	if r.Method != http.MethodPost && r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	ctx := r.Context()
+	node, err := cs.dg.SelectOptimalDecoy(ctx)
+	if err != nil {
+		cs.mOps.Inc(map[string]string{"op": "select", "result": "empty"})
+		http.Error(w, "no decoys", http.StatusServiceUnavailable)
+		return
+	}
+	// One-time token for feedback pairing (no auth state here to keep simple)
+	token := uuid.New().String()
+	cs.mOps.Inc(map[string]string{"op": "select", "result": "ok"})
+	writeJSON(w, http.StatusOK, SelectResponse{Decoy: *node, Token: token})
 }
 
 func (cs *CamouflageService) handleFeedback(w http.ResponseWriter, r *http.Request) {
-    if r.Method != http.MethodPost {
-        http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-        return
-    }
-    var req FeedbackRequest
-    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-        http.Error(w, "bad json", http.StatusBadRequest)
-        return
-    }
-    if req.NodeID == "" || !(req.Reward >= -1 && req.Reward <= 1) {
-        http.Error(w, "invalid body", http.StatusBadRequest)
-        return
-    }
-    cs.dg.UpdateReward(req.NodeID, req.Reward)
-    cs.mOps.Inc(map[string]string{"op": "feedback", "result": "ok"})
-    writeJSON(w, http.StatusOK, map[string]any{"success": true})
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req FeedbackRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad json", http.StatusBadRequest)
+		return
+	}
+	if req.NodeID == "" || !(req.Reward >= -1 && req.Reward <= 1) {
+		http.Error(w, "invalid body", http.StatusBadRequest)
+		return
+	}
+	cs.dg.UpdateReward(req.NodeID, req.Reward)
+	cs.mOps.Inc(map[string]string{"op": "feedback", "result": "ok"})
+	writeJSON(w, http.StatusOK, map[string]any{"success": true})
 }
 
 func (cs *CamouflageService) handleMetricsJSON(w http.ResponseWriter, r *http.Request) {
-    if r.Method != http.MethodGet { http.Error(w, "method not allowed", http.StatusMethodNotAllowed); return }
-    writeJSON(w, http.StatusOK, cs.dg.GetMetrics())
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	writeJSON(w, http.StatusOK, cs.dg.GetMetrics())
 }
 
 func main() {
@@ -101,8 +105,10 @@ func main() {
 
 	// Maze engine for template-based camouflage
 	engine, err := maze_engine.NewCamouflageEngine(templatesPath)
-	if err != nil { log.Fatalf("Failed to initialize camouflage engine: %v", err) }
-	api := &CamouflageAPI{ engine: engine, metrics: initAPIMetrics() }
+	if err != nil {
+		log.Fatalf("Failed to initialize camouflage engine: %v", err)
+	}
+	api := &CamouflageAPI{engine: engine, metrics: initAPIMetrics()}
 	// Register API counters into registry for Prom scraping
 	reg.Register(api.metrics.TemplateRequests)
 	reg.Register(api.metrics.SessionCreated)
@@ -122,35 +128,52 @@ func main() {
 	mux.HandleFunc("/v1/camouflage/adaptive", api.adaptiveTemplateHandler)
 	mux.HandleFunc("/v1/camouflage/log", api.logHandler)
 	// Health and metrics
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request){ w.WriteHeader(200); w.Write([]byte("{\"status\":\"healthy\",\"service\":\"camouflage-api\"}")) })
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		w.Write([]byte("{\"status\":\"healthy\",\"service\":\"camouflage-api\"}"))
+	})
 	mux.Handle("/metrics", reg)
 
 	// Compose middlewares: auth then CORS then HTTP metrics
 	handler := withAuth(apiKey, api.corsMiddleware(mux))
 	handler = httpMetrics.Middleware(handler)
-	srv := &http.Server{ Addr: ":"+port, Handler: handler, ReadHeaderTimeout: 5*time.Second, ReadTimeout: 15*time.Second, WriteTimeout: 15*time.Second, IdleTimeout: 60*time.Second, MaxHeaderBytes: 1<<20 }
+	srv := &http.Server{Addr: ":" + port, Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 1 << 20}
 	log.Printf("[camouflage-api] listening on :%s", port)
 	log.Fatal(srv.ListenAndServe())
 }
 
 func withAuth(apiKey string, next http.Handler) http.Handler {
-    if apiKey == "" { return next }
-    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request){
-        if r.URL.Path == "/health" || r.URL.Path == "/metrics" { next.ServeHTTP(w, r); return }
-        const p = "Bearer "
-        auth := r.Header.Get("Authorization")
-        if len(auth) <= len(p) || auth[:len(p)] != p || auth[len(p):] != apiKey { http.Error(w, "Unauthorized", http.StatusUnauthorized); return }
-        next.ServeHTTP(w, r)
-    })
+	if apiKey == "" {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/health" || r.URL.Path == "/metrics" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		const p = "Bearer "
+		auth := r.Header.Get("Authorization")
+		if len(auth) <= len(p) || auth[:len(p)] != p || auth[len(p):] != apiKey {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
-    w.Header().Set("Content-Type", "application/json")
-    w.WriteHeader(status)
-    _ = json.NewEncoder(w).Encode(v)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(v)
 }
 
-func getenv(k, d string) string { if v := os.Getenv(k); v != "" { return v }; return d }
+func getenv(k, d string) string {
+	if v := os.Getenv(k); v != "" {
+		return v
+	}
+	return d
+}
+
 type CamouflageAPI struct {
 	engine  *maze_engine.CamouflageEngine
 	metrics *APIMetrics
@@ -186,7 +209,6 @@ type LogRequest struct {
 	CFRay     string `json:"cf_ray"`
 	Country   string `json:"country"`
 }
-
 
 func initAPIMetrics() *APIMetrics {
 	return &APIMetrics{

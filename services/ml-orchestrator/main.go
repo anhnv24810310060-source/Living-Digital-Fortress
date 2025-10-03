@@ -31,6 +31,11 @@ type MLOrchestrator struct {
 	featureExtractor *FeatureExtractor
 	forest           *IsolationForest
 	ensembleWeight   float64
+	// A/B testing: alternate ensemble weight and traffic split (%0-100)
+	abAltWeight float64
+	abPercent   int
+	_abA        *metrics.Counter
+	_abB        *metrics.Counter
 	// simple in-memory model registry: version -> serialized bytes
 	versions       map[string][]byte
 	currentVersion string
@@ -78,6 +83,8 @@ func main() {
 		featureExtractor: &FeatureExtractor{windowSize: 30 * time.Second},
 		forest:           NewIsolationForest(100, 256),
 		ensembleWeight:   parseFloatDefault("ML_ENSEMBLE_WEIGHT", 0.6),
+		abAltWeight:      parseFloatDefault("ML_AB_WEIGHT_ALT", 0.5),
+		abPercent:        parseIntDefault("ML_AB_PERCENT", 0),
 		versions:         make(map[string][]byte),
 	}
 
@@ -127,10 +134,15 @@ func main() {
 	mTrain := metrics.NewCounter("ml_train_total", "Total training calls")
 	mAnomaly := metrics.NewCounter("ml_anomalies_total", "Total anomalies detected")
 	gThreshold := metrics.NewGauge("ml_threshold_d2", "Current MD^2 anomaly threshold")
+	// A/B testing counters
+	mABGroupA := metrics.NewCounter("ml_ab_group_a_total", "Analyze requests in group A (control)")
+	mABGroupB := metrics.NewCounter("ml_ab_group_b_total", "Analyze requests in group B (alt)")
 	reg.Register(mAnalyze)
 	reg.Register(mTrain)
 	reg.Register(mAnomaly)
 	reg.RegisterGauge(gThreshold)
+	reg.Register(mABGroupA)
+	reg.Register(mABGroupB)
 	orchestrator.anomalyDetector.onMetricsUpdate = func(th float64) { gThreshold.Set(uint64(th)) }
 	orchestrator.anomalyDetector.onTrain = func(n int) { mTrain.Add(1) }
 	orchestrator.anomalyDetector.onAnomaly = func() { mAnomaly.Add(1) }
@@ -167,7 +179,11 @@ func main() {
 		}()
 	}
 	addr := fmt.Sprintf(":%s", port)
+	// expose counters inside orchestrator for handler usage
 	srv := &http.Server{Addr: addr, Handler: h}
+	// attach counters via closure fields using package-level vars? We'll pass via receiver state
+	orchestrator._abA = mABGroupA
+	orchestrator._abB = mABGroupB
 	if issuer != nil {
 		srv.TLSConfig = issuer.ServerTLSConfig(true, getenvDefault("RATLS_TRUST_DOMAIN", "shieldx.local"))
 		log.Printf("ML Orchestrator (RA-TLS) starting on %s", addr)
@@ -281,6 +297,25 @@ func (m *MLOrchestrator) handleAnalyze(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// If A/B testing enabled, select group based on TenantID hash for stickiness
+	weight := m.ensembleWeight
+	if m.abPercent > 0 {
+		bucket := 0
+		for i := 0; i < len(event.TenantID); i++ {
+			bucket = (bucket*31 + int(event.TenantID[i])) % 100
+		}
+		if bucket < m.abPercent { // group B
+			weight = m.abAltWeight
+			if m._abB != nil {
+				m._abB.Add(1)
+			}
+		} else {
+			if m._abA != nil {
+				m._abA.Add(1)
+			}
+		}
+	}
+
 	// Mahalanobis-based score
 	mdRes := m.anomalyDetector.Predict(event)
 	// Isolation Forest score in [0,1]
@@ -289,7 +324,7 @@ func (m *MLOrchestrator) handleAnalyze(w http.ResponseWriter, r *http.Request) {
 		ifScore = m.forest.Score(event.Features)
 	}
 	// Ensemble: weighted average; conservative anomaly if either flags strongly
-	ensScore := m.ensembleWeight*mdRes.Score + (1-m.ensembleWeight)*ifScore
+	ensScore := weight*mdRes.Score + (1-weight)*ifScore
 	isAnom := ensScore >= 0.5 || mdRes.IsAnomaly
 	conf := 0.5 + 0.5*math.Tanh(2*(ensScore-0.5))
 	result := AnomalyResult{IsAnomaly: isAnom, Score: ensScore, Confidence: conf, Explanation: "Ensemble(MD^2+IF)"}

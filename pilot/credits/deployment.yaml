@@ -38,6 +38,11 @@ spec:
                 secretKeyRef:
                   name: credits-audit
                   key: hmac
+            - name: PAYMENT_ENC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: credits-pci
+                  key: aes
             - name: HTTP_PATH_MODE
               value: "strict"
           readinessProbe:

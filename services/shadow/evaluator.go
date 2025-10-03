@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"net/http"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -85,6 +86,13 @@ func NewShadowEvaluator(dbURL string) (*ShadowEvaluator, error) {
 		log.Printf("Skipping DB migrations for shadow (set MIGRATE_ON_START=true after backup)")
 		return evaluator, nil
 	}
+	if os.Getenv("BACKUP_BEFORE_MIGRATE") == "true" {
+		if err := backupDatabaseOnce(dbURL); err != nil {
+			log.Printf("[shadow] pre-migration backup failed: %v", err)
+		} else {
+			log.Printf("[shadow] pre-migration backup completed")
+		}
+	}
 	if err := evaluator.migrate(); err != nil {
 		return nil, fmt.Errorf("migration failed: %w", err)
 	}
@@ -94,6 +102,8 @@ func NewShadowEvaluator(dbURL string) (*ShadowEvaluator, error) {
 
 func (se *ShadowEvaluator) migrate() error {
 	query := `
+    -- required for gen_random_uuid()
+    CREATE EXTENSION IF NOT EXISTS pgcrypto;
 	CREATE TABLE IF NOT EXISTS shadow_evaluations (
 		eval_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 		rule_id VARCHAR(255) NOT NULL,
@@ -144,6 +154,25 @@ func (se *ShadowEvaluator) migrate() error {
 	_, err := se.db.Exec(query)
 	return err
 }
+
+// backupDatabaseOnce performs a best-effort pg_dump of the provided database URL
+func backupDatabaseOnce(dbURL string) error {
+	if cmd := os.Getenv("BACKUP_CMD"); cmd != "" {
+		c := execCommand("bash", "-lc", cmd)
+		return c.Run()
+	}
+	if _, err := execLookPath("pg_dump"); err != nil {
+		return nil
+	}
+	ts := time.Now().Format("20060102_150405")
+	out := "/tmp/shadow_" + ts + ".dump"
+	c := execCommand("bash", "-lc", "pg_dump --dbname='"+dbURL+"' -Fc -f '"+out+"'")
+	return c.Run()
+}
+
+// indirections for testability
+var execCommand = func(name string, arg ...string) *exec.Cmd { return exec.Command(name, arg...) }
+var execLookPath = exec.LookPath
 
 func (se *ShadowEvaluator) CreateShadowEval(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
