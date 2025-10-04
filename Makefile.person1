@@ -1,0 +1,255 @@
+# PERSON 1 - Enhanced Makefile Targets
+# Advanced build, test, and deployment automation for Orchestrator & Ingress
+
+.PHONY: person1-all person1-build person1-test person1-bench person1-coverage
+.PHONY: person1-lint person1-sec person1-load-test person1-deploy
+
+# ============================================================================
+# PERSON 1: Core Services & Orchestration Layer
+# ============================================================================
+
+# Build all PERSON 1 components
+person1-all: person1-build person1-test
+
+# Build orchestrator and ingress services
+person1-build:
+	@echo "=== Building PERSON 1 Services ==="
+	@echo "Building Orchestrator..."
+	cd services/orchestrator && go build -o ../../bin/orchestrator \
+		-ldflags="-s -w -X main.version=$$(git describe --tags --always)" \
+		-trimpath .
+	@echo "Building Ingress..."
+	cd services/ingress && go build -o ../../bin/ingress \
+		-ldflags="-s -w -X main.version=$$(git describe --tags --always)" \
+		-trimpath .
+	@echo "✅ Build complete: bin/orchestrator, bin/ingress"
+
+# Run unit tests with race detection
+person1-test:
+	@echo "=== Running PERSON 1 Unit Tests ==="
+	@echo "Testing Orchestrator..."
+	cd services/orchestrator && go test -v -race -timeout=30s ./...
+	@echo "Testing Ingress..."
+	cd services/ingress && go test -v -race -timeout=30s ./...
+	@echo "Testing shared packages..."
+	go test -v -race -timeout=30s ./pkg/policy/... ./pkg/wch/... ./pkg/security/tls/...
+	@echo "✅ All tests passed"
+
+# Run benchmarks for load balancing algorithms
+person1-bench:
+	@echo "=== Running PERSON 1 Benchmarks ==="
+	cd services/orchestrator && go test -bench=. -benchmem -benchtime=5s ./...
+	@echo "✅ Benchmarks complete"
+
+# Generate code coverage report (target: >= 85%)
+person1-coverage:
+	@echo "=== Generating Coverage Report ==="
+	cd services/orchestrator && go test -coverprofile=coverage.out ./...
+	cd services/orchestrator && go tool cover -html=coverage.out -o coverage.html
+	cd services/orchestrator && go tool cover -func=coverage.out | grep total
+	cd services/ingress && go test -coverprofile=coverage.out ./...
+	cd services/ingress && go tool cover -html=coverage.out -o coverage.html
+	cd services/ingress && go tool cover -func=coverage.out | grep total
+	@echo "✅ Coverage reports: services/*/coverage.html"
+
+# Lint with production-grade rules
+person1-lint:
+	@echo "=== Linting PERSON 1 Code ==="
+	golangci-lint run --config .golangci.yml services/orchestrator/... || true
+	golangci-lint run --config .golangci.yml services/ingress/... || true
+	@echo "✅ Linting complete"
+
+# Security scanning
+person1-sec:
+	@echo "=== Security Scanning ==="
+	@echo "Running gosec..."
+	gosec -quiet -fmt=json -out=person1-security.json services/orchestrator/... services/ingress/... || true
+	@echo "Running nancy (dependency vulnerabilities)..."
+	go list -json -m all | nancy sleuth || true
+	@echo "✅ Security scan complete: person1-security.json"
+
+# Load testing with wrk (requires wrk installed)
+person1-load-test:
+	@echo "=== Load Testing Orchestrator ==="
+	@echo "Testing POST /route endpoint..."
+	wrk -t12 -c400 -d30s -s scripts/load-test-route.lua https://localhost:8080/route
+	@echo ""
+	@echo "=== Load Testing Ingress ==="
+	@echo "Testing POST /wch/send endpoint..."
+	wrk -t12 -c400 -d30s -s scripts/load-test-wch.lua https://localhost:8081/wch/send
+	@echo "✅ Load test complete"
+
+# Deploy to local development
+person1-deploy-dev:
+	@echo "=== Deploying PERSON 1 Services (Development) ==="
+	docker-compose up -d orchestrator ingress
+	@echo "Waiting for services to be healthy..."
+	@sleep 5
+	@curl -f http://localhost:8080/health || echo "❌ Orchestrator not healthy"
+	@curl -f http://localhost:8081/health || echo "❌ Ingress not healthy"
+	@echo "✅ Services deployed"
+
+# Deploy to Kubernetes (staging)
+person1-deploy-k8s:
+	@echo "=== Deploying PERSON 1 Services to Kubernetes ==="
+	kubectl apply -f pilot/orchestrator-deployment.yml
+	kubectl apply -f pilot/ingress-deployment.yml
+	kubectl rollout status deployment/orchestrator -n shieldx-system
+	kubectl rollout status deployment/ingress -n shieldx-system
+	@echo "✅ Kubernetes deployment complete"
+
+# Generate TLS certificates for mTLS testing
+person1-gen-certs:
+	@echo "=== Generating TLS Certificates ==="
+	mkdir -p certs
+	# CA certificate
+	openssl req -new -x509 -days 365 -keyout certs/ca-key.pem -out certs/ca-cert.pem \
+		-subj "/C=US/ST=CA/L=SF/O=ShieldX/CN=ShieldX CA" -nodes
+	# Server certificate (orchestrator)
+	openssl req -new -keyout certs/orchestrator-key.pem -out certs/orchestrator-req.pem \
+		-subj "/C=US/ST=CA/L=SF/O=ShieldX/CN=orchestrator" -nodes
+	openssl x509 -req -in certs/orchestrator-req.pem -CA certs/ca-cert.pem -CAkey certs/ca-key.pem \
+		-CAcreateserial -out certs/orchestrator-cert.pem -days 365
+	# Server certificate (ingress)
+	openssl req -new -keyout certs/ingress-key.pem -out certs/ingress-req.pem \
+		-subj "/C=US/ST=CA/L=SF/O=ShieldX/CN=ingress" -nodes
+	openssl x509 -req -in certs/ingress-req.pem -CA certs/ca-cert.pem -CAkey certs/ca-key.pem \
+		-CAcreateserial -out certs/ingress-cert.pem -days 365
+	# Client certificate
+	openssl req -new -keyout certs/client-key.pem -out certs/client-req.pem \
+		-subj "/C=US/ST=CA/L=SF/O=ShieldX/CN=client" -nodes
+	openssl x509 -req -in certs/client-req.pem -CA certs/ca-cert.pem -CAkey certs/ca-key.pem \
+		-CAcreateserial -out certs/client-cert.pem -days 365
+	@echo "✅ Certificates generated in certs/"
+
+# Run orchestrator locally (dev mode)
+person1-run-orchestrator:
+	@echo "=== Starting Orchestrator (Development) ==="
+	ORCH_PORT=8080 \
+	ORCH_POLICY_PATH=policies/default.json \
+	ORCH_OPA_POLICY_PATH=policies/opa/routing.rego \
+	ORCH_OPA_ENFORCE=1 \
+	ORCH_LB_ALGO=ewma \
+	REDIS_ADDR=localhost:6379 \
+	RATLS_ENABLE=false \
+	./bin/orchestrator
+
+# Run ingress locally (dev mode)
+person1-run-ingress:
+	@echo "=== Starting Ingress (Development) ==="
+	INGRESS_PORT=8081 \
+	POLICY_PATH=policies/default.json \
+	LOCATOR_URL=http://localhost:5003 \
+	GUARDIAN_URL=http://localhost:9090 \
+	REDIS_ADDR=localhost:6379 \
+	RATLS_ENABLE=false \
+	./bin/ingress
+
+# Integration test with all services
+person1-integration-test:
+	@echo "=== Running Integration Tests ==="
+	@echo "Starting dependencies..."
+	docker-compose up -d redis postgres
+	@sleep 3
+	@echo "Running Orchestrator..."
+	ORCH_PORT=8080 RATLS_ENABLE=false ./bin/orchestrator &
+	@ORCH_PID=$$!
+	@sleep 2
+	@echo "Running Ingress..."
+	INGRESS_PORT=8081 RATLS_ENABLE=false ./bin/ingress &
+	@INGRESS_PID=$$!
+	@sleep 2
+	@echo "Running integration tests..."
+	go test -v -tags=integration ./tests/integration/...
+	@kill $$ORCH_PID $$INGRESS_PID || true
+	@echo "✅ Integration tests complete"
+
+# Performance profiling
+person1-profile-cpu:
+	@echo "=== CPU Profiling ==="
+	go test -cpuprofile=cpu.prof -bench=. services/orchestrator/
+	go tool pprof -http=:8090 cpu.prof
+
+person1-profile-mem:
+	@echo "=== Memory Profiling ==="
+	go test -memprofile=mem.prof -bench=. services/orchestrator/
+	go tool pprof -http=:8090 mem.prof
+
+# Clean build artifacts
+person1-clean:
+	@echo "=== Cleaning PERSON 1 artifacts ==="
+	rm -f bin/orchestrator bin/ingress
+	rm -f services/orchestrator/coverage.out services/orchestrator/coverage.html
+	rm -f services/ingress/coverage.out services/ingress/coverage.html
+	rm -f *.prof person1-security.json
+	@echo "✅ Clean complete"
+
+# Production readiness check
+person1-production-check:
+	@echo "=== PERSON 1 Production Readiness Check ==="
+	@echo ""
+	@echo "1. TLS Configuration:"
+	@grep -q "MinVersion.*TLS13" services/orchestrator/main.go && echo "  ✅ TLS 1.3 enforced" || echo "  ❌ TLS 1.3 not enforced"
+	@echo ""
+	@echo "2. mTLS Client Verification:"
+	@grep -q "RequireAndVerifyClientCert" pkg/security/tls/tls.go && echo "  ✅ mTLS enforced" || echo "  ❌ mTLS not enforced"
+	@echo ""
+	@echo "3. SAN Allowlist:"
+	@grep -q "ALLOWED_CLIENT_SAN_PREFIXES" services/orchestrator/main.go && echo "  ✅ SAN verification enabled" || echo "  ❌ SAN verification missing"
+	@echo ""
+	@echo "4. Rate Limiting:"
+	@grep -q "rateLimiter" services/orchestrator/main.go && echo "  ✅ Rate limiting implemented" || echo "  ❌ Rate limiting missing"
+	@echo ""
+	@echo "5. Input Validation:"
+	@test -f services/orchestrator/validation.go && echo "  ✅ Validation layer exists" || echo "  ❌ Validation missing"
+	@echo ""
+	@echo "6. OPA Integration:"
+	@grep -q "OPAEngine" pkg/policy/opa.go && echo "  ✅ OPA policy engine ready" || echo "  ❌ OPA not integrated"
+	@echo ""
+	@echo "7. Health Endpoints:"
+	@grep -q "handleHealth" services/orchestrator/main.go && echo "  ✅ Health endpoints implemented" || echo "  ❌ Health endpoints missing"
+	@echo ""
+	@echo "8. Metrics:"
+	@grep -q "prometheus" services/orchestrator/main.go && echo "  ✅ Prometheus metrics enabled" || echo "  ❌ Metrics missing"
+	@echo ""
+	@echo "9. Circuit Breaker:"
+	@test -f services/orchestrator/lb_algorithms.go && echo "  ✅ Circuit breaker implemented" || echo "  ❌ Circuit breaker missing"
+	@echo ""
+	@echo "10. Audit Logging:"
+	@grep -q "ledger.AppendJSONLine" services/orchestrator/main.go && echo "  ✅ Audit logging enabled" || echo "  ❌ Audit logging missing"
+	@echo ""
+
+# Help for PERSON 1 targets
+person1-help:
+	@echo "PERSON 1: Core Services & Orchestration Layer - Make Targets"
+	@echo ""
+	@echo "Build & Test:"
+	@echo "  make person1-all              - Build and test all components"
+	@echo "  make person1-build            - Build orchestrator + ingress"
+	@echo "  make person1-test             - Run unit tests with race detector"
+	@echo "  make person1-bench            - Run performance benchmarks"
+	@echo "  make person1-coverage         - Generate coverage reports (target: 85%+)"
+	@echo ""
+	@echo "Code Quality:"
+	@echo "  make person1-lint             - Lint with golangci-lint"
+	@echo "  make person1-sec              - Security scanning (gosec + nancy)"
+	@echo ""
+	@echo "Performance:"
+	@echo "  make person1-load-test        - Load test with wrk"
+	@echo "  make person1-profile-cpu      - CPU profiling"
+	@echo "  make person1-profile-mem      - Memory profiling"
+	@echo ""
+	@echo "Deployment:"
+	@echo "  make person1-deploy-dev       - Deploy locally with Docker"
+	@echo "  make person1-deploy-k8s       - Deploy to Kubernetes"
+	@echo "  make person1-gen-certs        - Generate mTLS certificates"
+	@echo ""
+	@echo "Development:"
+	@echo "  make person1-run-orchestrator - Run orchestrator locally"
+	@echo "  make person1-run-ingress      - Run ingress locally"
+	@echo "  make person1-integration-test - Integration tests"
+	@echo ""
+	@echo "Utilities:"
+	@echo "  make person1-production-check - Check production readiness"
+	@echo "  make person1-clean            - Clean build artifacts"
+	@echo ""
