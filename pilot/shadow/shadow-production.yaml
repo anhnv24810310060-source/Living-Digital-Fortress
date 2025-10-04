@@ -1,0 +1,224 @@
+---
+# Shadow Evaluation Service - Production Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shadow-service
+  namespace: shieldx-prod
+  labels:
+    app: shadow-service
+    version: v2.0.0
+    environment: production
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: shadow-service
+  template:
+    metadata:
+      labels:
+        app: shadow-service
+        version: v2.0.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "5005"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: shadow-service-sa
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10002
+        fsGroup: 10002
+        seccompProfile:
+          type: RuntimeDefault
+      
+      containers:
+        - name: shadow-service
+          image: ghcr.io/shieldx/shadow-service:v2.0.0
+          imagePullPolicy: Always
+          
+          ports:
+            - name: http
+              containerPort: 5005
+              protocol: TCP
+          
+          env:
+            - name: PORT
+              value: "5005"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: shadow-secrets
+                  key: DATABASE_URL
+            - name: SHADOW_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: shadow-secrets
+                  key: SHADOW_API_KEY
+            - name: WORKER_POOL_SIZE
+              value: "8"
+            - name: EVALUATION_CACHE_SIZE
+              value: "1000"
+            - name: LOG_LEVEL
+              value: "info"
+          
+          resources:
+            requests:
+              cpu: "1000m"
+              memory: "1Gi"
+            limits:
+              cpu: "4000m"
+              memory: "4Gi"
+          
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5005
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5005
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            successThreshold: 1
+            failureThreshold: 3
+          
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10002
+            capabilities:
+              drop:
+                - ALL
+          
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: eval-results
+              mountPath: /app/data
+      
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: eval-results
+          persistentVolumeClaim:
+            claimName: shadow-eval-results-pvc
+
+---
+# Service for Shadow
+apiVersion: v1
+kind: Service
+metadata:
+  name: shadow-service
+  namespace: shieldx-prod
+  labels:
+    app: shadow-service
+spec:
+  type: ClusterIP
+  selector:
+    app: shadow-service
+  ports:
+    - name: http
+      port: 5005
+      targetPort: 5005
+      protocol: TCP
+
+---
+# ServiceAccount for Shadow Service
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: shadow-service-sa
+  namespace: shieldx-prod
+
+---
+# Secret for Shadow Service
+apiVersion: v1
+kind: Secret
+metadata:
+  name: shadow-secrets
+  namespace: shieldx-prod
+type: Opaque
+data:
+  DATABASE_URL: cG9zdGdyZXM6Ly9zaGFkb3dfdXNlcjpzaGFkb3dfcGFzczIwMjRAcG9zdGdyZXMtc2VydmljZTo1NDMyL3NoYWRvdw==
+  SHADOW_API_KEY: c2hhZG93X2FwaV9rZXlfcHJvZHVjdGlvbl8yMDI0
+
+---
+# PVC for Shadow evaluation results
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: shadow-eval-results-pvc
+  namespace: shieldx-prod
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi
+  storageClassName: fast-ssd
+
+---
+# HPA for Shadow Service
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: shadow-service-hpa
+  namespace: shieldx-prod
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: shadow-service
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 75
+
+---
+# NetworkPolicy for Shadow Service
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: shadow-service-policy
+  namespace: shieldx-prod
+spec:
+  podSelector:
+    matchLabels:
+      app: shadow-service
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: orchestrator
+      ports:
+        - protocol: TCP
+          port: 5005
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgres
+      ports:
+        - protocol: TCP
+          port: 5432
