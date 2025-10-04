@@ -1,5 +1,5 @@
 package shadow
-package main
+package shadow
 
 import (
 	"context"

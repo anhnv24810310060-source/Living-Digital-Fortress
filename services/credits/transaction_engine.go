@@ -1,5 +1,5 @@
 package credits
-package main
+package credits
 
 import (
 	"context"
