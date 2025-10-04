@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+    "encoding/json"
 )
 
 func main() {
@@ -55,7 +56,29 @@ func main() {
 	}
 	mux.HandleFunc("/contauth/telemetry", rl(guard(1<<20, collector.CollectTelemetry))) // 1MB cap
 	mux.HandleFunc("/contauth/collect", rl(guard(1<<20, collector.CollectTelemetry)))
-	mux.HandleFunc("/contauth/score", rl(guard(256<<10, collector.CalculateRiskScore))) // 256KB cap
+	mux.HandleFunc("/contauth/score", rl(guard(256<<10, collector.CalculateRiskScore))) // legacy comprehensive scorer
+
+	// High-performance scorer (stateless, hashed features only) - optimized path
+	hps := NewHighPerformanceScorer(nil)
+	mux.HandleFunc("/contauth/scorefast", rl(guard(256<<10, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var raw map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
+			http.Error(w, "bad json", http.StatusBadRequest)
+			return
+		}
+		features, err := hps.ExtractHashedFeatures(raw)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		res := hps.CalculateRiskScore(features)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(res)
+	})))
 	mux.HandleFunc("/contauth/decision", rl(collector.GetAuthDecision))
 	mux.Handle("/metrics", reg)
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {

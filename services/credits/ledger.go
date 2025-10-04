@@ -1158,6 +1158,68 @@ func (cl *CreditLedger) Close() error {
 	return cl.db.Close()
 }
 
+// VerifyAuditChain handler: recomputes HMAC chain for a tenant to ensure immutability & tamper evidence
+// GET /credits/audit/verify?tenant_id=xxx
+func (cl *CreditLedger) VerifyAuditChain(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	tenant := r.URL.Query().Get("tenant_id")
+	if tenant == "" {
+		http.Error(w, "tenant_id required", http.StatusBadRequest)
+		return
+	}
+	rows, err := cl.db.Query(`SELECT transaction_id, action, amount, prev_hash, hash FROM audit_logs WHERE tenant_id=$1 ORDER BY created_at ASC`, tenant)
+	if err != nil {
+		http.Error(w, "query failed", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+	prev := ""
+	idx := 0
+	valid := true
+	var failMsg string
+	macKey := cl.auditHMACKey
+	for rows.Next() {
+		var txnID, action, prevHash, hash string
+		var amount int64
+		if err := rows.Scan(&txnID, &action, &amount, &prevHash, &hash); err != nil {
+			valid = false
+			failMsg = "scan error"
+			break
+		}
+		if prevHash != prev {
+			valid = false
+			failMsg = fmt.Sprintf("chain discontinuity at index %d: expected prev_hash=%s got=%s", idx, prev, prevHash)
+			break
+		}
+		mac := hmac.New(sha256.New, macKey)
+		mac.Write([]byte(prev))
+		mac.Write([]byte(tenant))
+		mac.Write([]byte(txnID))
+		mac.Write([]byte(action))
+		mac.Write([]byte(fmt.Sprintf("%d", amount)))
+		if hex.EncodeToString(mac.Sum(nil)) != hash {
+			valid = false
+			failMsg = fmt.Sprintf("hash mismatch at index %d (txn %s)", idx, txnID)
+			break
+		}
+		prev = hash
+		idx++
+	}
+	if err := rows.Err(); err != nil && valid {
+		valid = false
+		failMsg = err.Error()
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"tenant_id": tenant,
+		"valid":     valid,
+		"entries":   idx,
+		"error":     failMsg,
+	})
+}
+
 // expireReservations moves expired active reservations back to balance and marks them expired
 func (cl *CreditLedger) expireReservations() error {
 	tx, err := cl.db.Begin()

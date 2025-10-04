@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"shieldx/pkg/metrics"
@@ -37,7 +38,7 @@ func main() {
 	go ledger.cleanupExpiredKeys()
 	ledger.startAlertWatcher()
 
-	// API per spec
+	// API per spec (+ internal maintenance endpoints)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/credits/purchase", ledger.PurchaseCredits)
 	mux.HandleFunc("/credits/topup", ledger.PurchaseCredits)
@@ -49,6 +50,7 @@ func main() {
 	mux.HandleFunc("/credits/history", ledger.GetHistory)
 	mux.HandleFunc("/credits/threshold", ledger.SetAlertThreshold)
 	mux.HandleFunc("/credits/report", ledger.GetUsageReport)
+	mux.HandleFunc("/credits/audit/verify", ledger.VerifyAuditChain) // new integrity endpoint
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)
 		w.Write([]byte(`{"status":"healthy","service":"credits"}`))
@@ -57,7 +59,8 @@ func main() {
 	mux.Handle("/metrics", reg)
 
 	// Wrap with auth (optional) and HTTP metrics middleware
-	handler := withAuth(os.Getenv("CREDITS_API_KEY"), httpMetrics.Middleware(mux))
+	// Compose middlewares: auth -> rate limiting -> metrics
+	handler := withAuth(os.Getenv("CREDITS_API_KEY"), rateLimitMiddleware(httpMetrics.Middleware(mux)))
 
 	// Hardened HTTP server config
 	srv := &http.Server{
@@ -95,6 +98,54 @@ func initCreditsMetrics(reg *metrics.Registry) *CreditsMetrics {
 		reg.RegisterLabeledCounter(m.Ops)
 	}
 	return m
+}
+
+// Simple token bucket per path+tenant (best-effort, in-memory, not distributed). Tailored for low cardinality.
+type bucket struct {
+	tokens     int
+	lastRefill time.Time
+}
+
+var (
+	bucketsMu sync.Mutex
+	buckets   = make(map[string]*bucket)
+	rateLimit = struct {
+		capacity int
+		refill   int           // tokens per interval
+		interval time.Duration
+	}{capacity: 20, refill: 20, interval: time.Minute}
+)
+
+func rateLimitMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Allow health/metrics unthrottled
+		if r.URL.Path == "/health" || r.URL.Path == "/metrics" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		tenant := r.Header.Get("X-Tenant-ID")
+		key := r.URL.Path + ":" + tenant
+		now := time.Now()
+		bucketsMu.Lock()
+		b := buckets[key]
+		if b == nil {
+			b = &bucket{tokens: rateLimit.capacity, lastRefill: now}
+			buckets[key] = b
+		} else if since := now.Sub(b.lastRefill); since >= rateLimit.interval {
+			// Refill full bucket each interval (burst-friendly)
+			b.tokens = rateLimit.capacity
+			b.lastRefill = now
+		}
+		if b.tokens <= 0 {
+			bucketsMu.Unlock()
+			w.Header().Set("Retry-After", "60")
+			http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
+			return
+		}
+		b.tokens--
+		bucketsMu.Unlock()
+		next.ServeHTTP(w, r)
+	})
 }
 
 // withAuth enforces a simple bearer token check if apiKey is set. Health and metrics are always public.

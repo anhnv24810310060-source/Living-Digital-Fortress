@@ -26,6 +26,7 @@ import (
 
 	redis "github.com/redis/go-redis/v9"
 
+	"shieldx/pkg/accesslog"
 	"shieldx/pkg/dpop"
 	"shieldx/pkg/guard"
 	"shieldx/pkg/ledger"
@@ -112,7 +113,7 @@ var (
 	// penalty per in-flight connection (ms equivalent added to EWMA) for p2c cost
 	p2cPenalty  = envFloat("ORCH_P2C_CONN_PENALTY", 5.0)
 	opaEng      *policy.OPAEngine
-	basePolicy  policy.Config
+	basePolicy  policy.Config // retained for backward compatibility; reads should use loadBasePolicy()
 	opaEnforce  bool
 	issuer      *ratls.AutoIssuer
 	gCertExpiry = metrics.NewGauge("ratls_cert_expiry_seconds", "Seconds until current RA-TLS cert expiry")
@@ -127,6 +128,10 @@ var (
 	mCBClose     = metrics.NewCounter("orchestrator_cb_close_total", "Circuit breaker closed")
 	mLBPick      = metrics.NewLabeledCounter("orchestrator_lb_pick_total", "LB selections by pool and algo", []string{"pool", "algo", "healthy"})
 	mProbeDur    = metrics.NewHistogram("orchestrator_health_probe_seconds", "Duration of health probes (seconds)", nil)
+	mPolicyReloads = metrics.NewCounter("orchestrator_policy_reload_total", "Number of policy reload events")
+	gPolicyVersion = metrics.NewGauge("orchestrator_policy_version", "Current loaded policy version")
+	gHealthRatio   = metrics.NewGauge("orchestrator_health_ratio_x10000", "Overall backend health ratio * 10000")
+	orchLogger     *accesslog.Logger
 )
 
 // DPoP anti-replay store: jti -> expiry unix
@@ -147,6 +152,26 @@ var (
 	mOPACacheHit  = metrics.NewCounter("orchestrator_opa_cache_hit_total", "OPA cache hits")
 	mOPACacheMiss = metrics.NewCounter("orchestrator_opa_cache_miss_total", "OPA cache misses")
 )
+
+// dynamic policy version & atomic storage
+var (
+	policyVersion   atomic.Uint64
+	basePolicyVal   atomic.Value // stores policy.Config
+	opaPolicyPath   string
+	basePolicyPath  string
+)
+
+// adaptive global IP burst (auto tuned by healthProber)
+var (
+	ipBurstBase     = envInt("ORCH_IP_BURST", 200)
+	ipBurstDegraded = envInt("ORCH_IP_BURST_DEGRADED", 50)
+	healthDegradedT = envFloat("ORCH_HEALTH_DEGRADED_RATIO", 0.5) // degrade threshold (0..1)
+	currentIPBurst  atomic.Int64
+)
+
+func init() {
+	currentIPBurst.Store(int64(ipBurstBase))
+}
 
 type routeRequest struct {
 	Service    string   `json:"service"`
@@ -207,6 +232,13 @@ func main() {
 	shutdown := otelobs.InitTracer(serviceName)
 	defer shutdown(context.Background())
 
+	// structured access/security logger setup
+	orchLogger, logErr := accesslog.NewLogger(serviceName, "data/orchestrator-access.log", "data/orchestrator-security.log")
+	if logErr != nil {
+		log.Fatalf("[orchestrator] accesslog init: %v", logErr)
+	}
+	defer orchLogger.Close()
+
 	// optional redis for distributed rate limiting/health sharing
 	if addr := os.Getenv("REDIS_ADDR"); addr != "" {
 		rdb = redis.NewClient(&redis.Options{Addr: addr})
@@ -220,10 +252,18 @@ func main() {
 		log.Printf("[orchestrator] policy load error: %v (default allow)", err)
 		basePolicy = policy.Config{AllowAll: true}
 	}
+	basePolicyPath = ppath
+	basePolicyVal.Store(basePolicy)
+	policyVersion.Store(1)
+	gPolicyVersion.Set(1)
 	opaEng, _ = policy.LoadOPA(os.Getenv("ORCH_OPA_POLICY_PATH"))
+	opaPolicyPath = os.Getenv("ORCH_OPA_POLICY_PATH")
 	if os.Getenv("ORCH_OPA_ENFORCE") == "1" {
 		opaEnforce = true
 	}
+	// start hot reload watchers (poll-based)
+	go watchBasePolicy()
+	go watchOPAPolicy()
 
 	// Load pools
 	loadPoolsFromEnv()
@@ -256,10 +296,17 @@ func main() {
 
 	// HTTP server
 	mux := http.NewServeMux()
-	mux.HandleFunc("/health", handleHealth)
-	mux.HandleFunc("/healthz", handleHealth)
+	// enhanced endpoints
+	mux.HandleFunc("/health", handleHealthEnhanced)
+	mux.HandleFunc("/healthz", handleHealthEnhanced)
 	mux.HandleFunc("/policy", handlePolicy)
-	mux.HandleFunc("/route", handleRoute)
+	mux.HandleFunc("/route", func(w http.ResponseWriter, r *http.Request) {
+		// allow algo override via header (X-LB-Algo) for experimentation (validated in enhanced handler)
+		if alg := r.Header.Get("X-LB-Algo"); alg != "" && r.Method == http.MethodPost {
+			r.Header.Set("X-Orch-Requested-Algo", alg)
+		}
+		handleRouteEnhanced(w, r, orchLogger)
+	})
 	// admin (secured by admission header if configured)
 	mux.HandleFunc("/admin/pools", handleAdminPools)
 	mux.HandleFunc("/admin/pools/", handleAdminPoolOne) // /admin/pools/{name}
@@ -276,6 +323,9 @@ func main() {
 	reg.Register(mOPACacheMiss)
 	reg.RegisterLabeledCounter(mLBPick)
 	reg.RegisterHistogram(mProbeDur)
+	reg.Register(mPolicyReloads)
+	reg.RegisterGauge(gPolicyVersion)
+	reg.RegisterGauge(gHealthRatio)
 	mux.Handle("/metrics", reg)
 
 	// wrap middlewares: metrics + admission + rate limit + tracing
@@ -302,11 +352,12 @@ func main() {
 		// Continue
 		mux.ServeHTTP(w, r)
 	})
-	h := httpMetrics.Middleware(base)
-	h = otelobs.WrapHTTPHandler(serviceName, h)
+	// structured access + security middleware
+	baseWithLog := newSecurityMiddleware(httpMetrics.Middleware(base), orchLogger)
+	h := otelobs.WrapHTTPHandler(serviceName, baseWithLog)
 
 	addr := fmt.Sprintf(":%d", port)
-	log.Printf("[orchestrator] listening on %s (algo=%s)", addr, defaultAlgo)
+	log.Printf("[orchestrator] listening on %s (algo=%s, policyVersion=%d)", addr, defaultAlgo, policyVersion.Load())
 	// Periodic DPoP replay-store GC
 	go func() {
 		t := time.NewTicker(2 * time.Minute)
@@ -415,6 +466,66 @@ func main() {
 	}
 	if errSrv != nil && errSrv != http.ErrServerClosed {
 		log.Fatalf("[orchestrator] server error: %v", errSrv)
+	}
+}
+
+// loadBasePolicy returns the current policy.Config atomically
+func loadBasePolicy() policy.Config {
+	if v := basePolicyVal.Load(); v != nil {
+		if pc, ok := v.(policy.Config); ok {
+			return pc
+		}
+	}
+	return basePolicy
+}
+
+// watchBasePolicy polls for changes to the JSON policy file and hot-reloads it
+func watchBasePolicy() {
+	if basePolicyPath == "" { return }
+	interval := envDur("ORCH_POLICY_WATCH_EVERY", 3*time.Second)
+	var lastMod int64
+	for {
+		fi, err := os.Stat(basePolicyPath)
+		if err == nil {
+			mod := fi.ModTime().UnixNano()
+			if mod != 0 && mod != lastMod {
+				if pc, err := policy.Load(basePolicyPath); err == nil {
+					basePolicyVal.Store(pc)
+					basePolicy = pc // maintain legacy variable for any direct reads
+					last := policyVersion.Add(1)
+					gPolicyVersion.Set(last)
+					mPolicyReloads.Inc()
+					log.Printf("[orchestrator] policy reloaded version=%d", last)
+				} else {
+					log.Printf("[orchestrator] policy reload error: %v", err)
+				}
+				lastMod = mod
+			}
+		}
+		time.Sleep(interval)
+	}
+}
+
+// watchOPAPolicy reloads the OPA policy bundle/regos on file change if a path is provided
+func watchOPAPolicy() {
+	if opaPolicyPath == "" { return }
+	interval := envDur("ORCH_OPA_WATCH_EVERY", 5*time.Second)
+	var lastMod int64
+	for {
+		fi, err := os.Stat(opaPolicyPath)
+		if err == nil {
+			mod := fi.ModTime().UnixNano()
+			if mod != 0 && mod != lastMod {
+				if eng, err := policy.LoadOPA(opaPolicyPath); err == nil {
+					opaEng = eng
+					log.Printf("[orchestrator] OPA policy reloaded")
+				} else {
+					log.Printf("[orchestrator] OPA reload error: %v", err)
+				}
+				lastMod = mod
+			}
+		}
+		time.Sleep(interval)
 	}
 }
 
@@ -736,20 +847,35 @@ func healthProber() {
 	tick := time.NewTicker(interval)
 	defer tick.Stop()
 	for range tick.C {
+		var total, healthy uint64
 		poolsMu.RLock()
 		for _, p := range pools {
 			p.mu.RLock()
 			for _, b := range p.backends {
-				// add small jitter to avoid thundering herd on backends
+				total++
 				bb := b
+				// add small jitter to avoid thundering herd on backends
 				go func() {
 					time.Sleep(time.Duration(rand.Intn(250)) * time.Millisecond)
 					probeOne(bb, c, decay)
 				}()
+				if b.Healthy.Load() {
+					healthy++
+				}
 			}
 			p.mu.RUnlock()
 		}
 		poolsMu.RUnlock()
+		if total > 0 {
+			ratio := float64(healthy) / float64(total)
+			gHealthRatio.Set(uint64(ratio * 10000))
+			// adaptive rate limit: if degraded, reduce IP burst; else restore
+			if ratio < healthDegradedT {
+				currentIPBurst.Store(int64(ipBurstDegraded))
+			} else {
+				currentIPBurst.Store(int64(ipBurstBase))
+			}
+		}
 	}
 }
 
@@ -825,6 +951,8 @@ func probeOne(b *Backend, c *http.Client, decay float64) {
 // helpers
 func allowRate(key string) bool {
 	if rdb == nil {
+		// adjust limiter capacity adaptively
+		ipLimiter.capacity = int(currentIPBurst.Load())
 		return ipLimiter.Allow(key)
 	}
 	ctx := context.Background()
@@ -833,7 +961,8 @@ func allowRate(key string) bool {
 	if cnt == 1 {
 		_ = rdb.Expire(ctx, k, time.Minute).Err()
 	}
-	return int(cnt) <= envInt("ORCH_IP_BURST", 200)
+	limit := int(currentIPBurst.Load())
+	return int(cnt) <= limit
 }
 
 func asErrString(err error, resp *http.Response) string {

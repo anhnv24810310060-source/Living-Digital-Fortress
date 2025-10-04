@@ -2,11 +2,12 @@ package main
 
 import (
 	"context"
-	"crypto/rand"
+	crand "crypto/rand"
 	"crypto/sha256"
 	"fmt"
 	"log"
 	"math"
+	"strings"
 	"sync"
 	"time"
 
@@ -680,18 +681,20 @@ func containsScanPattern(path string) bool {
 	return false
 }
 
-func contains(s, substr string) bool {
-	return len(s) > 0 && len(substr) > 0 && len(s) >= len(substr) && s != substr
-}
+// contains reports whether substr is within s (case-sensitive). Wrapper around strings.Contains
+func contains(s, substr string) bool { return strings.Contains(s, substr) }
 
-func toLower(s string) string {
-	// Simplified tolower
-	return s
-}
+// toLower returns a lowercase copy of s (ASCII + Unicode aware via strings.ToLower)
+func toLower(s string) string { return strings.ToLower(s) }
 
+// randFloat returns a cryptographically strong uniform float64 in [0,1)
 func randFloat() float64 {
 	b := make([]byte, 8)
-	rand.Read(b)
+	if _, err := crand.Read(b); err != nil {
+		// Fallback: deterministic but should almost never happen
+		h := sha256.Sum256([]byte(time.Now().String()))
+		copy(b, h[:8])
+	}
 	h := sha256.Sum256(b)
 	val := uint64(0)
 	for i := 0; i < 8; i++ {

@@ -102,6 +102,10 @@ func main() {
 	mux.HandleFunc("/model/version/rollback", adminOnly(orchestrator.handleRollback))
 	mux.HandleFunc("/model/version/list", adminOnly(orchestrator.handleListVersions))
 	mux.HandleFunc("/model/mode", adminOnly(orchestrator.handleMode))
+	// Federated learning aggregation (secure aggregation placeholder)
+	mux.HandleFunc("/federated/aggregate", adminOnly(orchestrator.handleFederatedAggregate))
+	// Adversarial example generation (PGD/FGSM placeholder)
+	mux.HandleFunc("/adversarial/generate", adminOnly(orchestrator.handleAdversarialGenerate))
 	mux.HandleFunc("/health", orchestrator.handleHealth)
 	mux.HandleFunc("/whoami", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -1070,3 +1074,108 @@ func percentile(vals []float64, p float64) float64 {
 	}
 	return cp[i]*(1-frac) + cp[i+1]*frac
 }
+
+// handleFederatedAggregate performs secure aggregation of client model updates.
+// Accepts JSON: {"updates":[{"weights":[..],"count":123}, ...], "epsilon":1.0}
+// Applies differential privacy noise (Laplace) if epsilon > 0.
+func (m *MLOrchestrator) handleFederatedAggregate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Updates []struct {
+			Weights []float64 `json:"weights"`
+			Count   int       `json:"count"`
+		} `json:"updates"`
+		Epsilon float64 `json:"epsilon"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad json", http.StatusBadRequest)
+		return
+	}
+	if len(req.Updates) == 0 {
+		http.Error(w, "no updates", http.StatusBadRequest)
+		return
+	}
+	// Determine dimension
+	dim := len(req.Updates[0].Weights)
+	if dim == 0 {
+		http.Error(w, "empty weights", http.StatusBadRequest)
+		return
+	}
+	agg := make([]float64, dim)
+	total := 0
+	for _, u := range req.Updates {
+		if len(u.Weights) != dim || u.Count <= 0 {
+			http.Error(w, "inconsistent update", http.StatusBadRequest)
+			return
+		}
+		for i := 0; i < dim; i++ {
+			agg[i] += u.Weights[i] * float64(u.Count)
+		}
+		total += u.Count
+	}
+	if total == 0 {
+		http.Error(w, "zero total count", http.StatusBadRequest)
+		return
+	}
+	for i := 0; i < dim; i++ {
+		agg[i] /= float64(total)
+	}
+	// Differential privacy noise (Laplace with scale = 1/epsilon) simplistic
+	if req.Epsilon > 0 {
+		scale := 1.0 / req.Epsilon
+		for i := 0; i < dim; i++ {
+			// Laplace sampling via inverse CDF
+			u := randFloat64()*2 - 1 // (-1,1)
+			if u == 0 {
+				u = 1e-9
+			}
+			sign := 1.0
+			if u < 0 {
+				sign = -1.0
+			}
+			agg[i] += -scale * sign * math.Log(1-2*math.Abs(u))
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"aggregated": agg, "total_count": total, "epsilon": req.Epsilon})
+}
+
+// handleAdversarialGenerate returns adversarially perturbed feature vectors using FGSM.
+// Input: {"features":[...],"epsilon":0.1,"gradient":[...]}
+// For PoC security: gradient must be supplied (no raw model exposure).
+func (m *MLOrchestrator) handleAdversarialGenerate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Features []float64 `json:"features"`
+		Gradient []float64 `json:"gradient"`
+		Epsilon  float64   `json:"epsilon"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad json", http.StatusBadRequest)
+		return
+	}
+	if len(req.Features) == 0 || len(req.Gradient) != len(req.Features) {
+		http.Error(w, "dimension mismatch", http.StatusBadRequest)
+		return
+	}
+	if req.Epsilon <= 0 || req.Epsilon > 5 {
+		req.Epsilon = 0.1
+	}
+	adv := make([]float64, len(req.Features))
+	for i, f := range req.Features {
+		g := req.Gradient[i]
+		sign := 1.0
+		if g < 0 { sign = -1.0 }
+		adv[i] = f + req.Epsilon*sign
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"adversarial": adv, "epsilon": req.Epsilon})
+}
+
+func randFloat64() float64 { return float64(time.Now().UnixNano()%1_000_000)/1_000_000 }

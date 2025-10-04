@@ -191,9 +191,35 @@ func main() {
 	}()
 	// POST /guardian/execute { payload: "..." } with simple per-IP RL
 	execLimiter := makeRLLimiter(getenvInt("GUARDIAN_RL_PER_MIN", 60))
+	// Concurrency limiter & simple circuit breaker
+	maxConcurrent := getenvInt("GUARDIAN_MAX_CONCURRENT", 32)
+	sem := make(chan struct{}, maxConcurrent)
+	var breakerMu sync.Mutex
+	var breakerOpen bool
+	var breakerFail, breakerSuccess int
+	openThreshold := getenvInt("GUARDIAN_BREAKER_FAIL", 10)
+	closeAfter := getenvInt("GUARDIAN_BREAKER_SUCCESS", 50)
+	breakerState := metrics.NewGauge("guardian_breaker_state", "Circuit breaker state (0=closed,1=open)")
+	reg.RegisterGauge(breakerState)
+
 	mux.HandleFunc("/guardian/execute", execLimiter(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		breakerMu.Lock()
+		if breakerOpen {
+			breakerMu.Unlock()
+			http.Error(w, "service temporarily unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		breakerMu.Unlock()
+		// Acquire slot
+		select {
+		case sem <- struct{}{}:
+			defer func() { <-sem }()
+		default:
+			http.Error(w, "too many concurrent executions", http.StatusTooManyRequests)
 			return
 		}
 		var body struct {
@@ -245,6 +271,25 @@ func main() {
 			defer cancel()
 			out, threat, sres, backend, err := runSecured(ctx, payload)
 			if err != nil {
+				breakerMu.Lock()
+				breakerFail++
+				if !breakerOpen && breakerFail >= openThreshold {
+					breakerOpen = true
+					breakerFail = 0
+					breakerSuccess = 0
+					breakerState.Set(1)
+					log.Printf("[guardian] circuit breaker OPEN after failures")
+					// auto half-open after cooldown
+					go func() {
+						time.Sleep(10 * time.Second)
+						breakerMu.Lock()
+						breakerOpen = false
+						breakerState.Set(0)
+						breakerMu.Unlock()
+						log.Printf("[guardian] circuit breaker HALF-OPEN (trial)")
+					}()
+				}
+				breakerMu.Unlock()
 				if ctx.Err() == context.DeadlineExceeded {
 					j.Status = jobTimeout
 					mJobsTimeout.Add(1)
@@ -255,6 +300,16 @@ func main() {
 				j.Error = err.Error()
 				log.Printf("[guardian] execute id=%s status=%s err=%v", j.ID, j.Status, err)
 			} else {
+				breakerMu.Lock()
+				breakerSuccess++
+				if breakerOpen && breakerSuccess >= closeAfter { // close after enough successes
+					breakerOpen = false
+					breakerState.Set(0)
+					breakerSuccess = 0
+					breakerFail = 0
+					log.Printf("[guardian] circuit breaker CLOSED")
+				}
+				breakerMu.Unlock()
 				h := sha256.Sum256([]byte(out))
 				j.Hash = fmt.Sprintf("%x", h[:])
 				j.Output = out

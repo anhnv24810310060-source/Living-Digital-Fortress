@@ -1,4 +1,6 @@
-package main
+//go:build experimental_model_versioning
+// +build experimental_model_versioning
+
 package main
 
 import (

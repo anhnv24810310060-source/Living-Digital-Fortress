@@ -1,4 +1,3 @@
-package contauth
 package main
 
 import (

@@ -1,4 +1,3 @@
-package camouflageapi
 package main
 
 import (

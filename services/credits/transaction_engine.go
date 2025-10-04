@@ -1,15 +1,15 @@
-package credits
-package credits
+package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"fmt"
 	"log"
-	"time"
 	"math"
-	"crypto/sha256"
-	"encoding/hex"
+	"strings"
+	"time"
 )
 
 // TransactionEngine implements high-performance distributed transaction handling
@@ -151,20 +151,8 @@ func isSerializationError(err error) bool {
 		contains(errStr, "40P01")    // deadlock_detected
 }
 
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) && 
-		(s[:len(substr)] == substr || s[len(s)-len(substr):] == substr || 
-		 len(s) > len(substr)+1 && findSubstr(s, substr)))
-}
-
-func findSubstr(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
-}
+// simpler substring check using stdlib
+func contains(s, substr string) bool { return strings.Contains(s, substr) }
 
 // checkIdempotency verifies if transaction was already processed
 func (te *TransactionEngine) checkIdempotency(ctx context.Context, key string) (bool, error) {
