@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
 	"math/rand"
@@ -17,25 +18,25 @@ import (
 // - Resource exhaustion testing
 // - Dependency failure injection
 type ChaosEngine struct {
-	db                *sql.DB
-	config            ChaosConfig
-	experiments       map[string]*ChaosExperiment
-	mu                sync.RWMutex
-	enabled           bool
-	safetyChecks      []SafetyCheck
-	metricsCollector  *ChaosMetricsCollector
+	db               *sql.DB
+	config           ChaosConfig
+	experiments      map[string]*ChaosExperiment
+	mu               sync.RWMutex
+	enabled          bool
+	safetyChecks     []SafetyCheck
+	metricsCollector *ChaosMetricsCollector
 }
 
 // ChaosConfig contains chaos engineering configuration
 type ChaosConfig struct {
-	Enabled                 bool          `json:"enabled"`
-	TargetServices          []string      `json:"target_services"`
-	ExperimentInterval      time.Duration `json:"experiment_interval"`
-	MaxConcurrentExperiments int          `json:"max_concurrent_experiments"`
-	SafeHours               []int         `json:"safe_hours"` // Hours when chaos is allowed (0-23)
-	ProductionEnabled       bool          `json:"production_enabled"`
-	AutoRollbackEnabled     bool          `json:"auto_rollback_enabled"`
-	MaxImpactThreshold      float64       `json:"max_impact_threshold"` // Max % of requests affected
+	Enabled                  bool          `json:"enabled"`
+	TargetServices           []string      `json:"target_services"`
+	ExperimentInterval       time.Duration `json:"experiment_interval"`
+	MaxConcurrentExperiments int           `json:"max_concurrent_experiments"`
+	SafeHours                []int         `json:"safe_hours"` // Hours when chaos is allowed (0-23)
+	ProductionEnabled        bool          `json:"production_enabled"`
+	AutoRollbackEnabled      bool          `json:"auto_rollback_enabled"`
+	MaxImpactThreshold       float64       `json:"max_impact_threshold"` // Max % of requests affected
 }
 
 // ChaosExperiment represents a single chaos experiment
@@ -59,23 +60,23 @@ type ExperimentType string
 
 const (
 	// Service-level experiments
-	ExperimentServiceFailure    ExperimentType = "service_failure"
-	ExperimentHighLatency       ExperimentType = "high_latency"
+	ExperimentServiceFailure     ExperimentType = "service_failure"
+	ExperimentHighLatency        ExperimentType = "high_latency"
 	ExperimentResourceExhaustion ExperimentType = "resource_exhaustion"
-	ExperimentCPUSpike          ExperimentType = "cpu_spike"
-	ExperimentMemoryLeak        ExperimentType = "memory_leak"
-	
+	ExperimentCPUSpike           ExperimentType = "cpu_spike"
+	ExperimentMemoryLeak         ExperimentType = "memory_leak"
+
 	// Network-level experiments
-	ExperimentNetworkPartition  ExperimentType = "network_partition"
-	ExperimentPacketLoss        ExperimentType = "packet_loss"
-	ExperimentBandwidthLimit    ExperimentType = "bandwidth_limit"
-	ExperimentDNSFailure        ExperimentType = "dns_failure"
-	
+	ExperimentNetworkPartition ExperimentType = "network_partition"
+	ExperimentPacketLoss       ExperimentType = "packet_loss"
+	ExperimentBandwidthLimit   ExperimentType = "bandwidth_limit"
+	ExperimentDNSFailure       ExperimentType = "dns_failure"
+
 	// Database-level experiments
 	ExperimentDBSlowQuery       ExperimentType = "db_slow_query"
 	ExperimentDBConnectionLimit ExperimentType = "db_connection_limit"
 	ExperimentDBFailover        ExperimentType = "db_failover"
-	
+
 	// Dependency experiments
 	ExperimentDependencyFailure ExperimentType = "dependency_failure"
 	ExperimentCacheFailure      ExperimentType = "cache_failure"
@@ -279,10 +280,10 @@ func (ce *ChaosEngine) ScheduleExperiment(ctx context.Context, experiment *Chaos
 		safe, reason := check(ctx, experiment)
 		if !safe {
 			log.Printf("[chaos] Safety check failed for experiment %s: %s", experiment.Name, reason)
-			
+
 			// Log safety violation
 			ce.logSafetyViolation(ctx, experiment, "pre-execution", reason, "high")
-			
+
 			return fmt.Errorf("safety check failed: %s", reason)
 		}
 	}
@@ -296,7 +297,7 @@ func (ce *ChaosEngine) ScheduleExperiment(ctx context.Context, experiment *Chaos
 
 	// Persist to database
 	parametersJSON, _ := json.Marshal(experiment.Parameters)
-	
+
 	_, err := ce.db.ExecContext(ctx, `
 		INSERT INTO chaos_experiments (
 			id, name, experiment_type, target_service, parameters, 
@@ -314,7 +315,7 @@ func (ce *ChaosEngine) ScheduleExperiment(ctx context.Context, experiment *Chaos
 	ce.experiments[experiment.ID] = experiment
 	ce.mu.Unlock()
 
-	log.Printf("[chaos] Scheduled experiment: %s (%s) on %s for %v", 
+	log.Printf("[chaos] Scheduled experiment: %s (%s) on %s for %v",
 		experiment.Name, experiment.Type, experiment.TargetService, experiment.Duration)
 
 	return nil
@@ -403,8 +404,8 @@ func (ce *ChaosEngine) runExperiment(ctx context.Context, experiment *ChaosExper
 	// Check if safety threshold was violated during execution
 	if experiment.Results.ErrorRate > ce.config.MaxImpactThreshold/100 {
 		experiment.SafetyViolation = true
-		ce.logSafetyViolation(ctx, experiment, "during-execution", 
-			fmt.Sprintf("error rate %.2f%% exceeded threshold %.2f%%", 
+		ce.logSafetyViolation(ctx, experiment, "during-execution",
+			fmt.Sprintf("error rate %.2f%% exceeded threshold %.2f%%",
 				experiment.Results.ErrorRate*100, ce.config.MaxImpactThreshold), "critical")
 
 		if ce.config.AutoRollbackEnabled {
@@ -437,7 +438,7 @@ func (ce *ChaosEngine) injectLatency(ctx context.Context, experiment *ChaosExper
 		impactPercent = 100 // Default: affect all requests
 	}
 
-	log.Printf("[chaos] Injecting %vms latency to %.1f%% of requests on %s", 
+	log.Printf("[chaos] Injecting %vms latency to %.1f%% of requests on %s",
 		latencyMS, impactPercent, experiment.TargetService)
 
 	// In real implementation, this would:
@@ -565,9 +566,9 @@ func (ce *ChaosEngine) rollbackExperiment(ctx context.Context, experiment *Chaos
 }
 
 // logSafetyViolation logs safety violations
-func (ce *ChaosEngine) logSafetyViolation(ctx context.Context, experiment *ChaosExperiment, 
+func (ce *ChaosEngine) logSafetyViolation(ctx context.Context, experiment *ChaosExperiment,
 	checkName, message, severity string) {
-	
+
 	_, err := ce.db.ExecContext(ctx, `
 		INSERT INTO chaos_safety_violations (
 			experiment_id, check_name, violation_message, severity, auto_rollback
@@ -588,7 +589,7 @@ func (ce *ChaosEngine) persistExperimentResults(ctx context.Context, experiment 
 		SET status = $1, end_time = $2, results = $3, 
 		    safety_violation = $4, updated_at = NOW()
 		WHERE id = $5
-	`, experiment.Status, experiment.EndTime, resultsJSON, 
+	`, experiment.Status, experiment.EndTime, resultsJSON,
 		experiment.SafetyViolation, experiment.ID)
 
 	return err
@@ -606,7 +607,7 @@ func (ce *ChaosEngine) scheduleExperiments() {
 
 		// Create random experiment
 		experiment := ce.generateRandomExperiment()
-		
+
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		if err := ce.ScheduleExperiment(ctx, experiment); err != nil {
 			log.Printf("[chaos] Failed to schedule experiment: %v", err)
@@ -630,21 +631,21 @@ func (ce *ChaosEngine) generateRandomExperiment() *ChaosExperiment {
 	}
 
 	expType := experimentTypes[rand.Intn(len(experimentTypes))]
-	
+
 	var parameters map[string]interface{}
 	switch expType {
 	case ExperimentHighLatency:
 		parameters = map[string]interface{}{
-			"latency_ms":         float64(100 + rand.Intn(400)),
-			"impact_percentage":  float64(10 + rand.Intn(20)),
+			"latency_ms":        float64(100 + rand.Intn(400)),
+			"impact_percentage": float64(10 + rand.Intn(20)),
 		}
 	case ExperimentServiceFailure:
 		parameters = map[string]interface{}{
-			"impact_percentage":  float64(5 + rand.Intn(15)),
+			"impact_percentage": float64(5 + rand.Intn(15)),
 		}
 	case ExperimentDBSlowQuery:
 		parameters = map[string]interface{}{
-			"slowdown_factor":    float64(2 + rand.Intn(3)),
+			"slowdown_factor": float64(2 + rand.Intn(3)),
 		}
 	default:
 		parameters = map[string]interface{}{}
@@ -791,7 +792,7 @@ func (ce *ChaosEngine) GetExperimentHistory(ctx context.Context, limit int) ([]*
 
 		json.Unmarshal(parametersJSON, &exp.Parameters)
 		json.Unmarshal(resultsJSON, &exp.Results)
-		
+
 		if startTime.Valid {
 			exp.StartTime = startTime.Time
 		}

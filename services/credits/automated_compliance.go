@@ -12,7 +12,7 @@ import (
 
 // AutomatedComplianceReporting implements real-time compliance monitoring:
 // - SOC 2 Type II automation
-// - ISO 27001 control monitoring  
+// - ISO 27001 control monitoring
 // - GDPR compliance tracking
 // - PCI DSS validation
 type AutomatedComplianceReporting struct {
@@ -28,83 +28,83 @@ type AutomatedComplianceReporting struct {
 
 // ComplianceConfig contains compliance configuration
 type ComplianceConfig struct {
-	EnabledFrameworks     []string      `json:"enabled_frameworks"` // "SOC2", "ISO27001", "GDPR", "PCI_DSS"
-	MonitoringInterval    time.Duration `json:"monitoring_interval"`
-	EvidenceRetentionDays int           `json:"evidence_retention_days"`
-	AutoRemediationEnabled bool         `json:"auto_remediation_enabled"`
-	AlertThresholds       map[string]float64 `json:"alert_thresholds"`
+	EnabledFrameworks      []string           `json:"enabled_frameworks"` // "SOC2", "ISO27001", "GDPR", "PCI_DSS"
+	MonitoringInterval     time.Duration      `json:"monitoring_interval"`
+	EvidenceRetentionDays  int                `json:"evidence_retention_days"`
+	AutoRemediationEnabled bool               `json:"auto_remediation_enabled"`
+	AlertThresholds        map[string]float64 `json:"alert_thresholds"`
 }
 
 // ComplianceFramework represents a compliance framework
 type ComplianceFramework struct {
-	Name             string                 `json:"name"`
-	Version          string                 `json:"version"`
-	Description      string                 `json:"description"`
-	Controls         []*ComplianceControl   `json:"controls"`
-	Requirements     []*Requirement         `json:"requirements"`
-	ComplianceScore  float64                `json:"compliance_score"`
-	LastAssessment   time.Time              `json:"last_assessment"`
+	Name            string               `json:"name"`
+	Version         string               `json:"version"`
+	Description     string               `json:"description"`
+	Controls        []*ComplianceControl `json:"controls"`
+	Requirements    []*Requirement       `json:"requirements"`
+	ComplianceScore float64              `json:"compliance_score"`
+	LastAssessment  time.Time            `json:"last_assessment"`
 }
 
 // ComplianceControl represents a single control
 type ComplianceControl struct {
-	ID              string                 `json:"id"`
-	Name            string                 `json:"name"`
-	Description     string                 `json:"description"`
-	Category        string                 `json:"category"` // "access", "encryption", "logging", "monitoring"
-	Priority        string                 `json:"priority"` // "critical", "high", "medium", "low"
-	Status          string                 `json:"status"` // "compliant", "non_compliant", "in_progress", "not_applicable"
-	ComplianceRate  float64                `json:"compliance_rate"`
-	Checks          []ControlCheck         `json:"checks"`
-	Evidence        []*Evidence            `json:"evidence"`
-	Remediation     *RemediationPlan       `json:"remediation,omitempty"`
-	LastChecked     time.Time              `json:"last_checked"`
+	ID             string           `json:"id"`
+	Name           string           `json:"name"`
+	Description    string           `json:"description"`
+	Category       string           `json:"category"` // "access", "encryption", "logging", "monitoring"
+	Priority       string           `json:"priority"` // "critical", "high", "medium", "low"
+	Status         string           `json:"status"`   // "compliant", "non_compliant", "in_progress", "not_applicable"
+	ComplianceRate float64          `json:"compliance_rate"`
+	Checks         []ControlCheck   `json:"checks"`
+	Evidence       []*Evidence      `json:"evidence"`
+	Remediation    *RemediationPlan `json:"remediation,omitempty"`
+	LastChecked    time.Time        `json:"last_checked"`
 }
 
 // Requirement represents a compliance requirement
 type Requirement struct {
-	ID              string    `json:"id"`
-	Framework       string    `json:"framework"`
-	Requirement     string    `json:"requirement"`
-	ControlIDs      []string  `json:"control_ids"`
-	Status          string    `json:"status"`
-	LastVerified    time.Time `json:"last_verified"`
+	ID           string    `json:"id"`
+	Framework    string    `json:"framework"`
+	Requirement  string    `json:"requirement"`
+	ControlIDs   []string  `json:"control_ids"`
+	Status       string    `json:"status"`
+	LastVerified time.Time `json:"last_verified"`
 }
 
 // ControlCheck defines an automated check for a control
 type ControlCheck struct {
-	ID          string                 `json:"id"`
-	Name        string                 `json:"name"`
-	CheckType   string                 `json:"check_type"` // "automated", "manual", "continuous"
-	Query       string                 `json:"query"`
-	Expected    interface{}            `json:"expected"`
-	Actual      interface{}            `json:"actual"`
-	Status      string                 `json:"status"`
-	LastRun     time.Time              `json:"last_run"`
-	Frequency   time.Duration          `json:"frequency"`
+	ID        string        `json:"id"`
+	Name      string        `json:"name"`
+	CheckType string        `json:"check_type"` // "automated", "manual", "continuous"
+	Query     string        `json:"query"`
+	Expected  interface{}   `json:"expected"`
+	Actual    interface{}   `json:"actual"`
+	Status    string        `json:"status"`
+	LastRun   time.Time     `json:"last_run"`
+	Frequency time.Duration `json:"frequency"`
 }
 
 // Evidence represents compliance evidence
 type Evidence struct {
-	ID              string                 `json:"id"`
-	ControlID       string                 `json:"control_id"`
-	Type            string                 `json:"type"` // "log", "screenshot", "configuration", "audit_trail"
-	Description     string                 `json:"description"`
-	Data            map[string]interface{} `json:"data"`
-	CollectedAt     time.Time              `json:"collected_at"`
-	ValidUntil      time.Time              `json:"valid_until"`
-	VerificationStatus string              `json:"verification_status"`
+	ID                 string                 `json:"id"`
+	ControlID          string                 `json:"control_id"`
+	Type               string                 `json:"type"` // "log", "screenshot", "configuration", "audit_trail"
+	Description        string                 `json:"description"`
+	Data               map[string]interface{} `json:"data"`
+	CollectedAt        time.Time              `json:"collected_at"`
+	ValidUntil         time.Time              `json:"valid_until"`
+	VerificationStatus string                 `json:"verification_status"`
 }
 
 // RemediationPlan defines remediation steps
 type RemediationPlan struct {
-	ControlID       string    `json:"control_id"`
-	Issue           string    `json:"issue"`
-	Steps           []string  `json:"steps"`
-	Owner           string    `json:"owner"`
-	DueDate         time.Time `json:"due_date"`
-	Status          string    `json:"status"`
-	CompletedAt     *time.Time `json:"completed_at,omitempty"`
+	ControlID   string     `json:"control_id"`
+	Issue       string     `json:"issue"`
+	Steps       []string   `json:"steps"`
+	Owner       string     `json:"owner"`
+	DueDate     time.Time  `json:"due_date"`
+	Status      string     `json:"status"`
+	CompletedAt *time.Time `json:"completed_at,omitempty"`
 }
 
 // ControlMonitor monitors compliance controls
@@ -119,9 +119,9 @@ type ControlChecker func(ctx context.Context, control *ComplianceControl) (bool,
 
 // EvidenceCollector collects compliance evidence
 type EvidenceCollector struct {
-	db          *sql.DB
-	collectors  map[string]EvidenceCollectorFunc
-	mu          sync.RWMutex
+	db         *sql.DB
+	collectors map[string]EvidenceCollectorFunc
+	mu         sync.RWMutex
 }
 
 // EvidenceCollectorFunc collects evidence for a control
@@ -129,53 +129,53 @@ type EvidenceCollectorFunc func(ctx context.Context, controlID string) (*Evidenc
 
 // ReportGenerator generates compliance reports
 type ReportGenerator struct {
-	db         *sql.DB
-	templates  map[string]*ReportTemplate
-	mu         sync.RWMutex
+	db        *sql.DB
+	templates map[string]*ReportTemplate
+	mu        sync.RWMutex
 }
 
 // ReportTemplate defines a report template
 type ReportTemplate struct {
-	Name        string   `json:"name"`
-	Framework   string   `json:"framework"`
-	Sections    []string `json:"sections"`
-	Format      string   `json:"format"` // "pdf", "html", "json"
+	Name      string   `json:"name"`
+	Framework string   `json:"framework"`
+	Sections  []string `json:"sections"`
+	Format    string   `json:"format"` // "pdf", "html", "json"
 }
 
 // ComplianceReport represents a generated report
 type ComplianceReport struct {
-	ID              string                 `json:"id"`
-	Framework       string                 `json:"framework"`
-	ReportDate      time.Time              `json:"report_date"`
-	Period          string                 `json:"period"`
-	OverallScore    float64                `json:"overall_score"`
-	ControlsSummary ControlsSummary        `json:"controls_summary"`
-	Findings        []Finding              `json:"findings"`
-	Recommendations []string               `json:"recommendations"`
-	Evidence        []*Evidence            `json:"evidence"`
-	GeneratedAt     time.Time              `json:"generated_at"`
+	ID              string          `json:"id"`
+	Framework       string          `json:"framework"`
+	ReportDate      time.Time       `json:"report_date"`
+	Period          string          `json:"period"`
+	OverallScore    float64         `json:"overall_score"`
+	ControlsSummary ControlsSummary `json:"controls_summary"`
+	Findings        []Finding       `json:"findings"`
+	Recommendations []string        `json:"recommendations"`
+	Evidence        []*Evidence     `json:"evidence"`
+	GeneratedAt     time.Time       `json:"generated_at"`
 }
 
 // ControlsSummary summarizes control status
 type ControlsSummary struct {
-	Total         int     `json:"total"`
-	Compliant     int     `json:"compliant"`
-	NonCompliant  int     `json:"non_compliant"`
-	InProgress    int     `json:"in_progress"`
-	NotApplicable int     `json:"not_applicable"`
+	Total          int     `json:"total"`
+	Compliant      int     `json:"compliant"`
+	NonCompliant   int     `json:"non_compliant"`
+	InProgress     int     `json:"in_progress"`
+	NotApplicable  int     `json:"not_applicable"`
 	ComplianceRate float64 `json:"compliance_rate"`
 }
 
 // Finding represents a compliance finding
 type Finding struct {
-	ID          string    `json:"id"`
-	ControlID   string    `json:"control_id"`
-	Severity    string    `json:"severity"` // "critical", "high", "medium", "low"
-	Title       string    `json:"title"`
-	Description string    `json:"description"`
-	Impact      string    `json:"impact"`
-	Remediation string    `json:"remediation"`
-	Status      string    `json:"status"`
+	ID           string    `json:"id"`
+	ControlID    string    `json:"control_id"`
+	Severity     string    `json:"severity"` // "critical", "high", "medium", "low"
+	Title        string    `json:"title"`
+	Description  string    `json:"description"`
+	Impact       string    `json:"impact"`
+	Remediation  string    `json:"remediation"`
+	Status       string    `json:"status"`
 	IdentifiedAt time.Time `json:"identified_at"`
 }
 
@@ -188,13 +188,13 @@ type ComplianceAlertManager struct {
 
 // ComplianceAlert represents a compliance alert
 type ComplianceAlert struct {
-	ID          string    `json:"id"`
-	Framework   string    `json:"framework"`
-	ControlID   string    `json:"control_id"`
-	Severity    string    `json:"severity"`
-	Message     string    `json:"message"`
-	TriggeredAt time.Time `json:"triggered_at"`
-	Acknowledged bool     `json:"acknowledged"`
+	ID           string    `json:"id"`
+	Framework    string    `json:"framework"`
+	ControlID    string    `json:"control_id"`
+	Severity     string    `json:"severity"`
+	Message      string    `json:"message"`
+	TriggeredAt  time.Time `json:"triggered_at"`
+	Acknowledged bool      `json:"acknowledged"`
 }
 
 // NewAutomatedComplianceReporting creates a new compliance reporting system
@@ -574,7 +574,7 @@ func (acr *AutomatedComplianceReporting) registerControlCheckers() {
 	acr.controlMonitor.RegisterChecker("encryption", func(ctx context.Context, control *ComplianceControl) (bool, interface{}, error) {
 		// Check encryption status
 		results := map[string]interface{}{
-			"tls_version": "1.3",
+			"tls_version":    "1.3",
 			"data_encrypted": true,
 		}
 
@@ -706,15 +706,15 @@ func (acr *AutomatedComplianceReporting) GenerateComplianceReport(ctx context.Co
 	}
 
 	report := &ComplianceReport{
-		ID:          fmt.Sprintf("report-%s-%d", frameworkName, time.Now().Unix()),
-		Framework:   frameworkName,
-		ReportDate:  time.Now(),
-		Period:      "monthly",
-		OverallScore: framework.ComplianceScore,
-		Findings:    make([]Finding, 0),
+		ID:              fmt.Sprintf("report-%s-%d", frameworkName, time.Now().Unix()),
+		Framework:       frameworkName,
+		ReportDate:      time.Now(),
+		Period:          "monthly",
+		OverallScore:    framework.ComplianceScore,
+		Findings:        make([]Finding, 0),
 		Recommendations: make([]string, 0),
-		Evidence:    make([]*Evidence, 0),
-		GeneratedAt: time.Now(),
+		Evidence:        make([]*Evidence, 0),
+		GeneratedAt:     time.Now(),
 	}
 
 	// Calculate controls summary
@@ -731,14 +731,14 @@ func (acr *AutomatedComplianceReporting) GenerateComplianceReport(ctx context.Co
 
 			// Add as finding
 			finding := Finding{
-				ID:          fmt.Sprintf("finding-%s-%d", control.ID, time.Now().Unix()),
-				ControlID:   control.ID,
-				Severity:    control.Priority,
-				Title:       fmt.Sprintf("Non-compliant control: %s", control.Name),
-				Description: control.Description,
-				Impact:      "May result in audit failure",
-				Remediation: "Implement required controls and collect evidence",
-				Status:      "open",
+				ID:           fmt.Sprintf("finding-%s-%d", control.ID, time.Now().Unix()),
+				ControlID:    control.ID,
+				Severity:     control.Priority,
+				Title:        fmt.Sprintf("Non-compliant control: %s", control.Name),
+				Description:  control.Description,
+				Impact:       "May result in audit failure",
+				Remediation:  "Implement required controls and collect evidence",
+				Status:       "open",
 				IdentifiedAt: control.LastChecked,
 			}
 			report.Findings = append(report.Findings, finding)
@@ -804,12 +804,12 @@ func (acr *AutomatedComplianceReporting) saveReport(ctx context.Context, report 
 // generateAlert generates a compliance alert
 func (acr *AutomatedComplianceReporting) generateAlert(framework, controlID, severity, message string) {
 	alert := ComplianceAlert{
-		ID:          fmt.Sprintf("alert-%d", time.Now().UnixNano()),
-		Framework:   framework,
-		ControlID:   controlID,
-		Severity:    severity,
-		Message:     message,
-		TriggeredAt: time.Now(),
+		ID:           fmt.Sprintf("alert-%d", time.Now().UnixNano()),
+		Framework:    framework,
+		ControlID:    controlID,
+		Severity:     severity,
+		Message:      message,
+		TriggeredAt:  time.Now(),
 		Acknowledged: false,
 	}
 
@@ -900,9 +900,9 @@ func (acr *AutomatedComplianceReporting) GetComplianceStatus() map[string]interf
 
 	for name, framework := range acr.frameworks {
 		status[name] = map[string]interface{}{
-			"compliance_score":  framework.ComplianceScore,
-			"total_controls":    len(framework.Controls),
-			"last_assessment":   framework.LastAssessment,
+			"compliance_score": framework.ComplianceScore,
+			"total_controls":   len(framework.Controls),
+			"last_assessment":  framework.LastAssessment,
 		}
 	}
 

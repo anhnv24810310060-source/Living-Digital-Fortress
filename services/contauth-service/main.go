@@ -36,6 +36,9 @@ type ContAuthService struct {
 	deviceFingerprint *DeviceFingerprintEngine
 	riskScorer        *AdaptiveRiskScorer
 	
+	// Phase 2 P0: Federated Learning Integration
+	federatedEngine   *FederatedLearningEngine
+	
 	totalCollections  *metrics.Counter
 	totalDecisions    *metrics.Counter
 	anomalyCount      *metrics.Counter
@@ -258,12 +261,16 @@ func main() {
 }
 
 func NewContAuthService() *ContAuthService {
+	// Phase 2 P0: Initialize Federated Learning with epsilon=1.0 (strong privacy)
+	flEngine := NewFederatedLearningEngine(1.0, 1e-5, 5)
+	
 	return &ContAuthService{
 		userProfiles:      make(map[string]*UserBehaviorProfile),
 		keystrokeDynamics: NewKeystrokeDynamicsAnalyzer(),
 		mouseAnalyzer:     NewMouseBehaviorAnalyzer(),
 		deviceFingerprint: NewDeviceFingerprintEngine(),
 		riskScorer:        NewAdaptiveRiskScorer(),
+		federatedEngine:   flEngine,
 		
 		totalCollections: metrics.NewCounter("contauth_collections_total", "Total telemetry collections"),
 		totalDecisions:   metrics.NewCounter("contauth_decisions_total", "Total auth decisions"),
