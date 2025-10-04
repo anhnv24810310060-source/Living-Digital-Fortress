@@ -5,7 +5,7 @@ package abac
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/json"
+	_ "encoding/json" // Keep for future use
 	"errors"
 	"fmt"
 	"sync"

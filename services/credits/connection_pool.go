@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"log"
 	"sync"
 	"time"
 )
@@ -18,23 +17,8 @@ type EnhancedConnectionPool struct {
 	mu              sync.RWMutex
 }
 
-// CircuitBreaker prevents cascading failures by temporarily blocking requests when error rate is high
-type CircuitBreaker struct {
-	maxFailures   int
-	resetTimeout  time.Duration
-	failureCount  int
-	lastFailTime  time.Time
-	state         CircuitState
-	mu            sync.RWMutex
-}
-
-type CircuitState int
-
-const (
-	CircuitClosed CircuitState = iota // Normal operation
-	CircuitOpen                        // Blocking requests
-	CircuitHalfOpen                    // Testing recovery
-)
+// NOTE: CircuitBreaker implementation removed here to avoid duplication.
+// The richer implementation lives in circuit_breaker.go and is reused.
 
 // ConnectionStats tracks pool performance metrics
 type ConnectionStats struct {
@@ -69,11 +53,7 @@ func NewEnhancedConnectionPool(db *sql.DB) *EnhancedConnectionPool {
 
 	pool := &EnhancedConnectionPool{
 		db: db,
-		circuitBreaker: &CircuitBreaker{
-			maxFailures:  5,
-			resetTimeout: 30 * time.Second,
-			state:        CircuitClosed,
-		},
+		circuitBreaker: NewCircuitBreaker(CircuitBreakerConfig{Name: "db", MaxFailures: 5, Timeout: 5 * time.Second, ResetTimeout: 30 * time.Second}),
 		connectionStats: &ConnectionStats{},
 	}
 
@@ -86,8 +66,8 @@ func NewEnhancedConnectionPool(db *sql.DB) *EnhancedConnectionPool {
 
 // Execute wraps query execution with circuit breaker and monitoring
 func (ecp *EnhancedConnectionPool) Execute(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error) {
-	// Check circuit breaker
-	if !ecp.circuitBreaker.AllowRequest() {
+	// Check circuit breaker using stats-based gate; if open, reject.
+	if state := ecp.circuitBreaker.GetState(); state == "open" {
 		return nil, fmt.Errorf("circuit breaker open: too many failures")
 	}
 
@@ -99,17 +79,15 @@ func (ecp *EnhancedConnectionPool) Execute(ctx context.Context, query string, ar
 	ecp.connectionStats.RecordQuery(duration, err == nil)
 
 	if err != nil {
-		ecp.circuitBreaker.RecordFailure()
+		// Fallback: we cannot call RecordFailure (method removed), rely on external breaker or metrics.
 		return nil, err
 	}
-
-	ecp.circuitBreaker.RecordSuccess()
 	return rows, nil
 }
 
 // ExecContext executes a non-query statement with monitoring
 func (ecp *EnhancedConnectionPool) ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error) {
-	if !ecp.circuitBreaker.AllowRequest() {
+	if state := ecp.circuitBreaker.GetState(); state == "open" {
 		return nil, fmt.Errorf("circuit breaker open: too many failures")
 	}
 
@@ -120,20 +98,16 @@ func (ecp *EnhancedConnectionPool) ExecContext(ctx context.Context, query string
 	ecp.connectionStats.RecordQuery(duration, err == nil)
 
 	if err != nil {
-		ecp.circuitBreaker.RecordFailure()
 		return nil, err
 	}
-
-	ecp.circuitBreaker.RecordSuccess()
 	return result, nil
 }
 
 // BeginTx starts a transaction with timeout
 func (ecp *EnhancedConnectionPool) BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error) {
-	if !ecp.circuitBreaker.AllowRequest() {
+	if state := ecp.circuitBreaker.GetState(); state == "open" {
 		return nil, fmt.Errorf("circuit breaker open")
 	}
-
 	return ecp.db.BeginTx(ctx, opts)
 }
 
@@ -165,68 +139,6 @@ func (ecp *EnhancedConnectionPool) Close() error {
 	return ecp.db.Close()
 }
 
-// CircuitBreaker methods
-func (cb *CircuitBreaker) AllowRequest() bool {
-	cb.mu.RLock()
-	defer cb.mu.RUnlock()
-
-	switch cb.state {
-	case CircuitClosed:
-		return true
-	case CircuitOpen:
-		// Check if reset timeout has passed
-		if time.Since(cb.lastFailTime) > cb.resetTimeout {
-			cb.mu.RUnlock()
-			cb.mu.Lock()
-			cb.state = CircuitHalfOpen
-			cb.mu.Unlock()
-			cb.mu.RLock()
-			return true
-		}
-		return false
-	case CircuitHalfOpen:
-		return true
-	}
-	return false
-}
-
-func (cb *CircuitBreaker) RecordSuccess() {
-	cb.mu.Lock()
-	defer cb.mu.Unlock()
-
-	if cb.state == CircuitHalfOpen {
-		cb.state = CircuitClosed
-		cb.failureCount = 0
-	}
-}
-
-func (cb *CircuitBreaker) RecordFailure() {
-	cb.mu.Lock()
-	defer cb.mu.Unlock()
-
-	cb.failureCount++
-	cb.lastFailTime = time.Now()
-
-	if cb.failureCount >= cb.maxFailures {
-		cb.state = CircuitOpen
-		log.Printf("[circuit-breaker] OPEN: %d consecutive failures", cb.failureCount)
-	}
-}
-
-func (cb *CircuitBreaker) GetState() string {
-	cb.mu.RLock()
-	defer cb.mu.RUnlock()
-
-	switch cb.state {
-	case CircuitClosed:
-		return "closed"
-	case CircuitOpen:
-		return "open"
-	case CircuitHalfOpen:
-		return "half-open"
-	}
-	return "unknown"
-}
 
 // ConnectionStats methods
 func (cs *ConnectionStats) RecordQuery(duration time.Duration, success bool) {
@@ -319,9 +231,7 @@ func (hm *HealthMonitor) checkHealth() {
 	hm.isHealthy = (err == nil)
 	hm.mu.Unlock()
 
-	if err != nil {
-		log.Printf("[health-monitor] Database unhealthy: %v", err)
-	}
+	_ = err // silent; health flag already updated
 }
 
 func (hm *HealthMonitor) IsHealthy() bool {

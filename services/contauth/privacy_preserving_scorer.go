@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"sort"
 	"sync"
 	"time"
 )
@@ -333,7 +334,7 @@ func (pps *PrivacyPreservingScorer) LearnBaseline(sessionFeatures []*BiometricFe
 	
 	// Average entropy (with DP noise)
 	if len(entropyValues) > 0 {
-		baseline.KeyIntervalEntropy = average(entropyValues)
+		baseline.KeyIntervalEntropy = averagePPS(entropyValues)
 		baseline.KeyIntervalEntropy = pps.dpNoise.AddNoise(baseline.KeyIntervalEntropy)
 	}
 	
@@ -355,7 +356,7 @@ func (pps *PrivacyPreservingScorer) LearnBaseline(sessionFeatures []*BiometricFe
 	}
 	
 	if len(complexityValues) > 0 {
-		baseline.MovementComplexity = average(complexityValues)
+		baseline.MovementComplexity = averagePPS(complexityValues)
 		baseline.MovementComplexity = pps.dpNoise.AddNoise(baseline.MovementComplexity)
 	}
 	
@@ -373,10 +374,10 @@ func (pps *PrivacyPreservingScorer) LearnBaseline(sessionFeatures []*BiometricFe
 	}
 	
 	if len(typingScores) > 0 {
-		baseline.TypingRhythmScore = average(typingScores)
+		baseline.TypingRhythmScore = averagePPS(typingScores)
 	}
 	if len(mouseScores) > 0 {
-		baseline.MouseBehaviorScore = average(mouseScores)
+		baseline.MouseBehaviorScore = averagePPS(mouseScores)
 	}
 	
 	// Add most common device fingerprint to Bloom filter
@@ -619,7 +620,7 @@ func (pps *PrivacyPreservingScorer) findRepresentative(hashes []string) string {
 	return representative
 }
 
-func average(values []float64) float64 {
+func averagePPS(values []float64) float64 {
 	if len(values) == 0 {
 		return 0
 	}

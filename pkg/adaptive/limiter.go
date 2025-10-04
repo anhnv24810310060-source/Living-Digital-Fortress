@@ -4,9 +4,9 @@ package adaptive
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/binary"
-	"fmt"
+	_ "crypto/sha256" // Keep for future use
+	_ "encoding/binary" // Keep for future use
+	_ "fmt" // Keep for future use
 	"math"
 	"sync"
 	"sync/atomic"
