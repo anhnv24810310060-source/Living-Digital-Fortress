@@ -1,5 +1,4 @@
 package sandbox
-package sandbox
 
 import (
 	"testing"
