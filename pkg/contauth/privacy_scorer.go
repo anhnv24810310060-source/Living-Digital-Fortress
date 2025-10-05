@@ -1,5 +1,4 @@
 package contauth
-package contauth
 
 import (
 	"crypto/hmac"
@@ -17,18 +16,18 @@ import (
 type PrivacyPreservingScorer struct {
 	// Secret key for HMAC (rotate regularly in production)
 	secretKey []byte
-	
+
 	// User baseline profiles (hashed features only)
 	baselines map[string]*UserBaseline
 	mu        sync.RWMutex
-	
+
 	// Anomaly detection parameters
 	anomalyThreshold float64
 	learningRate     float64
-	
+
 	// Risk calculation weights (calibrated)
 	weights RiskWeights
-	
+
 	// Performance metrics
 	totalScored  uint64
 	totalAnomaly uint64
@@ -36,48 +35,48 @@ type PrivacyPreservingScorer struct {
 
 // RiskWeights defines scoring factors
 type RiskWeights struct {
-	KeystrokeDynamics  float64
-	MouseBehavior      float64
-	DeviceFingerprint  float64
-	ContextualFactors  float64
-	HistoricalPattern  float64
-	VelocityCheck      float64
+	KeystrokeDynamics float64
+	MouseBehavior     float64
+	DeviceFingerprint float64
+	ContextualFactors float64
+	HistoricalPattern float64
+	VelocityCheck     float64
 }
 
 // UserBaseline stores privacy-preserving user behavioral baseline
 type UserBaseline struct {
-	UserID           string
-	
+	UserID string
+
 	// Keystroke dynamics (statistical features only - NO raw timings)
-	AvgDwellTime     float64
-	StdDwellTime     float64
-	AvgFlightTime    float64
-	StdFlightTime    float64
-	TypingRhythm     float64 // Normalized rhythm score
-	
+	AvgDwellTime  float64
+	StdDwellTime  float64
+	AvgFlightTime float64
+	StdFlightTime float64
+	TypingRhythm  float64 // Normalized rhythm score
+
 	// Mouse behavior (aggregated patterns only)
-	AvgMouseSpeed    float64
+	AvgMouseSpeed     float64
 	MouseAcceleration float64
-	ClickPatternHash  string  // Hashed click pattern
-	
+	ClickPatternHash  string // Hashed click pattern
+
 	// Device characteristics (hashed)
 	DeviceFingerprintHash string
 	ScreenResolutionHash  string
 	TimezoneHash          string
-	
+
 	// Temporal patterns
-	TypicalLoginHours   []int   // Hours of day (0-23)
-	LoginFrequency      float64 // Logins per day average
-	SessionDuration     float64 // Average session minutes
-	
+	TypicalLoginHours []int   // Hours of day (0-23)
+	LoginFrequency    float64 // Logins per day average
+	SessionDuration   float64 // Average session minutes
+
 	// Learning metadata
-	SampleCount      int
-	LastUpdated      time.Time
-	ConfidenceLevel  float64 // 0.0-1.0
-	
+	SampleCount     int
+	LastUpdated     time.Time
+	ConfidenceLevel float64 // 0.0-1.0
+
 	// Privacy-preserving flags
-	DataAnonymized   bool
-	HashAlgorithm    string
+	DataAnonymized bool
+	HashAlgorithm  string
 }
 
 // TelemetryData represents anonymized behavioral data
@@ -85,24 +84,24 @@ type TelemetryData struct {
 	UserID    string
 	SessionID string
 	Timestamp time.Time
-	
+
 	// Keystroke features (anonymized)
 	KeystrokeDwellTimes  []float64 // Milliseconds (statistical use only)
 	KeystrokeFlightTimes []float64
-	
+
 	// Mouse features (anonymized)
 	MouseMovements []MouseEvent
 	ClickEvents    []ClickEvent
-	
+
 	// Context (hashed)
 	DeviceFingerprint string
 	IPAddressHash     string
 	LocationHash      string
 	UserAgentHash     string
-	
+
 	// Session context
-	TimeOfDay     int     // Hour 0-23
-	DayOfWeek     int     // 0-6
+	TimeOfDay     int // Hour 0-23
+	DayOfWeek     int // 0-6
 	IsNewDevice   bool
 	IsNewLocation bool
 }
@@ -117,25 +116,25 @@ type MouseEvent struct {
 
 // ClickEvent represents anonymized click pattern
 type ClickEvent struct {
-	Button    string // "left", "right", "middle"
+	Button    string  // "left", "right", "middle"
 	Duration  float64 // Hold duration in ms
 	Timestamp time.Time
 }
 
 // RiskScore represents the authentication risk assessment
 type RiskScore struct {
-	Score          int                    `json:"score"`           // 0-100
-	Confidence     float64                `json:"confidence"`      // 0.0-1.0
-	RiskLevel      string                 `json:"risk_level"`      // low, medium, high, critical
-	Factors        map[string]float64     `json:"factors"`         // Individual factor scores
-	Anomalies      []string               `json:"anomalies"`       // Detected anomalies
-	Recommendation string                 `json:"recommendation"`  // Action to take
-	Details        map[string]interface{} `json:"details"`         // Additional context
+	Score          int                    `json:"score"`          // 0-100
+	Confidence     float64                `json:"confidence"`     // 0.0-1.0
+	RiskLevel      string                 `json:"risk_level"`     // low, medium, high, critical
+	Factors        map[string]float64     `json:"factors"`        // Individual factor scores
+	Anomalies      []string               `json:"anomalies"`      // Detected anomalies
+	Recommendation string                 `json:"recommendation"` // Action to take
+	Details        map[string]interface{} `json:"details"`        // Additional context
 }
 
 // AuthDecision represents the final authentication decision
 type AuthDecision struct {
-	Decision      string    `json:"decision"`       // "allow", "challenge", "deny"
+	Decision      string    `json:"decision"` // "allow", "challenge", "deny"
 	Confidence    float64   `json:"confidence"`
 	RiskScore     int       `json:"risk_score"`
 	ChallengeType string    `json:"challenge_type,omitempty"` // "mfa", "captcha", "security_question"
@@ -148,7 +147,7 @@ func NewPrivacyPreservingScorer(secretKey string) *PrivacyPreservingScorer {
 	if secretKey == "" {
 		secretKey = "default-secret-key-CHANGE-IN-PRODUCTION"
 	}
-	
+
 	return &PrivacyPreservingScorer{
 		secretKey:        []byte(secretKey),
 		baselines:        make(map[string]*UserBaseline),
@@ -172,13 +171,13 @@ func (pps *PrivacyPreservingScorer) CollectTelemetry(data *TelemetryData) error 
 	data.LocationHash = pps.hashPII(data.LocationHash)
 	data.UserAgentHash = pps.hashPII(data.UserAgentHash)
 	data.DeviceFingerprint = pps.hashPII(data.DeviceFingerprint)
-	
+
 	// Extract statistical features (never store raw timing data)
 	features := pps.extractStatisticalFeatures(data)
-	
+
 	// Update or create baseline
 	pps.updateBaseline(data.UserID, features)
-	
+
 	return nil
 }
 
@@ -187,13 +186,13 @@ func (pps *PrivacyPreservingScorer) CalculateRiskScore(userID string, current *T
 	pps.mu.RLock()
 	baseline, exists := pps.baselines[userID]
 	pps.mu.RUnlock()
-	
+
 	score := &RiskScore{
 		Factors:   make(map[string]float64),
 		Anomalies: make([]string, 0),
 		Details:   make(map[string]interface{}),
 	}
-	
+
 	// No baseline = new user (higher initial risk)
 	if !exists || baseline.SampleCount < 5 {
 		score.Score = 50
@@ -204,13 +203,13 @@ func (pps *PrivacyPreservingScorer) CalculateRiskScore(userID string, current *T
 		score.Details["baseline_status"] = "insufficient_samples"
 		return score
 	}
-	
+
 	// Extract current features
 	currentFeatures := pps.extractStatisticalFeatures(current)
-	
+
 	// Multi-factor risk calculation
 	var totalScore float64
-	
+
 	// 1. Keystroke Dynamics Analysis
 	keystrokeScore := pps.analyzeKeystrokeDynamics(baseline, currentFeatures)
 	totalScore += keystrokeScore * pps.weights.KeystrokeDynamics
@@ -218,7 +217,7 @@ func (pps *PrivacyPreservingScorer) CalculateRiskScore(userID string, current *T
 	if keystrokeScore > 70 {
 		score.Anomalies = append(score.Anomalies, "KEYSTROKE_ANOMALY")
 	}
-	
+
 	// 2. Mouse Behavior Analysis
 	mouseScore := pps.analyzeMouseBehavior(baseline, currentFeatures)
 	totalScore += mouseScore * pps.weights.MouseBehavior
@@ -226,7 +225,7 @@ func (pps *PrivacyPreservingScorer) CalculateRiskScore(userID string, current *T
 	if mouseScore > 70 {
 		score.Anomalies = append(score.Anomalies, "MOUSE_BEHAVIOR_ANOMALY")
 	}
-	
+
 	// 3. Device Fingerprint Check
 	deviceScore := pps.analyzeDeviceFingerprint(baseline, current)
 	totalScore += deviceScore * pps.weights.DeviceFingerprint
@@ -234,7 +233,7 @@ func (pps *PrivacyPreservingScorer) CalculateRiskScore(userID string, current *T
 	if deviceScore > 80 {
 		score.Anomalies = append(score.Anomalies, "DEVICE_MISMATCH")
 	}
-	
+
 	// 4. Contextual Factors (time, location)
 	contextScore := pps.analyzeContextualFactors(baseline, current)
 	totalScore += contextScore * pps.weights.ContextualFactors
@@ -242,12 +241,12 @@ func (pps *PrivacyPreservingScorer) CalculateRiskScore(userID string, current *T
 	if contextScore > 70 {
 		score.Anomalies = append(score.Anomalies, "UNUSUAL_CONTEXT")
 	}
-	
+
 	// 5. Historical Pattern Matching
 	patternScore := pps.analyzeHistoricalPatterns(baseline, current)
 	totalScore += patternScore * pps.weights.HistoricalPattern
 	score.Factors["historical_pattern"] = patternScore
-	
+
 	// 6. Velocity Check (impossible travel, rapid attempts)
 	velocityScore := pps.checkVelocity(userID, current)
 	totalScore += velocityScore * pps.weights.VelocityCheck
@@ -255,53 +254,53 @@ func (pps *PrivacyPreservingScorer) CalculateRiskScore(userID string, current *T
 	if velocityScore > 90 {
 		score.Anomalies = append(score.Anomalies, "IMPOSSIBLE_VELOCITY")
 	}
-	
+
 	// Normalize to 0-100
 	score.Score = int(math.Min(totalScore, 100))
 	score.Confidence = baseline.ConfidenceLevel
 	score.RiskLevel = pps.calculateRiskLevel(score.Score)
 	score.Recommendation = pps.determineRecommendation(score.Score, len(score.Anomalies))
-	
+
 	// Update metrics
 	pps.totalScored++
 	if len(score.Anomalies) > 0 {
 		pps.totalAnomaly++
 	}
-	
+
 	score.Details["baseline_samples"] = baseline.SampleCount
 	score.Details["confidence"] = baseline.ConfidenceLevel
-	
+
 	return score
 }
 
 // MakeAuthDecision generates final authentication decision
 func (pps *PrivacyPreservingScorer) MakeAuthDecision(score *RiskScore) *AuthDecision {
 	decision := &AuthDecision{
-		RiskScore: score.Score,
+		RiskScore:  score.Score,
 		Confidence: score.Confidence,
-		Timestamp: time.Now(),
+		Timestamp:  time.Now(),
 	}
-	
+
 	switch {
 	case score.Score >= 80:
 		decision.Decision = "deny"
 		decision.Reason = "High risk score - suspicious activity detected"
-		
+
 	case score.Score >= 60:
 		decision.Decision = "challenge"
 		decision.ChallengeType = "mfa"
 		decision.Reason = "Medium-high risk - additional authentication required"
-		
+
 	case score.Score >= 40:
 		decision.Decision = "challenge"
 		decision.ChallengeType = "captcha"
 		decision.Reason = "Medium risk - verification recommended"
-		
+
 	default:
 		decision.Decision = "allow"
 		decision.Reason = "Low risk - normal behavior pattern"
 	}
-	
+
 	return decision
 }
 
@@ -309,18 +308,18 @@ func (pps *PrivacyPreservingScorer) MakeAuthDecision(score *RiskScore) *AuthDeci
 
 func (pps *PrivacyPreservingScorer) extractStatisticalFeatures(data *TelemetryData) map[string]float64 {
 	features := make(map[string]float64)
-	
+
 	// Keystroke features - statistical aggregation only
 	if len(data.KeystrokeDwellTimes) > 0 {
 		features["avg_dwell"] = average(data.KeystrokeDwellTimes)
 		features["std_dwell"] = stddev(data.KeystrokeDwellTimes)
 	}
-	
+
 	if len(data.KeystrokeFlightTimes) > 0 {
 		features["avg_flight"] = average(data.KeystrokeFlightTimes)
 		features["std_flight"] = stddev(data.KeystrokeFlightTimes)
 	}
-	
+
 	// Mouse features - aggregated patterns
 	if len(data.MouseMovements) > 0 {
 		speeds := make([]float64, len(data.MouseMovements))
@@ -330,19 +329,19 @@ func (pps *PrivacyPreservingScorer) extractStatisticalFeatures(data *TelemetryDa
 		features["avg_mouse_speed"] = average(speeds)
 		features["mouse_acceleration"] = calculateAcceleration(data.MouseMovements)
 	}
-	
+
 	// Click pattern hash
 	if len(data.ClickEvents) > 0 {
 		features["click_pattern"] = pps.hashClickPattern(data.ClickEvents)
 	}
-	
+
 	return features
 }
 
 func (pps *PrivacyPreservingScorer) updateBaseline(userID string, features map[string]float64) {
 	pps.mu.Lock()
 	defer pps.mu.Unlock()
-	
+
 	baseline, exists := pps.baselines[userID]
 	if !exists {
 		// Create new baseline
@@ -356,10 +355,10 @@ func (pps *PrivacyPreservingScorer) updateBaseline(userID string, features map[s
 		}
 		pps.baselines[userID] = baseline
 	}
-	
+
 	// Exponential moving average (privacy-preserving online learning)
 	lr := pps.learningRate
-	
+
 	if avgDwell, ok := features["avg_dwell"]; ok {
 		baseline.AvgDwellTime = (1-lr)*baseline.AvgDwellTime + lr*avgDwell
 	}
@@ -378,10 +377,10 @@ func (pps *PrivacyPreservingScorer) updateBaseline(userID string, features map[s
 	if accel, ok := features["mouse_acceleration"]; ok {
 		baseline.MouseAcceleration = (1-lr)*baseline.MouseAcceleration + lr*accel
 	}
-	
+
 	baseline.SampleCount++
 	baseline.LastUpdated = time.Now()
-	
+
 	// Increase confidence as we collect more samples
 	baseline.ConfidenceLevel = math.Min(0.95, float64(baseline.SampleCount)/100.0)
 }
@@ -390,9 +389,9 @@ func (pps *PrivacyPreservingScorer) analyzeKeystrokeDynamics(baseline *UserBasel
 	if baseline.AvgDwellTime == 0 {
 		return 0
 	}
-	
+
 	score := 0.0
-	
+
 	// Dwell time deviation
 	if avgDwell, ok := current["avg_dwell"]; ok {
 		deviation := math.Abs(avgDwell-baseline.AvgDwellTime) / baseline.AvgDwellTime
@@ -400,7 +399,7 @@ func (pps *PrivacyPreservingScorer) analyzeKeystrokeDynamics(baseline *UserBasel
 			score += deviation * 50
 		}
 	}
-	
+
 	// Flight time deviation
 	if avgFlight, ok := current["avg_flight"]; ok {
 		deviation := math.Abs(avgFlight-baseline.AvgFlightTime) / baseline.AvgFlightTime
@@ -408,7 +407,7 @@ func (pps *PrivacyPreservingScorer) analyzeKeystrokeDynamics(baseline *UserBasel
 			score += deviation * 50
 		}
 	}
-	
+
 	return math.Min(score, 100)
 }
 
@@ -416,9 +415,9 @@ func (pps *PrivacyPreservingScorer) analyzeMouseBehavior(baseline *UserBaseline,
 	if baseline.AvgMouseSpeed == 0 {
 		return 0
 	}
-	
+
 	score := 0.0
-	
+
 	// Mouse speed deviation
 	if avgSpeed, ok := current["avg_mouse_speed"]; ok {
 		deviation := math.Abs(avgSpeed-baseline.AvgMouseSpeed) / baseline.AvgMouseSpeed
@@ -426,7 +425,7 @@ func (pps *PrivacyPreservingScorer) analyzeMouseBehavior(baseline *UserBaseline,
 			score += deviation * 60
 		}
 	}
-	
+
 	// Mouse acceleration check
 	if accel, ok := current["mouse_acceleration"]; ok {
 		deviation := math.Abs(accel-baseline.MouseAcceleration) / (baseline.MouseAcceleration + 0.001)
@@ -434,19 +433,19 @@ func (pps *PrivacyPreservingScorer) analyzeMouseBehavior(baseline *UserBaseline,
 			score += deviation * 40
 		}
 	}
-	
+
 	return math.Min(score, 100)
 }
 
 func (pps *PrivacyPreservingScorer) analyzeDeviceFingerprint(baseline *UserBaseline, current *TelemetryData) float64 {
 	// Hash current device fingerprint
 	currentHash := pps.hashPII(current.DeviceFingerprint)
-	
+
 	if baseline.DeviceFingerprintHash == "" {
 		// First time seeing this user
 		return 20.0
 	}
-	
+
 	if currentHash != baseline.DeviceFingerprintHash {
 		// Device mismatch - high risk
 		if current.IsNewDevice {
@@ -454,13 +453,13 @@ func (pps *PrivacyPreservingScorer) analyzeDeviceFingerprint(baseline *UserBasel
 		}
 		return 90.0 // Unexpected device change is very suspicious
 	}
-	
+
 	return 0.0 // Device matches
 }
 
 func (pps *PrivacyPreservingScorer) analyzeContextualFactors(baseline *UserBaseline, current *TelemetryData) float64 {
 	score := 0.0
-	
+
 	// Time-of-day analysis
 	if len(baseline.TypicalLoginHours) > 0 {
 		isTypicalHour := false
@@ -474,12 +473,12 @@ func (pps *PrivacyPreservingScorer) analyzeContextualFactors(baseline *UserBasel
 			score += 30.0
 		}
 	}
-	
+
 	// New location check
 	if current.IsNewLocation {
 		score += 40.0
 	}
-	
+
 	return math.Min(score, 100)
 }
 
@@ -488,7 +487,7 @@ func (pps *PrivacyPreservingScorer) analyzeHistoricalPatterns(baseline *UserBase
 	if baseline.SampleCount < 10 {
 		return 30.0
 	}
-	
+
 	return 0.0 // Sufficient history
 }
 
@@ -533,13 +532,13 @@ func (pps *PrivacyPreservingScorer) hashClickPattern(clicks []ClickEvent) float6
 	if len(clicks) == 0 {
 		return 0
 	}
-	
+
 	// Aggregate click timing pattern (privacy-preserving)
 	durations := make([]float64, len(clicks))
 	for i, click := range clicks {
 		durations[i] = click.Duration
 	}
-	
+
 	return average(durations)
 }
 
@@ -560,14 +559,14 @@ func stddev(vals []float64) float64 {
 	if len(vals) < 2 {
 		return 0
 	}
-	
+
 	avg := average(vals)
 	sumSq := 0.0
 	for _, v := range vals {
 		diff := v - avg
 		sumSq += diff * diff
 	}
-	
+
 	return math.Sqrt(sumSq / float64(len(vals)-1))
 }
 
@@ -575,7 +574,7 @@ func calculateAcceleration(movements []MouseEvent) float64 {
 	if len(movements) < 2 {
 		return 0
 	}
-	
+
 	accelerations := make([]float64, 0, len(movements)-1)
 	for i := 1; i < len(movements); i++ {
 		dt := movements[i].Timestamp.Sub(movements[i-1].Timestamp).Seconds()
@@ -584,7 +583,7 @@ func calculateAcceleration(movements []MouseEvent) float64 {
 			accelerations = append(accelerations, math.Abs(accel))
 		}
 	}
-	
+
 	return average(accelerations)
 }
 
@@ -593,11 +592,11 @@ func (pps *PrivacyPreservingScorer) ExportBaseline(userID string) ([]byte, error
 	pps.mu.RLock()
 	baseline, exists := pps.baselines[userID]
 	pps.mu.RUnlock()
-	
+
 	if !exists {
 		return nil, fmt.Errorf("baseline not found for user %s", userID)
 	}
-	
+
 	return json.Marshal(baseline)
 }
 
@@ -605,18 +604,18 @@ func (pps *PrivacyPreservingScorer) ExportBaseline(userID string) ([]byte, error
 func (pps *PrivacyPreservingScorer) GetStats() map[string]interface{} {
 	pps.mu.RLock()
 	defer pps.mu.RUnlock()
-	
+
 	anomalyRate := 0.0
 	if pps.totalScored > 0 {
 		anomalyRate = float64(pps.totalAnomaly) / float64(pps.totalScored)
 	}
-	
+
 	return map[string]interface{}{
-		"total_users":       len(pps.baselines),
-		"total_scored":      pps.totalScored,
-		"total_anomalies":   pps.totalAnomaly,
-		"anomaly_rate":      anomalyRate,
-		"privacy_enabled":   true,
-		"hash_algorithm":    "HMAC-SHA256",
+		"total_users":     len(pps.baselines),
+		"total_scored":    pps.totalScored,
+		"total_anomalies": pps.totalAnomaly,
+		"anomaly_rate":    anomalyRate,
+		"privacy_enabled": true,
+		"hash_algorithm":  "HMAC-SHA256",
 	}
 }

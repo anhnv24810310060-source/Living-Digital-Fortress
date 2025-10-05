@@ -1,5 +1,4 @@
-package circuitbreakerpackage circuitbreaker
-
+package circuitbreaker
 
 import (
 	"context"
@@ -80,9 +79,9 @@ type CircuitBreaker struct {
 }
 
 type counters struct {
-	requests       uint32
-	successes      uint32
-	failures       uint32
+	requests        uint32
+	successes       uint32
+	failures        uint32
 	consecutiveFail uint32
 	consecutiveSucc uint32
 }
@@ -261,18 +260,18 @@ func (cb *CircuitBreaker) toNewGeneration(now time.Time) {
 
 // AdaptiveSettings returns settings that adapt based on error rate
 type AdaptiveSettings struct {
-	BaseSettings     Settings
-	ErrorRateWindow  time.Duration // window to calculate error rate
-	HighErrorRate    float64       // e.g., 0.5 = 50% error rate
-	AdaptiveTimeout  bool          // if true, increase timeout on repeated opens
-	MaxTimeout       time.Duration
+	BaseSettings      Settings
+	ErrorRateWindow   time.Duration // window to calculate error rate
+	HighErrorRate     float64       // e.g., 0.5 = 50% error rate
+	AdaptiveTimeout   bool          // if true, increase timeout on repeated opens
+	MaxTimeout        time.Duration
 	TimeoutMultiplier float64 // multiply timeout by this on each consecutive open
 }
 
 // AdaptiveCircuitBreaker extends CircuitBreaker with adaptive behavior
 type AdaptiveCircuitBreaker struct {
 	*CircuitBreaker
-	adaptive       AdaptiveSettings
+	adaptive        AdaptiveSettings
 	consecutiveOpen uint32
 }
 
@@ -285,7 +284,7 @@ func NewAdaptiveCircuitBreaker(name string, adaptive AdaptiveSettings) *Adaptive
 			adaptive.BaseSettings.OnStateChange(n, from, to)
 		}
 	}
-	
+
 	cb := NewCircuitBreaker(name, base)
 	return &AdaptiveCircuitBreaker{
 		CircuitBreaker: cb,

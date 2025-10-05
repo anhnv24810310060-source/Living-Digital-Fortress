@@ -16,7 +16,7 @@ import (
 )
 
 // CTLog represents a Certificate Transparency log server
-type CTLog struct {
+type LogConfig struct {
 	Name     string
 	URL      string
 	Key      []byte // Log public key for verification
@@ -24,7 +24,7 @@ type CTLog struct {
 }
 
 // WellKnownCTLogs contains trusted CT log servers
-var WellKnownCTLogs = []CTLog{
+var WellKnownCTLogs = []LogConfig{
 	{
 		Name:     "Google Argon 2024",
 		URL:      "https://ct.googleapis.com/logs/us1/argon2024/",
@@ -39,20 +39,20 @@ var WellKnownCTLogs = []CTLog{
 
 // Monitor monitors CT logs for certificate mis-issuance
 type Monitor struct {
-	logs          []CTLog
-	domains       []string // Monitored domains
-	pinned        map[string][]byte // domain -> expected cert fingerprint
-	alertChan     chan *Alert
-	
+	logs      []LogConfig
+	domains   []string          // Monitored domains
+	pinned    map[string][]byte // domain -> expected cert fingerprint
+	alertChan chan *Alert
+
 	// State
 	lastSTH       map[string]uint64 // log URL -> last seen tree head size
 	checkInterval time.Duration
-	
+
 	// Metrics
 	checks        uint64
 	alerts        uint64
 	rogueDetected uint64
-	
+
 	mu     sync.RWMutex
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -61,14 +61,14 @@ type Monitor struct {
 
 // Alert represents a certificate transparency alert
 type Alert struct {
-	Timestamp     time.Time
-	LogName       string
-	Domain        string
+	Timestamp       time.Time
+	LogName         string
+	Domain          string
 	CertFingerprint string
-	Reason        string
-	Severity      AlertSeverity
-	LeafIndex     uint64
-	STHSize       uint64
+	Reason          string
+	Severity        AlertSeverity
+	LeafIndex       uint64
+	STHSize         uint64
 }
 
 type AlertSeverity int
@@ -85,9 +85,9 @@ func NewMonitor(domains []string, checkInterval time.Duration) *Monitor {
 	if checkInterval == 0 {
 		checkInterval = 60 * time.Second // Default: check every minute
 	}
-	
+
 	ctx, cancel := context.WithCancel(context.Background())
-	
+
 	return &Monitor{
 		logs:          WellKnownCTLogs,
 		domains:       domains,
@@ -117,12 +117,12 @@ func (m *Monitor) Start() error {
 			m.mu.Unlock()
 			log.Printf("[ct-monitor] initialized %s: tree_size=%d", ctLog.Name, sth.TreeSize)
 		}
-		
+
 		// Start monitoring goroutine for each log
 		m.wg.Add(1)
 		go m.monitorLog(ctLog)
 	}
-	
+
 	return nil
 }
 
@@ -139,12 +139,12 @@ func (m *Monitor) Alerts() <-chan *Alert {
 }
 
 // monitorLog monitors a single CT log
-func (m *Monitor) monitorLog(ctLog CTLog) {
+func (m *Monitor) monitorLog(ctLog LogConfig) {
 	defer m.wg.Done()
-	
+
 	ticker := time.NewTicker(m.checkInterval)
 	defer ticker.Stop()
-	
+
 	for {
 		select {
 		case <-m.ctx.Done():
@@ -158,53 +158,53 @@ func (m *Monitor) monitorLog(ctLog CTLog) {
 }
 
 // checkLog checks for new entries in a CT log
-func (m *Monitor) checkLog(ctLog CTLog) error {
+func (m *Monitor) checkLog(ctLog LogConfig) error {
 	atomic.AddUint64(&m.checks, 1)
-	
+
 	// Fetch current STH (Signed Tree Head)
 	sth, err := m.fetchSTH(ctLog)
 	if err != nil {
 		return fmt.Errorf("fetch STH: %w", err)
 	}
-	
+
 	m.mu.RLock()
 	lastSize := m.lastSTH[ctLog.URL]
 	m.mu.RUnlock()
-	
+
 	if sth.TreeSize <= lastSize {
 		return nil // No new entries
 	}
-	
+
 	// Fetch new entries (limited to 100 per check to avoid overload)
 	start := lastSize
 	end := sth.TreeSize
 	if end-start > 100 {
 		end = start + 100
 	}
-	
+
 	entries, err := m.fetchEntries(ctLog, start, end-1)
 	if err != nil {
 		return fmt.Errorf("fetch entries: %w", err)
 	}
-	
+
 	// Check each entry for monitored domains
 	for _, entry := range entries {
 		m.checkEntry(ctLog, entry)
 	}
-	
+
 	// Update last seen size
 	m.mu.Lock()
 	m.lastSTH[ctLog.URL] = end
 	m.mu.Unlock()
-	
+
 	return nil
 }
 
 // checkEntry validates a CT log entry
-func (m *Monitor) checkEntry(ctLog CTLog, entry *CTEntry) {
+func (m *Monitor) checkEntry(ctLog LogConfig, entry *LogEntry) {
 	// Extract domain from certificate (simplified - real implementation parses X.509)
 	domain := entry.Domain
-	
+
 	// Check if domain is monitored
 	monitored := false
 	for _, d := range m.domains {
@@ -213,16 +213,16 @@ func (m *Monitor) checkEntry(ctLog CTLog, entry *CTEntry) {
 			break
 		}
 	}
-	
+
 	if !monitored {
 		return
 	}
-	
+
 	// Check certificate pinning
 	m.mu.RLock()
 	expectedFP, pinned := m.pinned[domain]
 	m.mu.RUnlock()
-	
+
 	if pinned {
 		actualFP := sha256.Sum256(entry.CertDER)
 		if hex.EncodeToString(expectedFP) != hex.EncodeToString(actualFP[:]) {
@@ -238,7 +238,7 @@ func (m *Monitor) checkEntry(ctLog CTLog, entry *CTEntry) {
 				LeafIndex:       entry.LeafIndex,
 				STHSize:         entry.STHSize,
 			}
-			
+
 			select {
 			case m.alertChan <- alert:
 				atomic.AddUint64(&m.alerts, 1)
@@ -247,13 +247,13 @@ func (m *Monitor) checkEntry(ctLog CTLog, entry *CTEntry) {
 			}
 		}
 	}
-	
+
 	// Additional checks: wildcard abuse, suspicious SAN, etc.
 	// (Simplified for PoC)
 }
 
 // STH represents a Signed Tree Head from a CT log
-type STH struct {
+type SignedTreeHead struct {
 	TreeSize          uint64 `json:"tree_size"`
 	Timestamp         uint64 `json:"timestamp"`
 	RootHash          string `json:"sha256_root_hash"`
@@ -261,7 +261,7 @@ type STH struct {
 }
 
 // CTEntry represents a certificate entry from CT log
-type CTEntry struct {
+type LogEntry struct {
 	LeafIndex uint64
 	STHSize   uint64
 	Domain    string
@@ -270,54 +270,54 @@ type CTEntry struct {
 }
 
 // fetchSTH fetches the current Signed Tree Head from a log
-func (m *Monitor) fetchSTH(log CTLog) (*STH, error) {
+func (m *Monitor) fetchSTH(log LogConfig) (*SignedTreeHead, error) {
 	ctx, cancel := context.WithTimeout(m.ctx, 10*time.Second)
 	defer cancel()
-	
+
 	req, err := http.NewRequestWithContext(ctx, "GET", log.URL+"ct/v1/get-sth", nil)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
-	
-	var sth STH
+
+	var sth SignedTreeHead
 	if err := json.NewDecoder(resp.Body).Decode(&sth); err != nil {
 		return nil, err
 	}
-	
+
 	return &sth, nil
 }
 
 // fetchEntries fetches entries from a CT log (simplified)
-func (m *Monitor) fetchEntries(log CTLog, start, end uint64) ([]*CTEntry, error) {
+func (m *Monitor) fetchEntries(log LogConfig, start, end uint64) ([]*LogEntry, error) {
 	ctx, cancel := context.WithTimeout(m.ctx, 30*time.Second)
 	defer cancel()
-	
+
 	url := fmt.Sprintf("%sct/v1/get-entries?start=%d&end=%d", log.URL, start, end)
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
-	
+
 	// Simplified: real implementation parses MerkleTreeLeaf structures
 	var result struct {
 		Entries []struct {
@@ -325,15 +325,15 @@ func (m *Monitor) fetchEntries(log CTLog, start, end uint64) ([]*CTEntry, error)
 			ExtraData string `json:"extra_data"`
 		} `json:"entries"`
 	}
-	
+
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, err
 	}
-	
-	entries := make([]*CTEntry, 0, len(result.Entries))
+
+	entries := make([]*LogEntry, 0, len(result.Entries))
 	for i, e := range result.Entries {
 		// Simplified parsing (real implementation decodes base64 and parses X.509)
-		entry := &CTEntry{
+		entry := &LogEntry{
 			LeafIndex: start + uint64(i),
 			Domain:    "example.com", // Extract from cert
 			CertDER:   []byte(e.LeafInput),
@@ -341,7 +341,7 @@ func (m *Monitor) fetchEntries(log CTLog, start, end uint64) ([]*CTEntry, error)
 		}
 		entries = append(entries, entry)
 	}
-	
+
 	return entries, nil
 }
 
@@ -350,43 +350,43 @@ func matchWildcard(pattern, domain string) bool {
 	if len(pattern) == 0 || len(domain) == 0 {
 		return false
 	}
-	
+
 	if pattern[0] == '*' {
 		suffix := pattern[1:]
 		return len(domain) >= len(suffix) && domain[len(domain)-len(suffix):] == suffix
 	}
-	
+
 	return pattern == domain
 }
 
 // Metrics returns monitoring metrics
 func (m *Monitor) Metrics() map[string]uint64 {
 	return map[string]uint64{
-		"checks_total":        atomic.LoadUint64(&m.checks),
-		"alerts_total":        atomic.LoadUint64(&m.alerts),
-		"rogue_detected":      atomic.LoadUint64(&m.rogueDetected),
+		"checks_total":   atomic.LoadUint64(&m.checks),
+		"alerts_total":   atomic.LoadUint64(&m.alerts),
+		"rogue_detected": atomic.LoadUint64(&m.rogueDetected),
 	}
 }
 
 // OCSP Stapling with Must-Staple enforcement
 type OCSPStapler struct {
-	cache    map[string]*OCSPResponse
-	cacheMu  sync.RWMutex
-	refresh  time.Duration
+	cache   map[string]*OCSPResponse
+	cacheMu sync.RWMutex
+	refresh time.Duration
 }
 
 type OCSPResponse struct {
-	Status    int
+	Status     int
 	ThisUpdate time.Time
 	NextUpdate time.Time
-	Raw       []byte
+	Raw        []byte
 }
 
 func NewOCSPStapler(refreshInterval time.Duration) *OCSPStapler {
 	if refreshInterval == 0 {
 		refreshInterval = 6 * time.Hour
 	}
-	
+
 	return &OCSPStapler{
 		cache:   make(map[string]*OCSPResponse),
 		refresh: refreshInterval,
@@ -398,16 +398,16 @@ func (o *OCSPStapler) GetStaple(certFingerprint string) ([]byte, error) {
 	o.cacheMu.RLock()
 	resp, ok := o.cache[certFingerprint]
 	o.cacheMu.RUnlock()
-	
+
 	if !ok {
 		return nil, fmt.Errorf("no OCSP response cached")
 	}
-	
+
 	// Check if expired
 	if time.Now().After(resp.NextUpdate) {
 		return nil, fmt.Errorf("OCSP response expired")
 	}
-	
+
 	return resp.Raw, nil
 }
 
@@ -415,17 +415,17 @@ func (o *OCSPStapler) GetStaple(certFingerprint string) ([]byte, error) {
 func (o *OCSPStapler) RefreshStaple(certFingerprint string, ocspURL string) error {
 	// Real implementation: send OCSP request to CA responder
 	// For now, simulate with placeholder
-	
+
 	resp := &OCSPResponse{
 		Status:     0, // Good
 		ThisUpdate: time.Now(),
 		NextUpdate: time.Now().Add(24 * time.Hour),
 		Raw:        []byte("ocsp-response-placeholder"),
 	}
-	
+
 	o.cacheMu.Lock()
 	o.cache[certFingerprint] = resp
 	o.cacheMu.Unlock()
-	
+
 	return nil
 }

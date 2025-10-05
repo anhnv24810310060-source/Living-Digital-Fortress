@@ -1,7 +1,6 @@
 package maze_engine
 
 import (
-	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -13,7 +12,7 @@ import (
 func TestCamouflageEngine_LoadTemplates(t *testing.T) {
 	// Create temporary template directory
 	tempDir := t.TempDir()
-	
+
 	// Create test template
 	testTemplate := `{
 		"name": "test_apache",
@@ -39,7 +38,7 @@ func TestCamouflageEngine_LoadTemplates(t *testing.T) {
 			}
 		}
 	}`
-	
+
 	templatePath := filepath.Join(tempDir, "test_apache.json")
 	err := os.WriteFile(templatePath, []byte(testTemplate), 0644)
 	if err != nil {
@@ -73,7 +72,7 @@ func TestCamouflageEngine_LoadTemplates(t *testing.T) {
 
 func TestCamouflageEngine_CreateSession(t *testing.T) {
 	tempDir := t.TempDir()
-	
+
 	// Create minimal template
 	testTemplate := `{
 		"name": "test_nginx",
@@ -88,7 +87,7 @@ func TestCamouflageEngine_CreateSession(t *testing.T) {
 			}
 		}
 	}`
-	
+
 	templatePath := filepath.Join(tempDir, "test_nginx.json")
 	os.WriteFile(templatePath, []byte(testTemplate), 0644)
 
@@ -128,7 +127,7 @@ func TestCamouflageEngine_CreateSession(t *testing.T) {
 
 func TestCamouflageEngine_ApplyTemplate(t *testing.T) {
 	tempDir := t.TempDir()
-	
+
 	// Create template with error pages
 	testTemplate := `{
 		"name": "test_apache",
@@ -157,7 +156,7 @@ func TestCamouflageEngine_ApplyTemplate(t *testing.T) {
 			}
 		}
 	}`
-	
+
 	templatePath := filepath.Join(tempDir, "test_apache.json")
 	os.WriteFile(templatePath, []byte(testTemplate), 0644)
 
@@ -195,9 +194,9 @@ func TestCamouflageEngine_ApplyTemplate(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			req := httptest.NewRequest("GET", "http://example.com"+test.path, nil)
 			req.Header.Set("User-Agent", "nmap scanner")
-			
+
 			w := httptest.NewRecorder()
-			
+
 			start := time.Now()
 			engine.ApplyTemplate(w, req, session)
 			duration := time.Since(start)
@@ -229,7 +228,7 @@ func TestCamouflageEngine_ApplyTemplate(t *testing.T) {
 
 func TestCamouflageEngine_VulnerabilityDetection(t *testing.T) {
 	tempDir := t.TempDir()
-	
+
 	testTemplate := `{
 		"name": "test_server",
 		"headers": {
@@ -254,7 +253,7 @@ func TestCamouflageEngine_VulnerabilityDetection(t *testing.T) {
 			}
 		}
 	}`
-	
+
 	templatePath := filepath.Join(tempDir, "test_server.json")
 	os.WriteFile(templatePath, []byte(testTemplate), 0644)
 
@@ -280,7 +279,7 @@ func TestCamouflageEngine_VulnerabilityDetection(t *testing.T) {
 		t.Run("Vulnerability path: "+path, func(t *testing.T) {
 			req := httptest.NewRequest("GET", "http://example.com"+path, nil)
 			w := httptest.NewRecorder()
-			
+
 			engine.ApplyTemplate(w, req, session)
 
 			// Should return 403 or 400 for vulnerability probes
@@ -293,7 +292,7 @@ func TestCamouflageEngine_VulnerabilityDetection(t *testing.T) {
 
 func TestCamouflageEngine_ResponseTiming(t *testing.T) {
 	tempDir := t.TempDir()
-	
+
 	testTemplate := `{
 		"name": "timing_test",
 		"headers": {
@@ -308,7 +307,7 @@ func TestCamouflageEngine_ResponseTiming(t *testing.T) {
 			}
 		}
 	}`
-	
+
 	templatePath := filepath.Join(tempDir, "timing_test.json")
 	os.WriteFile(templatePath, []byte(testTemplate), 0644)
 
@@ -318,13 +317,13 @@ func TestCamouflageEngine_ResponseTiming(t *testing.T) {
 	}
 
 	template, _ := engine.GetTemplate("timing_test")
-	
+
 	// Test multiple timing calculations
 	timings := make([]time.Duration, 10)
 	for i := 0; i < 10; i++ {
 		delay := engine.calculateResponseDelay(template.BehavioralPatterns.ResponseTiming)
 		timings[i] = delay
-		
+
 		// Should be within configured range (with some tolerance for jitter)
 		if delay < 80*time.Millisecond || delay > 250*time.Millisecond {
 			t.Errorf("Timing %v outside expected range", delay)
@@ -339,7 +338,7 @@ func TestCamouflageEngine_ResponseTiming(t *testing.T) {
 			break
 		}
 	}
-	
+
 	if allSame {
 		t.Error("All timings are identical, expected randomness")
 	}
@@ -347,7 +346,7 @@ func TestCamouflageEngine_ResponseTiming(t *testing.T) {
 
 func TestCamouflageEngine_VariableInterpolation(t *testing.T) {
 	tempDir := t.TempDir()
-	
+
 	testTemplate := `{
 		"name": "interpolation_test",
 		"headers": {
@@ -365,7 +364,7 @@ func TestCamouflageEngine_VariableInterpolation(t *testing.T) {
 			}
 		}
 	}`
-	
+
 	templatePath := filepath.Join(tempDir, "interpolation_test.json")
 	os.WriteFile(templatePath, []byte(testTemplate), 0644)
 
@@ -381,16 +380,16 @@ func TestCamouflageEngine_VariableInterpolation(t *testing.T) {
 
 	req := httptest.NewRequest("GET", "http://example.com/nonexistent/file.php", nil)
 	w := httptest.NewRecorder()
-	
+
 	engine.ApplyTemplate(w, req, session)
 
 	body := w.Body.String()
-	
+
 	// Check that variables were interpolated
 	if !strings.Contains(body, "/nonexistent/file.php") {
 		t.Error("Path variable not interpolated correctly")
 	}
-	
+
 	if !strings.Contains(body, "example.com") {
 		t.Error("Host variable not interpolated correctly")
 	}
@@ -398,7 +397,7 @@ func TestCamouflageEngine_VariableInterpolation(t *testing.T) {
 
 func BenchmarkCamouflageEngine_ApplyTemplate(b *testing.B) {
 	tempDir := b.TempDir()
-	
+
 	testTemplate := `{
 		"name": "benchmark_test",
 		"headers": {
@@ -412,7 +411,7 @@ func BenchmarkCamouflageEngine_ApplyTemplate(b *testing.B) {
 			}
 		}
 	}`
-	
+
 	templatePath := filepath.Join(tempDir, "benchmark_test.json")
 	os.WriteFile(templatePath, []byte(testTemplate), 0644)
 

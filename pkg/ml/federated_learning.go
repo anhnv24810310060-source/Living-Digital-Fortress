@@ -20,26 +20,26 @@ import (
 type FederatedLearningManager struct {
 	// Federated configuration
 	config FederatedConfig
-	
+
 	// Client tracking
-	clients      map[string]*FederatedClient
-	clientsMu    sync.RWMutex
-	
+	clients   map[string]*FLClient
+	clientsMu sync.RWMutex
+
 	// Global model state
 	globalModel  *ModelWeights
 	modelVersion int
 	modelMu      sync.RWMutex
-	
+
 	// Aggregation state
-	pendingUpdates  map[int][]*ClientUpdate // Round -> updates
-	updatesMu       sync.RWMutex
-	
+	pendingUpdates map[int][]*FLClientUpdate // Round -> updates
+	updatesMu      sync.RWMutex
+
 	// Differential privacy
 	dpNoiseMechanism *DifferentialPrivacyMechanism
-	
+
 	// Byzantine detection
 	byzantineDetector *ByzantineDetector
-	
+
 	// Metrics
 	rounds          int
 	totalClients    int
@@ -51,23 +51,23 @@ type FederatedLearningManager struct {
 // FederatedConfig defines federated learning parameters
 type FederatedConfig struct {
 	// Privacy parameters
-	Epsilon          float64 // Differential privacy budget (1.0 per Phase 2)
-	Delta            float64 // DP failure probability
-	ClipNorm         float64 // Gradient clipping for DP
-	
+	Epsilon  float64 // Differential privacy budget (1.0 per Phase 2)
+	Delta    float64 // DP failure probability
+	ClipNorm float64 // Gradient clipping for DP
+
 	// Communication parameters
-	MinClients       int     // Minimum clients per round
-	ClientFraction   float64 // Fraction of clients sampled per round
-	MaxRounds        int     // Maximum training rounds
-	
+	MinClients     int     // Minimum clients per round
+	ClientFraction float64 // Fraction of clients sampled per round
+	MaxRounds      int     // Maximum training rounds
+
 	// Aggregation parameters
-	AggregationStrategy string  // "fedavg", "fedprox", "fedadam"
+	AggregationStrategy string // "fedavg", "fedprox", "fedadam"
 	LearningRate        float64
-	
+
 	// Byzantine tolerance
 	ByzantineTolerance bool
 	MaliciousThreshold float64 // Maximum tolerated malicious clients
-	
+
 	// Compression
 	CompressionEnabled bool
 	CompressionRatio   float64 // Target compression (e.g., 0.1 = 10x)
@@ -76,34 +76,34 @@ type FederatedConfig struct {
 // DefaultFederatedConfig returns production-ready FL configuration
 func DefaultFederatedConfig() FederatedConfig {
 	return FederatedConfig{
-		Epsilon:            1.0,   // As per Phase 2 spec
-		Delta:              1e-5,
-		ClipNorm:           1.0,
-		MinClients:         10,
-		ClientFraction:     0.3,   // 30% clients per round
-		MaxRounds:          100,
+		Epsilon:             1.0, // As per Phase 2 spec
+		Delta:               1e-5,
+		ClipNorm:            1.0,
+		MinClients:          10,
+		ClientFraction:      0.3, // 30% clients per round
+		MaxRounds:           100,
 		AggregationStrategy: "fedavg",
-		LearningRate:       0.01,
-		ByzantineTolerance: true,
-		MaliciousThreshold: 0.2,   // Tolerate up to 20% malicious
-		CompressionEnabled: true,
-		CompressionRatio:   0.1,   // 10x compression
+		LearningRate:        0.01,
+		ByzantineTolerance:  true,
+		MaliciousThreshold:  0.2, // Tolerate up to 20% malicious
+		CompressionEnabled:  true,
+		CompressionRatio:    0.1, // 10x compression
 	}
 }
 
 // FederatedClient represents a participating client (customer site)
-type FederatedClient struct {
-	ID           string
-	PublicKey    []byte // For secure aggregation
-	DatasetSize  int    // Local dataset size (for weighted aggregation)
-	LastSeen     time.Time
-	Reputation   float64 // Byzantine detection score
-	UpdateCount  int
-	IsActive     bool
+type FLClient struct {
+	ID          string
+	PublicKey   []byte // For secure aggregation
+	DatasetSize int    // Local dataset size (for weighted aggregation)
+	LastSeen    time.Time
+	Reputation  float64 // Byzantine detection score
+	UpdateCount int
+	IsActive    bool
 }
 
 // ClientUpdate contains encrypted model update from client
-type ClientUpdate struct {
+type FLClientUpdate struct {
 	ClientID     string
 	Round        int
 	Weights      *ModelWeights
@@ -122,21 +122,21 @@ type ModelWeights struct {
 
 // DifferentialPrivacyMechanism adds calibrated noise for privacy
 type DifferentialPrivacyMechanism struct {
-	epsilon      float64
-	delta        float64
+	epsilon       float64
+	delta         float64
 	sensitivityL2 float64
-	noiseScale   float64
+	noiseScale    float64
 }
 
 // ByzantineDetector identifies and filters malicious updates
 type ByzantineDetector struct {
 	// Statistical outlier detection
 	medianComputer *KraskovMedian
-	
+
 	// Historical behavior analysis
 	clientHistory map[string][]float64 // ClientID -> update norms
 	historyMu     sync.RWMutex
-	
+
 	// Anomaly threshold
 	threshold float64
 }
@@ -151,8 +151,8 @@ type KraskovMedian struct {
 func NewFederatedLearningManager(config FederatedConfig) (*FederatedLearningManager, error) {
 	flm := &FederatedLearningManager{
 		config:         config,
-		clients:        make(map[string]*FederatedClient),
-		pendingUpdates: make(map[int][]*ClientUpdate),
+		clients:        make(map[string]*FLClient),
+		pendingUpdates: make(map[int][]*FLClientUpdate),
 		globalModel: &ModelWeights{
 			Layers: make(map[string][]float64),
 		},
@@ -169,7 +169,7 @@ func NewFederatedLearningManager(config FederatedConfig) (*FederatedLearningMana
 			threshold:      3.0, // 3-sigma rule
 		},
 	}
-	
+
 	return flm, nil
 }
 
@@ -177,12 +177,12 @@ func NewFederatedLearningManager(config FederatedConfig) (*FederatedLearningMana
 func (flm *FederatedLearningManager) RegisterClient(clientID string, publicKey []byte, datasetSize int) error {
 	flm.clientsMu.Lock()
 	defer flm.clientsMu.Unlock()
-	
+
 	if _, exists := flm.clients[clientID]; exists {
 		return fmt.Errorf("client already registered: %s", clientID)
 	}
-	
-	flm.clients[clientID] = &FederatedClient{
+
+	flm.clients[clientID] = &FLClient{
 		ID:          clientID,
 		PublicKey:   publicKey,
 		DatasetSize: datasetSize,
@@ -190,30 +190,30 @@ func (flm *FederatedLearningManager) RegisterClient(clientID string, publicKey [
 		Reputation:  1.0,
 		IsActive:    true,
 	}
-	
+
 	flm.metricsMu.Lock()
 	flm.totalClients++
 	flm.metricsMu.Unlock()
-	
+
 	return nil
 }
 
 // SubmitUpdate receives encrypted model update from client
-func (flm *FederatedLearningManager) SubmitUpdate(ctx context.Context, update *ClientUpdate) error {
+func (flm *FederatedLearningManager) SubmitUpdate(ctx context.Context, update *FLClientUpdate) error {
 	// Validate client
 	flm.clientsMu.RLock()
 	client, exists := flm.clients[update.ClientID]
 	flm.clientsMu.RUnlock()
-	
+
 	if !exists {
 		return fmt.Errorf("unknown client: %s", update.ClientID)
 	}
-	
+
 	// Verify signature (placeholder - use real crypto in production)
 	if !flm.verifyUpdateSignature(update, client.PublicKey) {
 		return fmt.Errorf("invalid signature from client: %s", update.ClientID)
 	}
-	
+
 	// Byzantine detection: check if update is anomalous
 	if flm.config.ByzantineTolerance {
 		if flm.byzantineDetector.isAnomalous(update, client) {
@@ -221,27 +221,27 @@ func (flm *FederatedLearningManager) SubmitUpdate(ctx context.Context, update *C
 			flm.clientsMu.Lock()
 			client.Reputation *= 0.8
 			flm.clientsMu.Unlock()
-			
+
 			return fmt.Errorf("byzantine update detected from client: %s", update.ClientID)
 		}
 	}
-	
+
 	// Decompress if needed
 	if update.Compressed {
 		flm.decompressUpdate(update)
 	}
-	
+
 	// Store update for aggregation
 	flm.updatesMu.Lock()
 	flm.pendingUpdates[update.Round] = append(flm.pendingUpdates[update.Round], update)
 	flm.updatesMu.Unlock()
-	
+
 	// Update client metadata
 	flm.clientsMu.Lock()
 	client.LastSeen = time.Now()
 	client.UpdateCount++
 	flm.clientsMu.Unlock()
-	
+
 	return nil
 }
 
@@ -251,67 +251,67 @@ func (flm *FederatedLearningManager) AggregateRound(ctx context.Context, round i
 	updates := flm.pendingUpdates[round]
 	delete(flm.pendingUpdates, round) // Clear processed updates
 	flm.updatesMu.Unlock()
-	
+
 	if len(updates) < flm.config.MinClients {
-		return nil, fmt.Errorf("insufficient clients for round %d: got %d, need %d", 
+		return nil, fmt.Errorf("insufficient clients for round %d: got %d, need %d",
 			round, len(updates), flm.config.MinClients)
 	}
-	
+
 	// Byzantine-robust aggregation if enabled
 	if flm.config.ByzantineTolerance {
 		updates = flm.byzantineDetector.filterUpdates(updates)
 	}
-	
+
 	// Perform weighted aggregation (FedAvg)
 	aggregated := flm.aggregateWeights(updates)
-	
+
 	// Apply differential privacy noise
 	if flm.config.Epsilon > 0 {
 		flm.dpNoiseMechanism.addNoise(aggregated)
 	}
-	
+
 	// Update global model
 	flm.modelMu.Lock()
 	flm.globalModel = aggregated
 	flm.modelVersion++
 	flm.modelMu.Unlock()
-	
+
 	// Update metrics
 	flm.metricsMu.Lock()
 	flm.rounds++
 	flm.activeClients = len(updates)
 	flm.metricsMu.Unlock()
-	
+
 	return aggregated, nil
 }
 
 // aggregateWeights performs weighted federated averaging
-func (flm *FederatedLearningManager) aggregateWeights(updates []*ClientUpdate) *ModelWeights {
+func (flm *FederatedLearningManager) aggregateWeights(updates []*FLClientUpdate) *ModelWeights {
 	aggregated := &ModelWeights{
 		Layers: make(map[string][]float64),
 	}
-	
+
 	// Compute total dataset size for weighting
 	totalData := 0
 	for _, update := range updates {
 		totalData += update.DatasetSize
 	}
-	
+
 	// Weighted average
 	for _, update := range updates {
 		weight := float64(update.DatasetSize) / float64(totalData)
-		
+
 		for layerName, layerWeights := range update.Weights.Layers {
 			if _, exists := aggregated.Layers[layerName]; !exists {
 				aggregated.Layers[layerName] = make([]float64, len(layerWeights))
 			}
-			
+
 			for i, w := range layerWeights {
 				aggregated.Layers[layerName][i] += w * weight
 			}
 		}
 	}
-	
+
 	return aggregated
 }
 
@@ -319,7 +319,7 @@ func (flm *FederatedLearningManager) aggregateWeights(updates []*ClientUpdate) *
 func (flm *FederatedLearningManager) GetGlobalModel() (*ModelWeights, int) {
 	flm.modelMu.RLock()
 	defer flm.modelMu.RUnlock()
-	
+
 	return flm.globalModel, flm.modelVersion
 }
 
@@ -327,27 +327,27 @@ func (flm *FederatedLearningManager) GetGlobalModel() (*ModelWeights, int) {
 func (flm *FederatedLearningManager) SelectClientsForRound() []string {
 	flm.clientsMu.RLock()
 	defer flm.clientsMu.RUnlock()
-	
+
 	activeClients := []string{}
 	for id, client := range flm.clients {
 		if client.IsActive && time.Since(client.LastSeen) < 1*time.Hour {
 			activeClients = append(activeClients, id)
 		}
 	}
-	
+
 	// Sample fraction of clients
 	numSelect := int(float64(len(activeClients)) * flm.config.ClientFraction)
 	if numSelect < flm.config.MinClients {
 		numSelect = minInt(flm.config.MinClients, len(activeClients))
 	}
-	
+
 	// Random sampling
 	selected := make([]string, 0, numSelect)
 	perm := randomPermutation(len(activeClients))
 	for i := 0; i < numSelect && i < len(perm); i++ {
 		selected = append(selected, activeClients[perm[i]])
 	}
-	
+
 	return selected
 }
 
@@ -370,10 +370,10 @@ func (dp *DifferentialPrivacyMechanism) addNoise(weights *ModelWeights) {
 
 // ByzantineDetector methods
 
-func (bd *ByzantineDetector) isAnomalous(update *ClientUpdate, client *FederatedClient) bool {
+func (bd *ByzantineDetector) isAnomalous(update *FLClientUpdate, client *FLClient) bool {
 	// Compute L2 norm of update
 	norm := computeL2Norm(update.Weights)
-	
+
 	// Store in history
 	bd.historyMu.Lock()
 	bd.clientHistory[client.ID] = append(bd.clientHistory[client.ID], norm)
@@ -382,60 +382,60 @@ func (bd *ByzantineDetector) isAnomalous(update *ClientUpdate, client *Federated
 	}
 	history := bd.clientHistory[client.ID]
 	bd.historyMu.Unlock()
-	
+
 	if len(history) < 3 {
 		return false // Not enough history
 	}
-	
+
 	// Z-score anomaly detection
 	mean, stddev := computeMeanStdDev(history)
 	zScore := math.Abs((norm - mean) / stddev)
-	
+
 	return zScore > bd.threshold
 }
 
-func (bd *ByzantineDetector) filterUpdates(updates []*ClientUpdate) []*ClientUpdate {
+func (bd *ByzantineDetector) filterUpdates(updates []*FLClientUpdate) []*FLClientUpdate {
 	// Compute geometric median of updates for robustness
 	median := bd.medianComputer.computeGeometricMedian(updates)
-	
+
 	// Filter updates too far from median
-	filtered := []*ClientUpdate{}
+	filtered := make([]*FLClientUpdate, 0, len(updates))
 	for _, update := range updates {
 		distance := computeDistance(update.Weights, median)
 		if distance < 10.0 { // Threshold
 			filtered = append(filtered, update)
 		}
 	}
-	
+
 	return filtered
 }
 
-func (km *KraskovMedian) computeGeometricMedian(updates []*ClientUpdate) *ModelWeights {
+func (km *KraskovMedian) computeGeometricMedian(updates []*FLClientUpdate) *ModelWeights {
 	if len(updates) == 0 {
 		return &ModelWeights{Layers: make(map[string][]float64)}
 	}
-	
+
 	// Initialize with mean
 	median := &ModelWeights{Layers: make(map[string][]float64)}
-	
+
 	// Simple approximation: return first update (full implementation would use Weiszfeld's algorithm)
 	for layerName, layerWeights := range updates[0].Weights.Layers {
 		median.Layers[layerName] = make([]float64, len(layerWeights))
 		copy(median.Layers[layerName], layerWeights)
 	}
-	
+
 	return median
 }
 
 // Utility functions
 
-func (flm *FederatedLearningManager) verifyUpdateSignature(update *ClientUpdate, publicKey []byte) bool {
+func (flm *FederatedLearningManager) verifyUpdateSignature(update *FLClientUpdate, publicKey []byte) bool {
 	// Placeholder: implement real signature verification with Ed25519 or ECDSA
 	hash := sha256.Sum256([]byte(update.ClientID + string(update.Signature)))
 	return len(hash) > 0 // Always pass for now
 }
 
-func (flm *FederatedLearningManager) decompressUpdate(update *ClientUpdate) {
+func (flm *FederatedLearningManager) decompressUpdate(update *FLClientUpdate) {
 	// Placeholder: implement real decompression (e.g., quantization, sparsification)
 	update.Compressed = false
 }
@@ -471,14 +471,14 @@ func computeMeanStdDev(values []float64) (float64, float64) {
 		sum += v
 	}
 	mean := sum / float64(len(values))
-	
+
 	sumSquares := 0.0
 	for _, v := range values {
 		diff := v - mean
 		sumSquares += diff * diff
 	}
 	stddev := math.Sqrt(sumSquares / float64(len(values)))
-	
+
 	return mean, stddev
 }
 
@@ -493,11 +493,11 @@ func sampleGaussian(mean, stddev float64) float64 {
 			break
 		}
 	}
-	
+
 	b2 := make([]byte, 8)
 	crand.Read(b2)
 	u2 = float64(binary.BigEndian.Uint64(b2)) / float64(1<<64)
-	
+
 	z := math.Sqrt(-2*math.Log(u1)) * math.Cos(2*math.Pi*u2)
 	return mean + z*stddev
 }
@@ -507,7 +507,7 @@ func randomPermutation(n int) []int {
 	for i := range perm {
 		perm[i] = i
 	}
-	
+
 	// Fisher-Yates shuffle
 	b := make([]byte, 4)
 	for i := n - 1; i > 0; i-- {
@@ -515,7 +515,7 @@ func randomPermutation(n int) []int {
 		j := int(binary.BigEndian.Uint32(b)) % (i + 1)
 		perm[i], perm[j] = perm[j], perm[i]
 	}
-	
+
 	return perm
 }
 
@@ -531,27 +531,27 @@ func CompressUpdate(weights *ModelWeights, ratio float64) *ModelWeights {
 	compressed := &ModelWeights{
 		Layers: make(map[string][]float64),
 	}
-	
+
 	// Top-K sparsification: keep only top K% gradients by magnitude
 	for layerName, layerWeights := range weights.Layers {
 		k := int(float64(len(layerWeights)) * ratio)
 		if k < 1 {
 			k = 1
 		}
-		
+
 		// Simple threshold-based sparsification
 		threshold := computeThreshold(layerWeights, k)
-		
+
 		sparse := make([]float64, len(layerWeights))
 		for i, w := range layerWeights {
 			if math.Abs(w) >= threshold {
 				sparse[i] = w
 			}
 		}
-		
+
 		compressed.Layers[layerName] = sparse
 	}
-	
+
 	return compressed
 }
 
@@ -561,11 +561,11 @@ func computeThreshold(weights []float64, k int) float64 {
 	for i, w := range weights {
 		absWeights[i] = math.Abs(w)
 	}
-	
+
 	// Simple selection (O(n log n) - could optimize with quickselect)
 	sortedAbs := make([]float64, len(absWeights))
 	copy(sortedAbs, absWeights)
-	
+
 	// Bubble sort for simplicity (use quicksort in production)
 	for i := 0; i < len(sortedAbs); i++ {
 		for j := i + 1; j < len(sortedAbs); j++ {
@@ -574,7 +574,7 @@ func computeThreshold(weights []float64, k int) float64 {
 			}
 		}
 	}
-	
+
 	if k >= len(sortedAbs) {
 		return 0
 	}
@@ -585,12 +585,12 @@ func computeThreshold(weights []float64, k int) float64 {
 func (flm *FederatedLearningManager) GetMetrics() map[string]interface{} {
 	flm.metricsMu.RLock()
 	defer flm.metricsMu.RUnlock()
-	
+
 	return map[string]interface{}{
-		"total_rounds":    flm.rounds,
-		"total_clients":   flm.totalClients,
-		"active_clients":  flm.activeClients,
-		"model_version":   flm.modelVersion,
+		"total_rounds":     flm.rounds,
+		"total_clients":    flm.totalClients,
+		"active_clients":   flm.activeClients,
+		"model_version":    flm.modelVersion,
 		"convergence_rate": flm.convergenceRate,
 	}
 }

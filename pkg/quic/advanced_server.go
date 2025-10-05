@@ -1,7 +1,7 @@
 package quic
+
 // Package quic implements advanced QUIC protocol features
 // Features: 0-RTT, connection migration, multipath, custom congestion control
-package quic
 
 import (
 	"context"
@@ -19,26 +19,26 @@ import (
 
 // Advanced QUIC server with 0-RTT, connection migration, and multipath support
 type AdvancedQUICServer struct {
-	listener      quic.EarlyListener
-	config        *Config
-	sessions      sync.Map // connection ID -> *Session
-	sessionCount  atomic.Int64
-	bytesRx       atomic.Uint64
-	bytesTx       atomic.Uint64
-	zeroRTTCount  atomic.Uint64
+	listener       *quic.EarlyListener
+	config         *Config
+	sessions       sync.Map // connection ID -> *Session
+	sessionCount   atomic.Int64
+	bytesRx        atomic.Uint64
+	bytesTx        atomic.Uint64
+	zeroRTTCount   atomic.Uint64
 	migrationCount atomic.Uint64
-	mu            sync.RWMutex
+	mu             sync.RWMutex
 }
 
 // Config holds QUIC server configuration
 type Config struct {
-	Addr              string
-	TLSConfig         *tls.Config
-	MaxIdleTimeout    time.Duration
+	Addr               string
+	TLSConfig          *tls.Config
+	MaxIdleTimeout     time.Duration
 	MaxIncomingStreams int64
-	EnableDatagrams   bool
-	Enable0RTT        bool
-	EnableMigration   bool
+	EnableDatagrams    bool
+	Enable0RTT         bool
+	EnableMigration    bool
 	// Custom congestion control algorithm
 	CongestionControl string // "cubic", "bbr", "reno"
 	// Max receive buffer per connection (bytes)
@@ -50,11 +50,11 @@ type Config struct {
 
 // Session represents an active QUIC connection
 type Session struct {
-	conn      quic.Connection
-	startTime time.Time
-	isZeroRTT bool
-	bytesRx   atomic.Uint64
-	bytesTx   atomic.Uint64
+	conn        quic.Connection
+	startTime   time.Time
+	isZeroRTT   bool
+	bytesRx     atomic.Uint64
+	bytesTx     atomic.Uint64
 	streamCount atomic.Int64
 }
 
@@ -86,7 +86,7 @@ func NewAdvancedQUICServer(cfg *Config) (*AdvancedQUICServer, error) {
 	// Enforce TLS 1.3 for QUIC (required)
 	cfg.TLSConfig.MinVersion = tls.VersionTLS13
 	cfg.TLSConfig.MaxVersion = tls.VersionTLS13
-	
+
 	// Enable 0-RTT in TLS config if requested
 	if cfg.Enable0RTT {
 		// Generate session ticket key for 0-RTT resumption
@@ -127,12 +127,12 @@ func (s *AdvancedQUICServer) Listen() error {
 		log.Printf("[quic] socket options warning: %v", err)
 	}
 
-	listener, err := quic.ListenEarly(udpConn, s.config.TLSConfig, quicCfg)
+	ln, err := quic.ListenEarly(udpConn, s.config.TLSConfig, quicCfg)
 	if err != nil {
 		return fmt.Errorf("quic listen: %w", err)
 	}
-	s.listener = listener
-	log.Printf("[quic] listening on %s (0-RTT=%v, migration=%v, CC=%s)", 
+	s.listener = ln
+	log.Printf("[quic] listening on %s (0-RTT=%v, migration=%v, CC=%s)",
 		s.config.Addr, s.config.Enable0RTT, s.config.EnableMigration, s.config.CongestionControl)
 	return nil
 }
@@ -144,21 +144,21 @@ func (s *AdvancedQUICServer) Accept(ctx context.Context, handler func(context.Co
 		if err != nil {
 			return fmt.Errorf("accept: %w", err)
 		}
-		
+
 		sess := &Session{
 			conn:      conn,
 			startTime: time.Now(),
 			isZeroRTT: conn.ConnectionState().Used0RTT,
 		}
-		
+
 		if sess.isZeroRTT {
 			s.zeroRTTCount.Add(1)
 		}
-		
+
 		connID := conn.Context().Value(quic.ConnectionTracingKey)
 		s.sessions.Store(connID, sess)
 		s.sessionCount.Add(1)
-		
+
 		// Handle connection in goroutine
 		go func() {
 			defer func() {
@@ -199,11 +199,11 @@ func (s *AdvancedQUICServer) ReceiveDatagram(ctx context.Context, conn quic.Conn
 // Stats returns server statistics
 func (s *AdvancedQUICServer) Stats() map[string]interface{} {
 	return map[string]interface{}{
-		"sessions":     s.sessionCount.Load(),
-		"bytesRx":      s.bytesRx.Load(),
-		"bytesTx":      s.bytesTx.Load(),
-		"zeroRTT":      s.zeroRTTCount.Load(),
-		"migrations":   s.migrationCount.Load(),
+		"sessions":   s.sessionCount.Load(),
+		"bytesRx":    s.bytesRx.Load(),
+		"bytesTx":    s.bytesTx.Load(),
+		"zeroRTT":    s.zeroRTTCount.Load(),
+		"migrations": s.migrationCount.Load(),
 	}
 }
 
@@ -287,21 +287,21 @@ func NewReplayProtection(window time.Duration, maxSize int) *ReplayProtection {
 func (rp *ReplayProtection) Check(connID string) bool {
 	rp.mu.Lock()
 	defer rp.mu.Unlock()
-	
+
 	now := time.Now().Unix()
 	if exp, exists := rp.seen[connID]; exists && exp > now {
 		// Replay detected
 		return false
 	}
-	
+
 	// Record this connection ID with expiry
 	rp.seen[connID] = now + int64(rp.window.Seconds())
-	
+
 	// Prevent unbounded growth
 	if len(rp.seen) > rp.maxSize {
 		rp.evictOldest()
 	}
-	
+
 	return true
 }
 

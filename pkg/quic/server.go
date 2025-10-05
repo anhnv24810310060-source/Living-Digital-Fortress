@@ -3,7 +3,6 @@
 package quic
 
 import (
-	"context"
 	"crypto/rand"
 	"crypto/tls"
 	"encoding/base64"
@@ -19,17 +18,17 @@ const (
 	// Protocol version
 	QUICVersionDraft29 = uint32(0xff00001d)
 	QUICVersion1       = uint32(0x00000001)
-	
+
 	// Packet types
 	PacketTypeInitial   = 0x00
 	PacketType0RTT      = 0x01
 	PacketTypeHandshake = 0x02
 	PacketTypeRetry     = 0x03
-	
+
 	// Connection IDs
 	MaxConnectionIDLength = 20
 	MinConnectionIDLength = 4
-	
+
 	// 0-RTT replay window
 	ReplayWindowSize = 100000
 	ReplayWindowSec  = 300 // 5 minutes
@@ -39,20 +38,20 @@ const (
 type ServerConfig struct {
 	Addr              string
 	TLSConfig         *tls.Config
-	Enable0RTT        bool          // Enable 0-RTT connection establishment
-	EnableMigration   bool          // Enable connection migration
-	EnableMultipath   bool          // Enable multipath QUIC (experimental)
+	Enable0RTT        bool // Enable 0-RTT connection establishment
+	EnableMigration   bool // Enable connection migration
+	EnableMultipath   bool // Enable multipath QUIC (experimental)
 	MaxIdleTimeout    time.Duration
 	MaxStreamData     uint64
 	CongestionControl string // "cubic", "bbr", "reno"
-	
+
 	// 0-RTT replay protection
 	ReplayCache ReplayCache
 }
 
 // ReplayCache provides anti-replay protection for 0-RTT
 type ReplayCache interface {
-	Check(token []byte) bool      // Returns true if token is replay
+	Check(token []byte) bool // Returns true if token is replay
 	Record(token []byte, exp time.Time)
 	Cleanup()
 }
@@ -63,20 +62,20 @@ type Server struct {
 	listener    net.PacketConn
 	conns       sync.Map // connectionID -> *Connection
 	acceptQueue chan *Connection
-	
+
 	// 0-RTT state
 	sessionTicketKey [32]byte
 	replayCache      ReplayCache
-	
+
 	// Metrics
 	accepts         uint64
 	zeroRTTAccepts  uint64
 	zeroRTTRejects  uint64
 	migrationEvents uint64
 	activeConns     int64
-	
-	mu      sync.RWMutex
-	closed  bool
+
+	mu     sync.RWMutex
+	closed bool
 }
 
 // Connection represents a QUIC connection with migration support
@@ -86,26 +85,26 @@ type Connection struct {
 	localAddr      net.Addr
 	remoteAddr     net.Addr
 	alternateAddrs []net.Addr // For multipath
-	
+
 	// 0-RTT state
-	zeroRTT        bool
-	earlyData      []byte
-	
+	zeroRTT   bool
+	earlyData []byte
+
 	// Migration
 	migrationCount uint32
 	lastMigration  time.Time
-	
+
 	// Congestion control
-	congestion     CongestionController
-	
+	congestion CongestionController
+
 	// Streams
-	streams        sync.Map
-	nextStreamID   uint64
-	
+	streams      sync.Map
+	nextStreamID uint64
+
 	// Lifecycle
-	created        time.Time
-	lastActivity   time.Time
-	closed         atomic.Bool
+	created      time.Time
+	lastActivity time.Time
+	closed       atomic.Bool
 }
 
 // CongestionController defines the interface for congestion control algorithms
@@ -136,13 +135,13 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 	if cfg.CongestionControl == "" {
 		cfg.CongestionControl = "cubic" // Default to CUBIC
 	}
-	
+
 	// Generate session ticket key for 0-RTT
 	var ticketKey [32]byte
 	if _, err := rand.Read(ticketKey[:]); err != nil {
 		return nil, fmt.Errorf("generate ticket key: %w", err)
 	}
-	
+
 	// Setup replay cache if 0-RTT enabled
 	var replayCache ReplayCache
 	if cfg.Enable0RTT {
@@ -152,14 +151,14 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 			replayCache = cfg.ReplayCache
 		}
 	}
-	
+
 	srv := &Server{
 		cfg:              cfg,
 		acceptQueue:      make(chan *Connection, 100),
 		sessionTicketKey: ticketKey,
 		replayCache:      replayCache,
 	}
-	
+
 	return srv, nil
 }
 
@@ -170,18 +169,18 @@ func (s *Server) Listen() error {
 		return fmt.Errorf("listen: %w", err)
 	}
 	s.listener = conn
-	
+
 	// Start packet receiver
 	go s.receivePackets()
-	
+
 	// Start connection reaper (idle timeout)
 	go s.reapIdleConnections()
-	
+
 	// Start replay cache cleanup if enabled
 	if s.cfg.Enable0RTT && s.replayCache != nil {
 		go s.cleanupReplayCache()
 	}
-	
+
 	return nil
 }
 
@@ -215,30 +214,30 @@ func (s *Server) receivePackets() {
 			}
 			continue
 		}
-		
+
 		// Parse packet header
 		pkt := buf[:n]
 		if len(pkt) < 16 {
 			continue // Too short
 		}
-		
+
 		// Extract connection ID (simplified)
 		connID := pkt[1:9]
-		
+
 		// Check if existing connection
 		if val, ok := s.conns.Load(string(connID)); ok {
 			conn := val.(*Connection)
-			
+
 			// Connection migration detection
 			if s.cfg.EnableMigration && !addrEqual(conn.remoteAddr, addr) {
 				s.handleMigration(conn, addr)
 			}
-			
+
 			// Handle packet for existing connection
 			s.handleConnectionPacket(conn, pkt, addr)
 			continue
 		}
-		
+
 		// New connection
 		if err := s.handleNewConnection(pkt, addr, connID); err != nil {
 			// Log error in production
@@ -250,12 +249,12 @@ func (s *Server) receivePackets() {
 // handleNewConnection processes initial packets
 func (s *Server) handleNewConnection(pkt []byte, addr net.Addr, connID []byte) error {
 	packetType := (pkt[0] >> 4) & 0x03
-	
+
 	// Check for 0-RTT
 	if packetType == PacketType0RTT && s.cfg.Enable0RTT {
 		return s.handle0RTTConnection(pkt, addr, connID)
 	}
-	
+
 	// Regular handshake
 	conn := &Connection{
 		id:           connID,
@@ -265,18 +264,18 @@ func (s *Server) handleNewConnection(pkt []byte, addr net.Addr, connID []byte) e
 		lastActivity: time.Now(),
 		congestion:   s.newCongestionController(),
 	}
-	
+
 	s.conns.Store(string(connID), conn)
 	atomic.AddInt64(&s.activeConns, 1)
 	atomic.AddUint64(&s.accepts, 1)
-	
+
 	// Queue for accept
 	select {
 	case s.acceptQueue <- conn:
 	default:
 		// Queue full, drop
 	}
-	
+
 	return nil
 }
 
@@ -287,18 +286,18 @@ func (s *Server) handle0RTTConnection(pkt []byte, addr net.Addr, connID []byte) 
 		return errors.New("packet too short for 0-RTT")
 	}
 	token := pkt[16:32]
-	
+
 	// Anti-replay check
 	if s.replayCache != nil && s.replayCache.Check(token) {
 		atomic.AddUint64(&s.zeroRTTRejects, 1)
 		return errors.New("0-RTT replay detected")
 	}
-	
+
 	// Record token to prevent replay
 	if s.replayCache != nil {
 		s.replayCache.Record(token, time.Now().Add(ReplayWindowSec*time.Second))
 	}
-	
+
 	// Accept 0-RTT connection
 	conn := &Connection{
 		id:           connID,
@@ -310,16 +309,16 @@ func (s *Server) handle0RTTConnection(pkt []byte, addr net.Addr, connID []byte) 
 		lastActivity: time.Now(),
 		congestion:   s.newCongestionController(),
 	}
-	
+
 	s.conns.Store(string(connID), conn)
 	atomic.AddInt64(&s.activeConns, 1)
 	atomic.AddUint64(&s.zeroRTTAccepts, 1)
-	
+
 	select {
 	case s.acceptQueue <- conn:
 	default:
 	}
-	
+
 	return nil
 }
 
@@ -329,7 +328,7 @@ func (s *Server) handleMigration(conn *Connection, newAddr net.Addr) {
 	if time.Since(conn.lastMigration) < 12*time.Second {
 		return // Too frequent
 	}
-	
+
 	// Validate migration (simplified - real implementation requires path validation)
 	conn.remoteAddr = newAddr
 	conn.lastMigration = time.Now()
@@ -340,12 +339,12 @@ func (s *Server) handleMigration(conn *Connection, newAddr net.Addr) {
 // handleConnectionPacket processes packets for an existing connection
 func (s *Server) handleConnectionPacket(conn *Connection, pkt []byte, addr net.Addr) {
 	conn.lastActivity = time.Now()
-	
+
 	// Update congestion controller
 	if conn.congestion != nil {
 		conn.congestion.OnPacketSent(len(pkt), time.Now())
 	}
-	
+
 	// Process frames (simplified)
 	// In real implementation, parse STREAM, ACK, CRYPTO frames
 }
@@ -354,11 +353,11 @@ func (s *Server) handleConnectionPacket(conn *Connection, pkt []byte, addr net.A
 func (s *Server) reapIdleConnections() {
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
-	
+
 	for range ticker.C {
 		now := time.Now()
 		var toRemove []string
-		
+
 		s.conns.Range(func(key, value interface{}) bool {
 			conn := value.(*Connection)
 			if now.Sub(conn.lastActivity) > s.cfg.MaxIdleTimeout {
@@ -366,7 +365,7 @@ func (s *Server) reapIdleConnections() {
 			}
 			return true
 		})
-		
+
 		for _, key := range toRemove {
 			if val, ok := s.conns.LoadAndDelete(key); ok {
 				conn := val.(*Connection)
@@ -381,7 +380,7 @@ func (s *Server) reapIdleConnections() {
 func (s *Server) cleanupReplayCache() {
 	ticker := time.NewTicker(60 * time.Second)
 	defer ticker.Stop()
-	
+
 	for range ticker.C {
 		if s.replayCache != nil {
 			s.replayCache.Cleanup()
@@ -406,7 +405,7 @@ func (s *Server) Close() error {
 	s.mu.Lock()
 	s.closed = true
 	s.mu.Unlock()
-	
+
 	if s.listener != nil {
 		return s.listener.Close()
 	}
@@ -416,11 +415,11 @@ func (s *Server) Close() error {
 // Metrics returns server metrics
 func (s *Server) Metrics() map[string]interface{} {
 	return map[string]interface{}{
-		"accepts":           atomic.LoadUint64(&s.accepts),
-		"0rtt_accepts":      atomic.LoadUint64(&s.zeroRTTAccepts),
-		"0rtt_rejects":      atomic.LoadUint64(&s.zeroRTTRejects),
-		"migration_events":  atomic.LoadUint64(&s.migrationEvents),
-		"active_conns":      atomic.LoadInt64(&s.activeConns),
+		"accepts":          atomic.LoadUint64(&s.accepts),
+		"0rtt_accepts":     atomic.LoadUint64(&s.zeroRTTAccepts),
+		"0rtt_rejects":     atomic.LoadUint64(&s.zeroRTTRejects),
+		"migration_events": atomic.LoadUint64(&s.migrationEvents),
+		"active_conns":     atomic.LoadInt64(&s.activeConns),
 	}
 }
 
@@ -451,7 +450,7 @@ func NewMemoryReplayCache() ReplayCache {
 func (m *memoryReplayCache) Check(token []byte) bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	
+
 	key := string(token)
 	exp, ok := m.store[key]
 	if !ok {
@@ -463,14 +462,14 @@ func (m *memoryReplayCache) Check(token []byte) bool {
 func (m *memoryReplayCache) Record(token []byte, exp time.Time) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	m.store[string(token)] = exp
 }
 
 func (m *memoryReplayCache) Cleanup() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	now := time.Now()
 	for key, exp := range m.store {
 		if now.After(exp) {

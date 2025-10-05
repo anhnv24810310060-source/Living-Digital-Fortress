@@ -27,7 +27,7 @@ func TestHybridKEX_GenerateKeyPair(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			kex := NewHybridKEX(tt.kyberEnabled)
-			
+
 			session, err := kex.GenerateKeyPair()
 			if err != nil {
 				t.Fatalf("GenerateKeyPair failed: %v", err)
@@ -58,12 +58,12 @@ func TestHybridKEX_GenerateKeyPair(t *testing.T) {
 			// Check Kyber keys for hybrid mode
 			if tt.kyberEnabled {
 				if len(session.KyberPrivate) != KyberPrivateKeySize {
-					t.Errorf("Expected Kyber private key size %d, got %d", 
+					t.Errorf("Expected Kyber private key size %d, got %d",
 						KyberPrivateKeySize, len(session.KyberPrivate))
 				}
 
 				if len(session.KyberPublic) != KyberPublicKeySize {
-					t.Errorf("Expected Kyber public key size %d, got %d", 
+					t.Errorf("Expected Kyber public key size %d, got %d",
 						KyberPublicKeySize, len(session.KyberPublic))
 				}
 			}
@@ -150,7 +150,7 @@ func TestHybridKEX_HandshakeFlow(t *testing.T) {
 			}
 
 			if len(aliceSecret) != SharedSecretSize {
-				t.Errorf("Expected shared secret size %d, got %d", 
+				t.Errorf("Expected shared secret size %d, got %d",
 					SharedSecretSize, len(aliceSecret))
 			}
 
@@ -276,12 +276,20 @@ func TestHybridKEX_Metrics(t *testing.T) {
 	alice := NewHybridKEX(true)
 	bob := NewHybridKEX(true)
 
-	aliceSession, _ := alice.GenerateKeyPair()
-	bobSession, _ := bob.GenerateKeyPair()
+	bobSession, err := bob.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("GenerateKeyPair (bob) failed: %v", err)
+	}
 
 	bobPublicKey := createPublicKeyMessage(bobSession)
-	_, aliceMessage, _ := alice.InitiateHandshake(bobPublicKey)
-	bob.CompleteHandshake(bobSession.ID, aliceMessage)
+	_, aliceMessage, err := alice.InitiateHandshake(bobPublicKey)
+	if err != nil {
+		t.Fatalf("InitiateHandshake failed: %v", err)
+	}
+
+	if err := bob.CompleteHandshake(bobSession.ID, aliceMessage); err != nil {
+		t.Fatalf("CompleteHandshake failed: %v", err)
+	}
 
 	// Check metrics updated
 	aliceMetrics := alice.GetMetrics()
@@ -370,12 +378,20 @@ func BenchmarkHybridKEX_Handshake(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		aliceSession, _ := alice.GenerateKeyPair()
-		bobSession, _ := bob.GenerateKeyPair()
+		bobSession, err := bob.GenerateKeyPair()
+		if err != nil {
+			b.Fatalf("GenerateKeyPair (bob) failed: %v", err)
+		}
 
 		bobPublicKey := createPublicKeyMessage(bobSession)
-		_, aliceMessage, _ := alice.InitiateHandshake(bobPublicKey)
-		bob.CompleteHandshake(bobSession.ID, aliceMessage)
+		_, aliceMessage, err := alice.InitiateHandshake(bobPublicKey)
+		if err != nil {
+			b.Fatalf("InitiateHandshake failed: %v", err)
+		}
+
+		if err := bob.CompleteHandshake(bobSession.ID, aliceMessage); err != nil {
+			b.Fatalf("CompleteHandshake failed: %v", err)
+		}
 	}
 }
 
@@ -385,12 +401,20 @@ func BenchmarkX25519Only_Handshake(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		aliceSession, _ := alice.GenerateKeyPair()
-		bobSession, _ := bob.GenerateKeyPair()
+		bobSession, err := bob.GenerateKeyPair()
+		if err != nil {
+			b.Fatalf("GenerateKeyPair (bob) failed: %v", err)
+		}
 
 		bobPublicKey := createPublicKeyMessage(bobSession)
-		_, aliceMessage, _ := alice.InitiateHandshake(bobPublicKey)
-		bob.CompleteHandshake(bobSession.ID, aliceMessage)
+		_, aliceMessage, err := alice.InitiateHandshake(bobPublicKey)
+		if err != nil {
+			b.Fatalf("InitiateHandshake failed: %v", err)
+		}
+
+		if err := bob.CompleteHandshake(bobSession.ID, aliceMessage); err != nil {
+			b.Fatalf("CompleteHandshake failed: %v", err)
+		}
 	}
 }
 
@@ -410,10 +434,10 @@ func createPublicKeyMessage(session *Session) []byte {
 	message = append(message, session.Version)
 	message = append(message, session.Algorithm)
 	message = append(message, session.X25519Public[:]...)
-	
+
 	if session.Algorithm == AlgHybrid {
 		message = append(message, session.KyberPublic...)
 	}
-	
+
 	return message
 }

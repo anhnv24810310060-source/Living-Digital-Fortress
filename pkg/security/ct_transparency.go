@@ -1,7 +1,7 @@
 package security
+
 // Package cttransparency implements Certificate Transparency monitoring
 // Real-time monitoring of CT logs for certificate mis-issuance detection
-package cttransparency
 
 import (
 	"context"
@@ -26,7 +26,7 @@ type CTMonitor struct {
 	mu            sync.RWMutex
 	running       atomic.Bool
 	checkInterval time.Duration
-	
+
 	// Metrics
 	certsChecked  atomic.Uint64
 	alertsRaised  atomic.Uint64
@@ -35,23 +35,23 @@ type CTMonitor struct {
 
 // CertificateAlert represents a suspicious certificate detected
 type CertificateAlert struct {
-	Timestamp     time.Time
-	Domain        string
-	Issuer        string
-	SerialNumber  string
-	NotBefore     time.Time
-	NotAfter      time.Time
+	Timestamp       time.Time
+	Domain          string
+	Issuer          string
+	SerialNumber    string
+	NotBefore       time.Time
+	NotAfter        time.Time
 	SubjectAltNames []string
-	Fingerprint   string
-	CTLogURL      string
-	Reason        string // "unexpected-issuer", "suspicious-san", "short-validity", etc.
+	Fingerprint     string
+	CTLogURL        string
+	Reason          string // "unexpected-issuer", "suspicious-san", "short-validity", etc.
 }
 
 // CTLogEntry represents a CT log entry (simplified)
 type CTLogEntry struct {
-	LeafInput   string `json:"leaf_input"`
-	ExtraData   string `json:"extra_data"`
-	Index       uint64 `json:"index"`
+	LeafInput string `json:"leaf_input"`
+	ExtraData string `json:"extra_data"`
+	Index     uint64 `json:"index"`
 }
 
 // CTLogResponse represents CT log API response
@@ -67,7 +67,7 @@ func NewCTMonitor(domains []string, checkInterval time.Duration) *CTMonitor {
 		"https://ct.cloudflare.com/logs/nimbus2024",
 		"https://ct.digicert.com/log",
 	}
-	
+
 	return &CTMonitor{
 		domains:       domains,
 		logs:          defaultLogs,
@@ -82,15 +82,15 @@ func (m *CTMonitor) Start(ctx context.Context) error {
 	if !m.running.CompareAndSwap(false, true) {
 		return fmt.Errorf("already running")
 	}
-	
+
 	log.Printf("[ct] started monitoring %d domains across %d logs", len(m.domains), len(m.logs))
-	
+
 	ticker := time.NewTicker(m.checkInterval)
 	defer ticker.Stop()
-	
+
 	// Initial check
 	m.checkAllLogs(ctx)
-	
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -115,37 +115,37 @@ func (m *CTMonitor) checkLog(ctx context.Context, logURL string) {
 	// Get recent entries (last 100)
 	// In production, maintain cursor position per log
 	endpoint := fmt.Sprintf("%s/ct/v1/get-entries?start=0&end=99", logURL)
-	
+
 	req, err := http.NewRequestWithContext(ctx, "GET", endpoint, nil)
 	if err != nil {
 		log.Printf("[ct] request error %s: %v", logURL, err)
 		return
 	}
-	
+
 	resp, err := m.client.Do(req)
 	if err != nil {
 		log.Printf("[ct] fetch error %s: %v", logURL, err)
 		return
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != 200 {
 		log.Printf("[ct] non-200 status %s: %d", logURL, resp.StatusCode)
 		return
 	}
-	
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		log.Printf("[ct] read error %s: %v", logURL, err)
 		return
 	}
-	
+
 	var logResp CTLogResponse
 	if err := json.Unmarshal(body, &logResp); err != nil {
 		log.Printf("[ct] parse error %s: %v", logURL, err)
 		return
 	}
-	
+
 	// Process entries
 	for _, entry := range logResp.Entries {
 		m.certsChecked.Add(1)
@@ -157,7 +157,7 @@ func (m *CTMonitor) checkLog(ctx context.Context, logURL string) {
 func (m *CTMonitor) processEntry(logURL string, entry *CTLogEntry) {
 	// Simplified: In production, parse X.509 from leaf_input/extra_data
 	// Here we demonstrate the alert logic with mock data
-	
+
 	// Check if certificate matches our monitored domains
 	for _, domain := range m.domains {
 		// Simplified match (production: parse actual cert Subject/SANs)
@@ -180,11 +180,11 @@ func (m *CTMonitor) processEntry(logURL string, entry *CTLogEntry) {
 func (m *CTMonitor) validateCertificate(logURL, domain string, entry *CTLogEntry) *CertificateAlert {
 	// Simplified validation logic
 	// In production: parse X.509, check issuer, validity period, SANs, etc.
-	
+
 	// Example: Detect unexpected issuer
 	expectedIssuers := []string{"Let's Encrypt", "DigiCert", "Cloudflare"}
 	issuer := "Unknown" // Parse from cert in production
-	
+
 	isExpected := false
 	for _, exp := range expectedIssuers {
 		if strings.Contains(issuer, exp) {
@@ -192,7 +192,7 @@ func (m *CTMonitor) validateCertificate(logURL, domain string, entry *CTLogEntry
 			break
 		}
 	}
-	
+
 	if !isExpected {
 		return &CertificateAlert{
 			Timestamp:    time.Now(),
@@ -204,13 +204,13 @@ func (m *CTMonitor) validateCertificate(logURL, domain string, entry *CTLogEntry
 			Reason:       "unexpected-issuer",
 		}
 	}
-	
+
 	// Additional checks:
 	// - Short validity period (< 90 days suspicious)
 	// - Suspicious SANs (e.g., too many domains)
 	// - Revocation status
 	// - Known malicious patterns
-	
+
 	return nil
 }
 
@@ -228,12 +228,12 @@ func (m *CTMonitor) Alerts() <-chan *CertificateAlert {
 // Stats returns monitoring statistics
 func (m *CTMonitor) Stats() map[string]interface{} {
 	return map[string]interface{}{
-		"certsChecked":  m.certsChecked.Load(),
-		"alertsRaised":  m.alertsRaised.Load(),
-		"lastCheck":     time.Unix(m.lastCheckTime.Load(), 0),
-		"domains":       len(m.domains),
-		"logs":          len(m.logs),
-		"running":       m.running.Load(),
+		"certsChecked": m.certsChecked.Load(),
+		"alertsRaised": m.alertsRaised.Load(),
+		"lastCheck":    time.Unix(m.lastCheckTime.Load(), 0),
+		"domains":      len(m.domains),
+		"logs":         len(m.logs),
+		"running":      m.running.Load(),
 	}
 }
 
@@ -272,7 +272,7 @@ func (cp *CertificatePinning) AddBackupPin(domain, pin string) {
 func (cp *CertificatePinning) Verify(domain, certFingerprint string) bool {
 	cp.mu.RLock()
 	defer cp.mu.RUnlock()
-	
+
 	// Check primary pins
 	if pins, ok := cp.pins[domain]; ok {
 		for _, pin := range pins {
@@ -281,7 +281,7 @@ func (cp *CertificatePinning) Verify(domain, certFingerprint string) bool {
 			}
 		}
 	}
-	
+
 	// Check backup pins
 	if pins, ok := cp.backupPins[domain]; ok {
 		for _, pin := range pins {
@@ -290,7 +290,7 @@ func (cp *CertificatePinning) Verify(domain, certFingerprint string) bool {
 			}
 		}
 	}
-	
+
 	return false
 }
 
@@ -298,7 +298,7 @@ func (cp *CertificatePinning) Verify(domain, certFingerprint string) bool {
 func (cp *CertificatePinning) RotatePins(domain string) {
 	cp.mu.Lock()
 	defer cp.mu.Unlock()
-	
+
 	if backup, ok := cp.backupPins[domain]; ok {
 		cp.pins[domain] = backup
 		delete(cp.backupPins, domain)
@@ -307,18 +307,18 @@ func (cp *CertificatePinning) RotatePins(domain string) {
 
 // OCSPStapling manages OCSP stapling with must-staple enforcement
 type OCSPStapling struct {
-	mu            sync.RWMutex
-	responses     map[string]*OCSPResponse // cert serial -> OCSP response
+	mu              sync.RWMutex
+	responses       map[string]*OCSPResponse // cert serial -> OCSP response
 	refreshInterval time.Duration
-	mustStaple    bool
+	mustStaple      bool
 }
 
 // OCSPResponse represents an OCSP response
 type OCSPResponse struct {
-	Status       string    // "good", "revoked", "unknown"
-	ProducedAt   time.Time
-	NextUpdate   time.Time
-	RawResponse  []byte
+	Status      string // "good", "revoked", "unknown"
+	ProducedAt  time.Time
+	NextUpdate  time.Time
+	RawResponse []byte
 }
 
 // NewOCSPStapling creates a new OCSP stapling manager

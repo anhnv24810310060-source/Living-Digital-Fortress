@@ -1,21 +1,14 @@
 package infrastructure
+
 // Package infrastructure provides production-grade infrastructure management
 // for multi-cloud disaster recovery and zero-downtime deployments
-package infrastructure
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"sync"
 	"time"
-
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/aws/aws-sdk-go/service/rds"
-	"github.com/aws/aws-sdk-go/service/route53"
 )
 
 // MultiCloudDRManager implements enterprise disaster recovery with:
@@ -26,13 +19,13 @@ import (
 // 5. Backup and restore automation
 // 6. Chaos engineering integration
 type MultiCloudDRManager struct {
-	providers      map[string]CloudProvider
-	replicator     *CrossCloudReplicator
-	failoverMgr    *FailoverManager
-	healthMonitor  *GlobalHealthMonitor
-	backupManager  *BackupManager
-	config         DRConfig
-	mu             sync.RWMutex
+	providers     map[string]CloudProvider
+	replicator    *CrossCloudReplicator
+	failoverMgr   *FailoverManager
+	healthMonitor *GlobalHealthMonitor
+	backupManager *BackupManager
+	config        DRConfig
+	mu            sync.RWMutex
 }
 
 // CloudProvider interface for multi-cloud abstraction
@@ -48,23 +41,23 @@ type CloudProvider interface {
 
 // DRConfig contains disaster recovery configuration
 type DRConfig struct {
-	PrimaryCloud      string
-	SecondaryCloud    string
-	TertiaryCloud     string
-	RPOMinutes        int // Recovery Point Objective
-	RTOMinutes        int // Recovery Time Objective
-	ReplicationMode   string // "sync", "async", "semi-sync"
-	FailoverMode      string // "automatic", "manual"
-	BackupSchedule    string
-	RetentionDays     int
-	ConsistencyLevel  string // "strong", "eventual"
+	PrimaryCloud     string
+	SecondaryCloud   string
+	TertiaryCloud    string
+	RPOMinutes       int    // Recovery Point Objective
+	RTOMinutes       int    // Recovery Time Objective
+	ReplicationMode  string // "sync", "async", "semi-sync"
+	FailoverMode     string // "automatic", "manual"
+	BackupSchedule   string
+	RetentionDays    int
+	ConsistencyLevel string // "strong", "eventual"
 }
 
 // CrossCloudReplicator handles data replication across clouds
 type CrossCloudReplicator struct {
-	replicationJobs map[string]*ReplicationJob
+	replicationJobs  map[string]*ReplicationJob
 	conflictResolver *ConflictResolver
-	mu              sync.RWMutex
+	mu               sync.RWMutex
 }
 
 // ReplicationJob represents a cross-cloud replication task
@@ -82,9 +75,9 @@ type ReplicationJob struct {
 
 // ConflictResolver handles data conflicts during replication
 type ConflictResolver struct {
-	strategy    string // "last_write_wins", "version_vector", "manual"
-	conflicts   []*ReplicationConflict
-	mu          sync.RWMutex
+	strategy  string // "last_write_wins", "version_vector", "manual"
+	conflicts []*ReplicationConflict
+	mu        sync.RWMutex
 }
 
 // ReplicationConflict represents a data conflict
@@ -100,62 +93,62 @@ type ReplicationConflict struct {
 
 // FailoverManager orchestrates automated failover
 type FailoverManager struct {
-	activeCloud        string
-	standbyCloud       string
-	failoverHistory    []*FailoverEvent
-	runbooks           map[string]*FailoverRunbook
-	mu                 sync.RWMutex
+	activeCloud     string
+	standbyCloud    string
+	failoverHistory []*FailoverEvent
+	runbooks        map[string]*FailoverRunbook
+	mu              sync.RWMutex
 }
 
 // FailoverEvent records a failover occurrence
 type FailoverEvent struct {
-	ID                string
-	Timestamp         time.Time
-	SourceCloud       string
-	TargetCloud       string
-	Reason            string
-	Duration          time.Duration
-	Success           bool
-	DataLoss          bool
-	DataLossBytes     int64
-	ServicesAffected  []string
+	ID               string
+	Timestamp        time.Time
+	SourceCloud      string
+	TargetCloud      string
+	Reason           string
+	Duration         time.Duration
+	Success          bool
+	DataLoss         bool
+	DataLossBytes    int64
+	ServicesAffected []string
 }
 
 // FailoverRunbook defines failover procedures
 type FailoverRunbook struct {
-	Name        string
-	Steps       []RunbookStep
+	Name         string
+	Steps        []RunbookStep
 	RollbackPlan string
-	MaxDuration time.Duration
+	MaxDuration  time.Duration
 }
 
 // RunbookStep defines a single step in failover
 type RunbookStep struct {
-	Name        string
-	Action      func(ctx context.Context) error
-	Timeout     time.Duration
-	Critical    bool
-	Retryable   bool
-	MaxRetries  int
+	Name       string
+	Action     func(ctx context.Context) error
+	Timeout    time.Duration
+	Critical   bool
+	Retryable  bool
+	MaxRetries int
 }
 
 // GlobalHealthMonitor monitors health across all clouds
 type GlobalHealthMonitor struct {
-	clouds      map[string]*CloudHealth
-	thresholds  HealthThresholds
-	alertsMu    sync.Mutex
-	alerts      []*HealthAlert
+	clouds     map[string]*CloudHealth
+	thresholds HealthThresholds
+	alertsMu   sync.Mutex
+	alerts     []*HealthAlert
 }
 
 // CloudHealth tracks health metrics for a cloud provider
 type CloudHealth struct {
-	CloudName          string
-	Region             string
-	Status             string // "healthy", "degraded", "critical"
-	Latency            time.Duration
-	ErrorRate          float64
-	Availability       float64
-	LastCheck          time.Time
+	CloudName           string
+	Region              string
+	Status              string // "healthy", "degraded", "critical"
+	Latency             time.Duration
+	ErrorRate           float64
+	Availability        float64
+	LastCheck           time.Time
 	ConsecutiveFailures int
 }
 
@@ -179,10 +172,10 @@ type HealthAlert struct {
 
 // BackupManager handles backup and restore operations
 type BackupManager struct {
-	backups      map[string]*Backup
-	schedule     *BackupSchedule
-	retention    time.Duration
-	mu           sync.RWMutex
+	backups   map[string]*Backup
+	schedule  *BackupSchedule
+	retention time.Duration
+	mu        sync.RWMutex
 }
 
 // Backup represents a backup snapshot
@@ -219,9 +212,9 @@ type Application struct {
 
 // Resources defines resource requirements
 type Resources struct {
-	CPU      string
-	Memory   string
-	Storage  string
+	CPU     string
+	Memory  string
+	Storage string
 }
 
 // HealthCheckConfig for application health
@@ -234,19 +227,19 @@ type HealthCheckConfig struct {
 
 // HealthStatus represents health check result
 type HealthStatus struct {
-	Healthy    bool
-	Latency    time.Duration
-	ErrorRate  float64
-	Message    string
-	Timestamp  time.Time
+	Healthy   bool
+	Latency   time.Duration
+	ErrorRate float64
+	Message   string
+	Timestamp time.Time
 }
 
 // NewMultiCloudDRManager creates a production DR manager
 func NewMultiCloudDRManager(config DRConfig) (*MultiCloudDRManager, error) {
 	mgr := &MultiCloudDRManager{
-		providers:   make(map[string]CloudProvider),
-		config:      config,
-		replicator:  &CrossCloudReplicator{
+		providers: make(map[string]CloudProvider),
+		config:    config,
+		replicator: &CrossCloudReplicator{
 			replicationJobs: make(map[string]*ReplicationJob),
 			conflictResolver: &ConflictResolver{
 				strategy:  "last_write_wins",
@@ -263,14 +256,14 @@ func NewMultiCloudDRManager(config DRConfig) (*MultiCloudDRManager, error) {
 			clouds: make(map[string]*CloudHealth),
 			thresholds: HealthThresholds{
 				MaxLatency:       500 * time.Millisecond,
-				MaxErrorRate:     0.01, // 1%
+				MaxErrorRate:     0.01,  // 1%
 				MinAvailability:  0.999, // 99.9%
 				FailureThreshold: 3,
 			},
 			alerts: make([]*HealthAlert, 0),
 		},
 		backupManager: &BackupManager{
-			backups: make(map[string]*Backup),
+			backups:   make(map[string]*Backup),
 			retention: time.Duration(config.RetentionDays) * 24 * time.Hour,
 			schedule: &BackupSchedule{
 				FullBackupCron:        "0 2 * * *", // Daily at 2 AM
@@ -279,26 +272,26 @@ func NewMultiCloudDRManager(config DRConfig) (*MultiCloudDRManager, error) {
 			},
 		},
 	}
-	
+
 	// Initialize cloud providers
 	mgr.providers["aws"] = NewAWSProvider("us-east-1")
 	mgr.providers["azure"] = NewAzureProvider("eastus")
 	mgr.providers["gcp"] = NewGCPProvider("us-central1")
-	
+
 	// Register failover runbooks
 	mgr.registerFailoverRunbooks()
-	
+
 	// Start background workers
 	go mgr.healthCheckWorker()
 	go mgr.replicationWorker()
 	go mgr.backupWorker()
 	go mgr.failoverMonitor()
-	
-	log.Printf("[multi-cloud-dr] Initialized with RTO=%dmin, RPO=%dmin", 
+
+	log.Printf("[multi-cloud-dr] Initialized with RTO=%dmin, RPO=%dmin",
 		config.RTOMinutes, config.RPOMinutes)
 	log.Printf("[multi-cloud-dr] Active: %s | Standby: %s | Tertiary: %s",
 		config.PrimaryCloud, config.SecondaryCloud, config.TertiaryCloud)
-	
+
 	return mgr, nil
 }
 
@@ -306,9 +299,9 @@ func NewMultiCloudDRManager(config DRConfig) (*MultiCloudDRManager, error) {
 func (mgr *MultiCloudDRManager) TriggerFailover(ctx context.Context, reason string) error {
 	mgr.failoverMgr.mu.Lock()
 	defer mgr.failoverMgr.mu.Unlock()
-	
+
 	startTime := time.Now()
-	
+
 	event := &FailoverEvent{
 		ID:               fmt.Sprintf("failover-%d", time.Now().Unix()),
 		Timestamp:        startTime,
@@ -317,23 +310,23 @@ func (mgr *MultiCloudDRManager) TriggerFailover(ctx context.Context, reason stri
 		Reason:           reason,
 		ServicesAffected: []string{"all"},
 	}
-	
+
 	log.Printf("[failover] Initiating failover from %s to %s: %s",
 		event.SourceCloud, event.TargetCloud, reason)
-	
+
 	// Execute failover runbook
 	runbook, exists := mgr.failoverMgr.runbooks["standard_failover"]
 	if !exists {
 		return fmt.Errorf("failover runbook not found")
 	}
-	
+
 	for i, step := range runbook.Steps {
 		log.Printf("[failover] Step %d/%d: %s", i+1, len(runbook.Steps), step.Name)
-		
+
 		stepCtx, cancel := context.WithTimeout(ctx, step.Timeout)
 		err := step.Action(stepCtx)
 		cancel()
-		
+
 		if err != nil {
 			if step.Critical {
 				event.Success = false
@@ -344,17 +337,17 @@ func (mgr *MultiCloudDRManager) TriggerFailover(ctx context.Context, reason stri
 			log.Printf("[failover] Non-critical step failed: %s - %v", step.Name, err)
 		}
 	}
-	
+
 	// Update active cloud
 	mgr.failoverMgr.activeCloud = mgr.failoverMgr.standbyCloud
 	mgr.failoverMgr.standbyCloud = event.SourceCloud
-	
+
 	event.Success = true
 	event.Duration = time.Since(startTime)
 	mgr.failoverMgr.failoverHistory = append(mgr.failoverMgr.failoverHistory, event)
-	
+
 	log.Printf("[failover] Completed successfully in %v", event.Duration)
-	
+
 	return nil
 }
 
@@ -368,14 +361,14 @@ func (mgr *MultiCloudDRManager) StartReplication(sourceCloud string, targetCloud
 		Status:       "running",
 		LastSync:     time.Now(),
 	}
-	
+
 	mgr.replicator.mu.Lock()
 	mgr.replicator.replicationJobs[job.ID] = job
 	mgr.replicator.mu.Unlock()
-	
+
 	log.Printf("[replication] Started job %s: %s -> %v (%s)",
 		job.ID, sourceCloud, targetClouds, dataType)
-	
+
 	return job, nil
 }
 
@@ -390,24 +383,24 @@ func (mgr *MultiCloudDRManager) CreateBackup(ctx context.Context, cloud, backupT
 		StorageLocation: fmt.Sprintf("s3://dr-backups/%s/%s", cloud, time.Now().Format("2006-01-02")),
 		Encrypted:       true,
 	}
-	
+
 	mgr.backupManager.mu.Lock()
 	mgr.backupManager.backups[backup.ID] = backup
 	mgr.backupManager.mu.Unlock()
-	
+
 	// Simulate backup process
 	go func() {
 		time.Sleep(5 * time.Second) // Simulate backup time
-		
+
 		mgr.backupManager.mu.Lock()
 		backup.Status = "completed"
 		backup.SizeBytes = 1024 * 1024 * 1024 * 10 // 10 GB
 		backup.Verified = true
 		mgr.backupManager.mu.Unlock()
-		
+
 		log.Printf("[backup] Completed backup %s: %s (%s)", backup.ID, cloud, backupType)
 	}()
-	
+
 	return backup, nil
 }
 
@@ -416,24 +409,24 @@ func (mgr *MultiCloudDRManager) RestoreBackup(ctx context.Context, backupID, tar
 	mgr.backupManager.mu.RLock()
 	backup, exists := mgr.backupManager.backups[backupID]
 	mgr.backupManager.mu.RUnlock()
-	
+
 	if !exists {
 		return fmt.Errorf("backup not found: %s", backupID)
 	}
-	
+
 	if backup.Status != "completed" {
 		return fmt.Errorf("backup not ready for restore: %s", backup.Status)
 	}
-	
+
 	log.Printf("[restore] Starting restore of backup %s to %s", backupID, targetCloud)
-	
+
 	// Simulate restore process
 	time.Sleep(3 * time.Second)
-	
+
 	backup.RestoredCount++
-	
+
 	log.Printf("[restore] Completed restore of backup %s", backupID)
-	
+
 	return nil
 }
 
@@ -441,29 +434,29 @@ func (mgr *MultiCloudDRManager) RestoreBackup(ctx context.Context, backupID, tar
 func (mgr *MultiCloudDRManager) healthCheckWorker() {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
-	
+
 	for range ticker.C {
 		for cloudName, provider := range mgr.providers {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			health, err := provider.HealthCheck(ctx)
 			cancel()
-			
+
 			cloudHealth := &CloudHealth{
 				CloudName: cloudName,
 				Region:    provider.Region(),
 				LastCheck: time.Now(),
 			}
-			
+
 			if err != nil || !health.Healthy {
 				cloudHealth.Status = "critical"
 				cloudHealth.ConsecutiveFailures++
 				cloudHealth.ErrorRate = health.ErrorRate
-				
+
 				// Check if failover threshold reached
 				if cloudHealth.ConsecutiveFailures >= mgr.healthMonitor.thresholds.FailureThreshold {
 					if cloudName == mgr.failoverMgr.activeCloud && mgr.config.FailoverMode == "automatic" {
 						log.Printf("[health] Triggering automatic failover from %s", cloudName)
-						go mgr.TriggerFailover(context.Background(), 
+						go mgr.TriggerFailover(context.Background(),
 							fmt.Sprintf("Health check failed %d times", cloudHealth.ConsecutiveFailures))
 					}
 				}
@@ -473,7 +466,7 @@ func (mgr *MultiCloudDRManager) healthCheckWorker() {
 				cloudHealth.Latency = health.Latency
 				cloudHealth.Availability = 1.0 - health.ErrorRate
 			}
-			
+
 			mgr.healthMonitor.clouds[cloudName] = cloudHealth
 		}
 	}
@@ -482,26 +475,26 @@ func (mgr *MultiCloudDRManager) healthCheckWorker() {
 func (mgr *MultiCloudDRManager) replicationWorker() {
 	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
-	
+
 	for range ticker.C {
 		mgr.replicator.mu.RLock()
-		
+
 		for jobID, job := range mgr.replicator.replicationJobs {
 			if job.Status != "running" {
 				continue
 			}
-			
+
 			// Simulate replication progress
 			job.BytesReplicated += 1024 * 1024 * 100 // 100 MB/minute
 			job.Lag = time.Since(job.LastSync)
 			job.LastSync = time.Now()
-			
+
 			// Check RPO compliance
 			if job.Lag > time.Duration(mgr.config.RPOMinutes)*time.Minute {
 				log.Printf("[replication] WARNING: Job %s exceeds RPO (lag: %v)", jobID, job.Lag)
 			}
 		}
-		
+
 		mgr.replicator.mu.RUnlock()
 	}
 }
@@ -509,7 +502,7 @@ func (mgr *MultiCloudDRManager) replicationWorker() {
 func (mgr *MultiCloudDRManager) backupWorker() {
 	ticker := time.NewTicker(1 * time.Hour)
 	defer ticker.Stop()
-	
+
 	for range ticker.C {
 		// Create incremental backups
 		for cloudName := range mgr.providers {
@@ -518,7 +511,7 @@ func (mgr *MultiCloudDRManager) backupWorker() {
 				log.Printf("[backup] Failed to create backup for %s: %v", cloudName, err)
 			}
 		}
-		
+
 		// Cleanup old backups based on retention policy
 		mgr.cleanupOldBackups()
 	}
@@ -527,12 +520,12 @@ func (mgr *MultiCloudDRManager) backupWorker() {
 func (mgr *MultiCloudDRManager) failoverMonitor() {
 	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
-	
+
 	for range ticker.C {
 		mgr.failoverMgr.mu.RLock()
 		activeCloud := mgr.failoverMgr.activeCloud
 		mgr.failoverMgr.mu.RUnlock()
-		
+
 		// Monitor active cloud health
 		mgr.healthMonitor.alertsMu.Lock()
 		if cloudHealth, exists := mgr.healthMonitor.clouds[activeCloud]; exists {
@@ -555,9 +548,9 @@ func (mgr *MultiCloudDRManager) failoverMonitor() {
 func (mgr *MultiCloudDRManager) cleanupOldBackups() {
 	mgr.backupManager.mu.Lock()
 	defer mgr.backupManager.mu.Unlock()
-	
+
 	cutoff := time.Now().Add(-mgr.backupManager.retention)
-	
+
 	for backupID, backup := range mgr.backupManager.backups {
 		if backup.Timestamp.Before(cutoff) {
 			delete(mgr.backupManager.backups, backupID)
@@ -631,53 +624,41 @@ func (mgr *MultiCloudDRManager) GetMetrics() map[string]interface{} {
 		}
 	}
 	mgr.healthMonitor.alertsMu.Unlock()
-	
+
 	mgr.replicator.mu.RLock()
 	replicationJobs := len(mgr.replicator.replicationJobs)
 	mgr.replicator.mu.RUnlock()
-	
+
 	mgr.backupManager.mu.RLock()
 	backupCount := len(mgr.backupManager.backups)
 	mgr.backupManager.mu.RUnlock()
-	
+
 	mgr.failoverMgr.mu.RLock()
 	failoverCount := len(mgr.failoverMgr.failoverHistory)
 	activeCloud := mgr.failoverMgr.activeCloud
 	mgr.failoverMgr.mu.RUnlock()
-	
+
 	return map[string]interface{}{
-		"active_cloud":        activeCloud,
-		"replication_jobs":    replicationJobs,
-		"backup_count":        backupCount,
-		"failover_count":      failoverCount,
-		"active_alerts":       activeAlerts,
-		"rto_minutes":         mgr.config.RTOMinutes,
-		"rpo_minutes":         mgr.config.RPOMinutes,
+		"active_cloud":     activeCloud,
+		"replication_jobs": replicationJobs,
+		"backup_count":     backupCount,
+		"failover_count":   failoverCount,
+		"active_alerts":    activeAlerts,
+		"rto_minutes":      mgr.config.RTOMinutes,
+		"rpo_minutes":      mgr.config.RPOMinutes,
 	}
 }
 
 // Cloud provider implementations
 type AWSProvider struct {
-	region    string
-	ec2Client *ec2.EC2
-	rdsClient *rds.RDS
-	r53Client *route53.Route53
+	region string
 }
 
 func NewAWSProvider(region string) *AWSProvider {
-	sess := session.Must(session.NewSession(&aws.Config{
-		Region: aws.String(region),
-	}))
-	
-	return &AWSProvider{
-		region:    region,
-		ec2Client: ec2.New(sess),
-		rdsClient: rds.New(sess),
-		r53Client: route53.New(sess),
-	}
+	return &AWSProvider{region: region}
 }
 
-func (aws *AWSProvider) Name() string { return "aws" }
+func (aws *AWSProvider) Name() string   { return "aws" }
 func (aws *AWSProvider) Region() string { return aws.region }
 
 func (aws *AWSProvider) Deploy(ctx context.Context, app *Application) error {
@@ -714,24 +695,24 @@ type AzureProvider struct{ region string }
 type GCPProvider struct{ region string }
 
 func NewAzureProvider(region string) *AzureProvider { return &AzureProvider{region: region} }
-func NewGCPProvider(region string) *GCPProvider { return &GCPProvider{region: region} }
+func NewGCPProvider(region string) *GCPProvider     { return &GCPProvider{region: region} }
 
-func (az *AzureProvider) Name() string { return "azure" }
-func (az *AzureProvider) Region() string { return az.region }
+func (az *AzureProvider) Name() string                                       { return "azure" }
+func (az *AzureProvider) Region() string                                     { return az.region }
 func (az *AzureProvider) Deploy(ctx context.Context, app *Application) error { return nil }
-func (az *AzureProvider) Undeploy(ctx context.Context, appID string) error { return nil }
+func (az *AzureProvider) Undeploy(ctx context.Context, appID string) error   { return nil }
 func (az *AzureProvider) HealthCheck(ctx context.Context) (*HealthStatus, error) {
 	return &HealthStatus{Healthy: true, Latency: 45 * time.Millisecond, ErrorRate: 0.001, Timestamp: time.Now()}, nil
 }
-func (az *AzureProvider) ScaleUp(ctx context.Context, appID string, replicas int) error { return nil }
+func (az *AzureProvider) ScaleUp(ctx context.Context, appID string, replicas int) error   { return nil }
 func (az *AzureProvider) ScaleDown(ctx context.Context, appID string, replicas int) error { return nil }
 
-func (gcp *GCPProvider) Name() string { return "gcp" }
-func (gcp *GCPProvider) Region() string { return gcp.region }
+func (gcp *GCPProvider) Name() string                                       { return "gcp" }
+func (gcp *GCPProvider) Region() string                                     { return gcp.region }
 func (gcp *GCPProvider) Deploy(ctx context.Context, app *Application) error { return nil }
-func (gcp *GCPProvider) Undeploy(ctx context.Context, appID string) error { return nil }
+func (gcp *GCPProvider) Undeploy(ctx context.Context, appID string) error   { return nil }
 func (gcp *GCPProvider) HealthCheck(ctx context.Context) (*HealthStatus, error) {
 	return &HealthStatus{Healthy: true, Latency: 40 * time.Millisecond, ErrorRate: 0.001, Timestamp: time.Now()}, nil
 }
-func (gcp *GCPProvider) ScaleUp(ctx context.Context, appID string, replicas int) error { return nil }
+func (gcp *GCPProvider) ScaleUp(ctx context.Context, appID string, replicas int) error   { return nil }
 func (gcp *GCPProvider) ScaleDown(ctx context.Context, appID string, replicas int) error { return nil }

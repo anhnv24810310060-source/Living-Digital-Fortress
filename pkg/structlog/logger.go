@@ -1,5 +1,4 @@
 package structlog
-package structlog
 
 import (
 	"context"
@@ -65,12 +64,12 @@ type Sanitizer struct {
 func NewSanitizer() *Sanitizer {
 	return &Sanitizer{
 		maskPatterns: map[string]string{
-			"password":     "MASKED",
-			"secret":       "MASKED",
-			"token":        "MASKED",
-			"apikey":       "MASKED",
-			"credit_card":  "MASKED",
-			"ssn":          "MASKED",
+			"password":      "MASKED",
+			"secret":        "MASKED",
+			"token":         "MASKED",
+			"apikey":        "MASKED",
+			"credit_card":   "MASKED",
+			"ssn":           "MASKED",
 			"authorization": "MASKED",
 		},
 	}
@@ -219,7 +218,7 @@ func (l *Logger) log(level Level, message string, fields Fields) {
 	// Marshal to JSON
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	
+
 	encoder := json.NewEncoder(l.output)
 	if err := encoder.Encode(allFields); err != nil {
 		// Fallback to stderr if encoding fails

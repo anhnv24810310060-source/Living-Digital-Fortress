@@ -1,6 +1,6 @@
 package pqc
+
 // Package pqc implements Post-Quantum Cryptography algorithms
-package pqc
 
 import (
 	"crypto/rand"
@@ -64,7 +64,7 @@ func GenerateKyberKeypair() (*KyberPublicKey, *KyberSecretKey, error) {
 	// Simplified key generation (real implementation uses NTT and proper polynomial arithmetic)
 	_, _ = io.ReadFull(rand.Reader, pub.Data[:])
 	_, _ = io.ReadFull(rand.Reader, sec.Data[:])
-	
+
 	// Store seed in secret key for decapsulation
 	copy(sec.Data[len(sec.Data)-32:], expandedSeed)
 
@@ -84,16 +84,16 @@ func KyberEncapsulate(pub *KyberPublicKey) (*KyberCiphertext, []byte, error) {
 	}
 
 	ct := &KyberCiphertext{}
-	
+
 	// Simplified encapsulation (real: use polynomial arithmetic, NTT, compression)
 	// c = Enc(pk, m, r) where r is random coins
 	// K = H(m || H(c))
-	
+
 	h := sha256.New()
 	h.Write(m)
 	h.Write(pub.Data[:])
 	_, _ = io.ReadFull(rand.Reader, ct.Data[:])
-	
+
 	// Derive shared secret
 	h2 := sha256.New()
 	h2.Write(m)
@@ -112,10 +112,10 @@ func KyberDecapsulate(ct *KyberCiphertext, sec *KyberSecretKey) ([]byte, error) 
 	// Simplified decapsulation
 	// m' = Dec(sk, c)
 	// K = H(m' || H(c))
-	
+
 	// Extract stored seed from secret key
 	seed := sec.Data[len(sec.Data)-32:]
-	
+
 	h := sha256.New()
 	h.Write(seed)
 	h.Write(ct.Data[:])
@@ -146,11 +146,11 @@ func CompressPolynomial(coeffs []uint16, d int) []byte {
 	// d-bit compression: c = round((2^d / q) * x)
 	compressed := make([]byte, (len(coeffs)*d+7)/8)
 	bitIdx := 0
-	
+
 	for _, coeff := range coeffs {
 		// Compress to d bits
 		val := uint32(coeff) * (1 << d) / KyberQ
-		
+
 		// Pack bits
 		for i := 0; i < d; i++ {
 			if val&(1<<i) != 0 {
@@ -159,7 +159,7 @@ func CompressPolynomial(coeffs []uint16, d int) []byte {
 			bitIdx++
 		}
 	}
-	
+
 	return compressed
 }
 
@@ -167,7 +167,7 @@ func CompressPolynomial(coeffs []uint16, d int) []byte {
 func DecompressPolynomial(data []byte, d, n int) []uint16 {
 	coeffs := make([]uint16, n)
 	bitIdx := 0
-	
+
 	for i := 0; i < n; i++ {
 		var val uint32
 		for j := 0; j < d; j++ {
@@ -177,9 +177,9 @@ func DecompressPolynomial(data []byte, d, n int) []uint16 {
 			bitIdx++
 		}
 		// Decompress: x = round((q / 2^d) * c)
-		coeffs[i] = uint16((val * KyberQ + (1 << (d - 1))) >> d)
+		coeffs[i] = uint16((val*KyberQ + (1 << (d - 1))) >> d)
 	}
-	
+
 	return coeffs
 }
 
@@ -189,10 +189,10 @@ func NTTForward(coeffs []uint16) []uint16 {
 	if len(coeffs) != KyberN {
 		return coeffs
 	}
-	
+
 	result := make([]uint16, KyberN)
 	copy(result, coeffs)
-	
+
 	// Bit-reversal permutation
 	for i := 0; i < KyberN; i++ {
 		rev := bitReverse(i, 8)
@@ -200,7 +200,7 @@ func NTTForward(coeffs []uint16) []uint16 {
 			result[i], result[rev] = result[rev], result[i]
 		}
 	}
-	
+
 	// Butterfly operations (simplified)
 	for len := 2; len <= KyberN; len *= 2 {
 		for start := 0; start < KyberN; start += len {
@@ -212,7 +212,7 @@ func NTTForward(coeffs []uint16) []uint16 {
 			}
 		}
 	}
-	
+
 	return result
 }
 

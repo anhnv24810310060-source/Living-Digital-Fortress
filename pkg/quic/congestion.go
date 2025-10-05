@@ -14,22 +14,22 @@ import (
 
 type CubicController struct {
 	mu sync.RWMutex
-	
+
 	// CUBIC parameters
-	cwnd         uint64        // Congestion window (bytes)
-	ssthresh     uint64        // Slow start threshold
-	wMax         uint64        // Window size before last reduction
-	epochStart   time.Time     // Time of last congestion event
-	
+	cwnd       uint64    // Congestion window (bytes)
+	ssthresh   uint64    // Slow start threshold
+	wMax       uint64    // Window size before last reduction
+	epochStart time.Time // Time of last congestion event
+
 	// Constants (RFC 8312)
-	c            float64       // CUBIC parameter (0.4)
-	beta         float64       // Multiplicative decrease factor (0.7)
-	
+	c    float64 // CUBIC parameter (0.4)
+	beta float64 // Multiplicative decrease factor (0.7)
+
 	// RTT tracking
-	minRTT       time.Duration
-	smoothedRTT  time.Duration
-	rttVar       time.Duration
-	
+	minRTT      time.Duration
+	smoothedRTT time.Duration
+	rttVar      time.Duration
+
 	// Metrics
 	packetsSent  uint64
 	packetsAcked uint64
@@ -38,7 +38,7 @@ type CubicController struct {
 
 func NewCubicController() *CubicController {
 	return &CubicController{
-		cwnd:     10 * 1460,  // Initial window: 10 packets (14600 bytes)
+		cwnd:     10 * 1460, // Initial window: 10 packets (14600 bytes)
 		ssthresh: math.MaxUint64,
 		c:        0.4,
 		beta:     0.7,
@@ -55,41 +55,41 @@ func (cc *CubicController) OnPacketSent(size int, now time.Time) {
 func (cc *CubicController) OnPacketAcked(size int, rtt time.Duration, now time.Time) {
 	cc.mu.Lock()
 	defer cc.mu.Unlock()
-	
+
 	cc.packetsAcked++
 	cc.updateRTT(rtt)
-	
+
 	// Slow start phase
 	if cc.cwnd < cc.ssthresh {
 		cc.cwnd += uint64(size)
 		return
 	}
-	
+
 	// Congestion avoidance with CUBIC
 	if cc.epochStart.IsZero() {
 		cc.epochStart = now
 	}
-	
+
 	t := now.Sub(cc.epochStart).Seconds()
 	k := math.Cbrt(float64(cc.wMax) * (1.0 - cc.beta) / cc.c)
-	
+
 	// CUBIC window calculation
-	target := cc.c * math.Pow(t-k, 3) + float64(cc.wMax)
-	
+	target := cc.c*math.Pow(t-k, 3) + float64(cc.wMax)
+
 	if target > float64(cc.cwnd) {
 		cc.cwnd = uint64(target)
 	} else {
 		// TCP-friendly region
-		cc.cwnd += uint64(size * 1460 / cc.cwnd)
+		cc.cwnd += uint64((int64(size) * 1460) / int64(cc.cwnd))
 	}
 }
 
 func (cc *CubicController) OnPacketLost(size int, now time.Time) {
 	cc.mu.Lock()
 	defer cc.mu.Unlock()
-	
+
 	cc.packetsLost++
-	
+
 	// Multiplicative decrease
 	cc.wMax = cc.cwnd
 	cc.cwnd = uint64(float64(cc.cwnd) * cc.beta)
@@ -124,7 +124,7 @@ func (cc *CubicController) updateRTT(rtt time.Duration) {
 	if rtt < cc.minRTT || cc.minRTT == time.Second {
 		cc.minRTT = rtt
 	}
-	
+
 	if cc.smoothedRTT == 0 {
 		cc.smoothedRTT = rtt
 		cc.rttVar = rtt / 2
@@ -147,32 +147,32 @@ func (cc *CubicController) updateRTT(rtt time.Duration) {
 
 type BBRController struct {
 	mu sync.RWMutex
-	
+
 	// BBR state machine
-	state        BBRState
-	
+	state BBRState
+
 	// Bandwidth estimation
-	btlBw        uint64        // Bottleneck bandwidth (bytes/sec)
-	btlBwFilter  *MaxFilter    // Max filter for bandwidth
-	
+	btlBw       uint64     // Bottleneck bandwidth (bytes/sec)
+	btlBwFilter *MaxFilter // Max filter for bandwidth
+
 	// RTT estimation
 	rtProp       time.Duration // Round-trip propagation delay
 	rtPropStamp  time.Time
 	rtPropExpire time.Duration
-	
+
 	// Pacing
-	pacingGain   float64
-	cwndGain     float64
-	
+	pacingGain float64
+	cwndGain   float64
+
 	// Cycle tracking
-	cycleIdx     int
-	cycleStamp   time.Time
-	
+	cycleIdx   int
+	cycleStamp time.Time
+
 	// Metrics
 	packetsSent  uint64
 	packetsAcked uint64
 	packetsLost  uint64
-	
+
 	deliveredBytes uint64
 	deliveredTime  time.Time
 }
@@ -211,7 +211,7 @@ func (f *MaxFilter) Update(val uint64, now time.Time) {
 		f.values = f.values[i:]
 		f.times = f.times[i:]
 	}
-	
+
 	// Add new value
 	f.values = append(f.values, val)
 	f.times = append(f.times, now)
@@ -250,16 +250,16 @@ func (bbr *BBRController) OnPacketSent(size int, now time.Time) {
 func (bbr *BBRController) OnPacketAcked(size int, rtt time.Duration, now time.Time) {
 	bbr.mu.Lock()
 	defer bbr.mu.Unlock()
-	
+
 	bbr.packetsAcked++
 	bbr.deliveredBytes += uint64(size)
-	
+
 	// Update RTT prop
 	if rtt < bbr.rtProp || now.Sub(bbr.rtPropStamp) > bbr.rtPropExpire {
 		bbr.rtProp = rtt
 		bbr.rtPropStamp = now
 	}
-	
+
 	// Estimate bandwidth
 	if bbr.deliveredTime.IsZero() {
 		bbr.deliveredTime = now
@@ -271,7 +271,7 @@ func (bbr *BBRController) OnPacketAcked(size int, rtt time.Duration, now time.Ti
 			bbr.btlBw = bbr.btlBwFilter.Get()
 		}
 	}
-	
+
 	// State machine
 	bbr.updateState(now)
 }
@@ -349,15 +349,15 @@ func (bbr *BBRController) Algorithm() string {
 
 type RenoController struct {
 	mu sync.RWMutex
-	
+
 	cwnd         uint64
 	ssthresh     uint64
 	dupAckCount  int
 	fastRecovery bool
-	
-	smoothedRTT  time.Duration
-	minRTT       time.Duration
-	
+
+	smoothedRTT time.Duration
+	minRTT      time.Duration
+
 	packetsSent  uint64
 	packetsAcked uint64
 	packetsLost  uint64
@@ -380,34 +380,34 @@ func (rc *RenoController) OnPacketSent(size int, now time.Time) {
 func (rc *RenoController) OnPacketAcked(size int, rtt time.Duration, now time.Time) {
 	rc.mu.Lock()
 	defer rc.mu.Unlock()
-	
+
 	rc.packetsAcked++
 	rc.updateRTT(rtt)
-	
+
 	if rc.fastRecovery {
 		// Fast recovery: inflate window on each ack
 		rc.cwnd += uint64(size)
 		return
 	}
-	
+
 	// Slow start
 	if rc.cwnd < rc.ssthresh {
 		rc.cwnd += uint64(size)
 	} else {
 		// Congestion avoidance: additive increase
-		rc.cwnd += uint64(size * 1460 / rc.cwnd)
+		rc.cwnd += uint64((int64(size) * 1460) / int64(rc.cwnd))
 	}
-	
+
 	rc.dupAckCount = 0
 }
 
 func (rc *RenoController) OnPacketLost(size int, now time.Time) {
 	rc.mu.Lock()
 	defer rc.mu.Unlock()
-	
+
 	rc.packetsLost++
 	rc.dupAckCount++
-	
+
 	// Fast retransmit threshold
 	if rc.dupAckCount >= 3 {
 		if !rc.fastRecovery {
@@ -455,7 +455,7 @@ func (rc *RenoController) updateRTT(rtt time.Duration) {
 	if rtt < rc.minRTT || rc.minRTT == time.Second {
 		rc.minRTT = rtt
 	}
-	
+
 	if rc.smoothedRTT == 0 {
 		rc.smoothedRTT = rtt
 	} else {

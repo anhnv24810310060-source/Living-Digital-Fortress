@@ -14,7 +14,6 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"sync"
 	"time"
@@ -24,10 +23,10 @@ const (
 	// CT log public key types
 	KeyTypeECDSAP256 = "ecdsa-p256"
 	KeyTypeRSA2048   = "rsa-2048"
-	
+
 	// SCT version
 	SCTVersion = 0
-	
+
 	// Signature types
 	SignatureTypeCertTimestamp = 0
 	SignatureTypeTreeHash      = 1
@@ -35,41 +34,41 @@ const (
 
 // CTLog represents a Certificate Transparency log
 type CTLog struct {
-	URL            string
-	PublicKey      crypto.PublicKey
-	MaxMergeDelay  time.Duration // RFC 6962: maximum merge delay
-	OperatorName   string
-	Description    string
+	URL           string
+	PublicKey     crypto.PublicKey
+	MaxMergeDelay time.Duration // RFC 6962: maximum merge delay
+	OperatorName  string
+	Description   string
 }
 
 // SignedCertificateTimestamp represents an SCT from a CT log
 type SignedCertificateTimestamp struct {
-	SCTVersion    uint8     `json:"sct_version"`
-	LogID         []byte    `json:"id"`
-	Timestamp     uint64    `json:"timestamp"` // Unix milliseconds
-	Extensions    []byte    `json:"extensions"`
-	Signature     []byte    `json:"signature"`
-	SignatureAlgo string    `json:"signature_algorithm"`
+	SCTVersion    uint8  `json:"sct_version"`
+	LogID         []byte `json:"id"`
+	Timestamp     uint64 `json:"timestamp"` // Unix milliseconds
+	Extensions    []byte `json:"extensions"`
+	Signature     []byte `json:"signature"`
+	SignatureAlgo string `json:"signature_algorithm"`
 }
 
 // CTMonitor monitors CT logs for certificate mis-issuance
 type CTMonitor struct {
-	logs          []CTLog
-	client        *http.Client
-	domains       []string // Monitored domains
-	alertChan     chan CTAlert
-	
+	logs      []CTLog
+	client    *http.Client
+	domains   []string // Monitored domains
+	alertChan chan CTAlert
+
 	// Cache for verified SCTs
-	sctCache      sync.Map // certHash -> []SCT
-	
+	sctCache sync.Map // certHash -> []SCT
+
 	// Metrics
-	sctsVerified  uint64
-	sctsFailed    uint64
-	alertsSent    uint64
-	
-	mu            sync.RWMutex
-	running       bool
-	stopChan      chan struct{}
+	sctsVerified uint64
+	sctsFailed   uint64
+	alertsSent   uint64
+
+	mu       sync.RWMutex
+	running  bool
+	stopChan chan struct{}
 }
 
 // CTAlert represents a certificate transparency alert
@@ -131,12 +130,12 @@ func (m *CTMonitor) Start() error {
 	}
 	m.running = true
 	m.mu.Unlock()
-	
+
 	// Start monitoring goroutines for each log
 	for _, log := range m.logs {
 		go m.monitorLog(log)
 	}
-	
+
 	return nil
 }
 
@@ -144,11 +143,11 @@ func (m *CTMonitor) Start() error {
 func (m *CTMonitor) Stop() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	if !m.running {
 		return
 	}
-	
+
 	close(m.stopChan)
 	m.running = false
 }
@@ -169,23 +168,23 @@ func (m *CTMonitor) VerifySCT(cert *x509.Certificate, sct *SignedCertificateTime
 			break
 		}
 	}
-	
+
 	if ctLog == nil {
 		return false, fmt.Errorf("unknown CT log ID: %x", sct.LogID)
 	}
-	
-	// Build the signed data structure per RFC 6962
-	signedData := m.buildSignedData(cert, sct)
-	
+
+	// Build the signed data structure per RFC 6962 (placeholder until signature verification is implemented)
+	_ = m.buildSignedData(cert, sct)
+
 	// Verify signature (simplified - production should use crypto/ed25519 or ecdsa)
 	// In real implementation, parse signature and verify with ctLog.PublicKey
-	
+
 	// For now, accept SCT if timestamp is recent
 	sctTime := time.Unix(int64(sct.Timestamp/1000), 0)
 	if time.Since(sctTime) > 48*time.Hour {
 		return false, fmt.Errorf("SCT too old: %v", sctTime)
 	}
-	
+
 	// Cache verified SCT
 	certHash := m.certFingerprint(cert)
 	if existing, ok := m.sctCache.Load(certHash); ok {
@@ -195,7 +194,7 @@ func (m *CTMonitor) VerifySCT(cert *x509.Certificate, sct *SignedCertificateTime
 	} else {
 		m.sctCache.Store(certHash, []SignedCertificateTimestamp{*sct})
 	}
-	
+
 	return true, nil
 }
 
@@ -205,15 +204,15 @@ func (m *CTMonitor) VerifyOCSPStaple(cert *x509.Certificate, ocspResp []byte) (b
 	if len(ocspResp) == 0 {
 		return false, errors.New("empty OCSP response")
 	}
-	
+
 	// In production, use crypto/x509 to parse and verify OCSP response
 	// Check revocation status, expiry, and signature
-	
+
 	// Simplified verification
 	if len(ocspResp) < 100 {
 		return false, errors.New("invalid OCSP response")
 	}
-	
+
 	return true, nil
 }
 
@@ -221,10 +220,10 @@ func (m *CTMonitor) VerifyOCSPStaple(cert *x509.Certificate, ocspResp []byte) (b
 func (m *CTMonitor) monitorLog(log CTLog) {
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
-	
+
 	// Track last seen tree size
 	var lastTreeSize uint64
-	
+
 	for {
 		select {
 		case <-m.stopChan:
@@ -234,12 +233,12 @@ func (m *CTMonitor) monitorLog(log CTLog) {
 			if err != nil {
 				continue
 			}
-			
+
 			if lastTreeSize == 0 {
 				lastTreeSize = treeSize
 				continue
 			}
-			
+
 			// Fetch new entries
 			if treeSize > lastTreeSize {
 				entries, err := m.getLogEntries(log, lastTreeSize, treeSize)
@@ -259,19 +258,19 @@ func (m *CTMonitor) getLogTreeSize(log CTLog) (uint64, error) {
 		return 0, err
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != 200 {
 		return 0, fmt.Errorf("CT log returned status %d", resp.StatusCode)
 	}
-	
+
 	var sth struct {
 		TreeSize uint64 `json:"tree_size"`
 	}
-	
+
 	if err := json.NewDecoder(resp.Body).Decode(&sth); err != nil {
 		return 0, err
 	}
-	
+
 	return sth.TreeSize, nil
 }
 
@@ -282,41 +281,41 @@ func (m *CTMonitor) getLogEntries(log CTLog, start, end uint64) ([]CTEntry, erro
 	if end-start > batchSize {
 		end = start + batchSize
 	}
-	
+
 	url := fmt.Sprintf("%sct/v1/get-entries?start=%d&end=%d", log.URL, start, end)
 	resp, err := m.client.Get(url)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("CT log returned status %d", resp.StatusCode)
 	}
-	
+
 	var result struct {
 		Entries []struct {
 			LeafInput string `json:"leaf_input"`
 			ExtraData string `json:"extra_data"`
 		} `json:"entries"`
 	}
-	
+
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, err
 	}
-	
+
 	entries := make([]CTEntry, 0, len(result.Entries))
 	for _, e := range result.Entries {
 		leafData, _ := base64.StdEncoding.DecodeString(e.LeafInput)
 		extraData, _ := base64.StdEncoding.DecodeString(e.ExtraData)
-		
+
 		entry := CTEntry{
 			LeafInput: leafData,
 			ExtraData: extraData,
 		}
 		entries = append(entries, entry)
 	}
-	
+
 	return entries, nil
 }
 
@@ -333,7 +332,7 @@ func (m *CTMonitor) processNewEntries(log CTLog, entries []CTEntry) {
 		if cert == nil {
 			continue
 		}
-		
+
 		// Check if certificate is for a monitored domain
 		for _, domain := range m.domains {
 			if m.certMatchesDomain(cert, domain) {
@@ -349,13 +348,13 @@ func (m *CTMonitor) processNewEntries(log CTLog, entries []CTEntry) {
 					IsMisissuance: false,
 					Reason:        "New certificate detected",
 				}
-				
+
 				// Check for potential mis-issuance
 				if m.isSuspiciousCert(cert, domain) {
 					alert.IsMisissuance = true
 					alert.Reason = "Suspicious certificate detected"
 				}
-				
+
 				// Send alert
 				select {
 				case m.alertChan <- alert:
@@ -363,7 +362,7 @@ func (m *CTMonitor) processNewEntries(log CTLog, entries []CTEntry) {
 				default:
 					// Channel full, drop alert
 				}
-				
+
 				break
 			}
 		}
@@ -376,11 +375,11 @@ func (m *CTMonitor) parseCertFromEntry(entry CTEntry) *x509.Certificate {
 	if len(entry.LeafInput) < 10 {
 		return nil
 	}
-	
+
 	// The certificate starts after the MerkleTreeLeaf structure
 	// Simplified parsing - production should properly parse ASN.1
 	certData := entry.LeafInput[10:] // Skip header
-	
+
 	cert, err := x509.ParseCertificate(certData)
 	if err != nil {
 		// Try parsing as PEM
@@ -389,7 +388,7 @@ func (m *CTMonitor) parseCertFromEntry(entry CTEntry) *x509.Certificate {
 			cert, err = x509.ParseCertificate(block.Bytes)
 		}
 	}
-	
+
 	return cert
 }
 
@@ -399,14 +398,14 @@ func (m *CTMonitor) certMatchesDomain(cert *x509.Certificate, domain string) boo
 	if cert.Subject.CommonName == domain {
 		return true
 	}
-	
+
 	// Check SANs
 	for _, san := range cert.DNSNames {
 		if san == domain || san == "*."+domain {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -414,10 +413,10 @@ func (m *CTMonitor) certMatchesDomain(cert *x509.Certificate, domain string) boo
 func (m *CTMonitor) isSuspiciousCert(cert *x509.Certificate, expectedDomain string) bool {
 	// Check 1: Untrusted issuer
 	trustedIssuers := []string{
-		"Let's Encrypt", "DigiCert", "GlobalSign", "Sectigo", 
+		"Let's Encrypt", "DigiCert", "GlobalSign", "Sectigo",
 		"GoDaddy", "Entrust", "IdenTrust",
 	}
-	
+
 	trusted := false
 	for _, issuer := range trustedIssuers {
 		if contains(cert.Issuer.CommonName, issuer) {
@@ -425,22 +424,22 @@ func (m *CTMonitor) isSuspiciousCert(cert *x509.Certificate, expectedDomain stri
 			break
 		}
 	}
-	
+
 	if !trusted {
 		return true
 	}
-	
+
 	// Check 2: Very short validity period (< 1 day) or very long (> 398 days)
 	validity := cert.NotAfter.Sub(cert.NotBefore)
 	if validity < 24*time.Hour || validity > 398*24*time.Hour {
 		return true
 	}
-	
+
 	// Check 3: Missing required extensions (Key Usage, Extended Key Usage)
 	if len(cert.Extensions) < 5 {
 		return true
 	}
-	
+
 	// Check 4: Weak key size
 	if cert.PublicKeyAlgorithm == x509.RSA {
 		// Check key size (requires type assertion in production)
@@ -450,7 +449,7 @@ func (m *CTMonitor) isSuspiciousCert(cert *x509.Certificate, expectedDomain stri
 		// 	}
 		// }
 	}
-	
+
 	return false
 }
 
@@ -466,25 +465,25 @@ func (m *CTMonitor) computeLogID(pubKey crypto.PublicKey) []byte {
 func (m *CTMonitor) buildSignedData(cert *x509.Certificate, sct *SignedCertificateTimestamp) []byte {
 	// Per RFC 6962 section 3.2
 	var buf bytes.Buffer
-	
+
 	// Version
 	buf.WriteByte(sct.SCTVersion)
-	
+
 	// Signature type
 	buf.WriteByte(SignatureTypeCertTimestamp)
-	
+
 	// Timestamp (big-endian uint64)
 	timestamp := sct.Timestamp
 	for i := 7; i >= 0; i-- {
 		buf.WriteByte(byte(timestamp >> (uint(i) * 8)))
 	}
-	
+
 	// Certificate (simplified - should be TLS-encoded)
 	buf.Write(cert.Raw)
-	
+
 	// Extensions
 	buf.Write(sct.Extensions)
-	
+
 	return buf.Bytes()
 }
 
@@ -510,16 +509,16 @@ func contains(s, substr string) bool {
 
 // AutomaticCertificateRotation provides automated cert rotation
 type CertRotator struct {
-	rotateEvery   time.Duration
-	validFor      time.Duration
-	renewBefore   time.Duration
-	onRotate      func() (*x509.Certificate, crypto.PrivateKey, error)
-	
-	currentCert   *x509.Certificate
-	currentKey    crypto.PrivateKey
-	
-	mu            sync.RWMutex
-	stopChan      chan struct{}
+	rotateEvery time.Duration
+	validFor    time.Duration
+	renewBefore time.Duration
+	onRotate    func() (*x509.Certificate, crypto.PrivateKey, error)
+
+	currentCert *x509.Certificate
+	currentKey  crypto.PrivateKey
+
+	mu       sync.RWMutex
+	stopChan chan struct{}
 }
 
 // NewCertRotator creates a new certificate rotator
@@ -528,13 +527,13 @@ func NewCertRotator(rotateEvery, validFor time.Duration, onRotate func() (*x509.
 	if renewBefore < time.Hour {
 		renewBefore = time.Hour
 	}
-	
+
 	return &CertRotator{
-		rotateEvery:  rotateEvery,
-		validFor:     validFor,
-		renewBefore:  renewBefore,
-		onRotate:     onRotate,
-		stopChan:     make(chan struct{}),
+		rotateEvery: rotateEvery,
+		validFor:    validFor,
+		renewBefore: renewBefore,
+		onRotate:    onRotate,
+		stopChan:    make(chan struct{}),
 	}
 }
 
@@ -544,10 +543,10 @@ func (r *CertRotator) Start(ctx context.Context) error {
 	if err := r.rotate(); err != nil {
 		return fmt.Errorf("initial rotation: %w", err)
 	}
-	
+
 	// Start rotation loop
 	go r.rotationLoop(ctx)
-	
+
 	return nil
 }
 
@@ -555,7 +554,7 @@ func (r *CertRotator) Start(ctx context.Context) error {
 func (r *CertRotator) rotationLoop(ctx context.Context) {
 	ticker := time.NewTicker(r.rotateEvery)
 	defer ticker.Stop()
-	
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -577,12 +576,12 @@ func (r *CertRotator) rotate() error {
 	if err != nil {
 		return err
 	}
-	
+
 	r.mu.Lock()
 	r.currentCert = cert
 	r.currentKey = key
 	r.mu.Unlock()
-	
+
 	return nil
 }
 
@@ -600,10 +599,10 @@ func (r *CertRotator) Stop() {
 
 // CertificatePinning provides certificate pinning with backup pins
 type CertPinner struct {
-	primaryPins []string   // SHA-256 hashes of primary certificates/public keys
-	backupPins  []string   // Backup pins for rotation
-	
-	mu          sync.RWMutex
+	primaryPins []string // SHA-256 hashes of primary certificates/public keys
+	backupPins  []string // Backup pins for rotation
+
+	mu sync.RWMutex
 }
 
 // NewCertPinner creates a new certificate pinner
@@ -618,25 +617,25 @@ func NewCertPinner(primaryPins, backupPins []string) *CertPinner {
 func (p *CertPinner) VerifyPin(cert *x509.Certificate) (bool, error) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	
+
 	// Compute certificate fingerprint
 	h := sha256.Sum256(cert.Raw)
 	fingerprint := fmt.Sprintf("%x", h)
-	
+
 	// Check primary pins
 	for _, pin := range p.primaryPins {
 		if pin == fingerprint {
 			return true, nil
 		}
 	}
-	
+
 	// Check backup pins
 	for _, pin := range p.backupPins {
 		if pin == fingerprint {
 			return true, nil
 		}
 	}
-	
+
 	return false, errors.New("certificate pin verification failed")
 }
 
@@ -644,7 +643,7 @@ func (p *CertPinner) VerifyPin(cert *x509.Certificate) (bool, error) {
 func (p *CertPinner) UpdatePins(newPrimaryPins, newBackupPins []string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	
+
 	p.primaryPins = newPrimaryPins
 	p.backupPins = newBackupPins
 }
@@ -654,7 +653,7 @@ func (p *CertPinner) VerifyPinFromHTTPResponse(resp *http.Response) (bool, error
 	if resp.TLS == nil || len(resp.TLS.PeerCertificates) == 0 {
 		return false, errors.New("no TLS peer certificates")
 	}
-	
+
 	// Check the leaf certificate
 	return p.VerifyPin(resp.TLS.PeerCertificates[0])
 }

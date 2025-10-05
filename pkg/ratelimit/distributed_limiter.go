@@ -207,9 +207,9 @@ func (d *DistributedLimiter) keyForBucket(key string) string {
 	return fmt.Sprintf("%s:bucket:%s", d.prefix, hashed)
 }
 
-// SlidingWindowLimiter implements sliding window counter for stricter rate limiting
-// Use case: Prevent burst attacks within window (e.g., 100 req/min with no bursts)
-type SlidingWindowLimiter struct {
+// RedisSlidingWindowLimiter implements a Redis-backed sliding window counter for stricter rate limiting.
+// Renamed to avoid collision with in-memory SlidingWindowLimiter in adaptive.go
+type RedisSlidingWindowLimiter struct {
 	rdb      *redis.Client
 	limit    int64
 	window   time.Duration
@@ -219,8 +219,8 @@ type SlidingWindowLimiter struct {
 
 // NewSlidingWindowLimiter creates a sliding window rate limiter
 // Algorithm: Divide window into sub-slots, count requests in each, apply weighted sum
-func NewSlidingWindowLimiter(rdb *redis.Client, limit int64, window time.Duration, keyPrefix string) *SlidingWindowLimiter {
-	return &SlidingWindowLimiter{
+func NewRedisSlidingWindowLimiter(rdb *redis.Client, limit int64, window time.Duration, keyPrefix string) *RedisSlidingWindowLimiter {
+	return &RedisSlidingWindowLimiter{
 		rdb:      rdb,
 		limit:    limit,
 		window:   window,
@@ -230,7 +230,7 @@ func NewSlidingWindowLimiter(rdb *redis.Client, limit int64, window time.Duratio
 }
 
 // Allow checks request against sliding window
-func (s *SlidingWindowLimiter) Allow(ctx context.Context, key string) (bool, int64, error) {
+func (s *RedisSlidingWindowLimiter) Allow(ctx context.Context, key string) (bool, int64, error) {
 	windowKey := s.keyForWindow(key)
 	now := time.Now()
 	nowMs := now.UnixMilli()
@@ -280,7 +280,7 @@ func (s *SlidingWindowLimiter) Allow(ctx context.Context, key string) (bool, int
 	return allowed, remaining, nil
 }
 
-func (s *SlidingWindowLimiter) keyForWindow(key string) string {
+func (s *RedisSlidingWindowLimiter) keyForWindow(key string) string {
 	h := sha256.Sum256([]byte(key))
 	hashed := hex.EncodeToString(h[:16])
 	return fmt.Sprintf("%s:window:%s", s.prefix, hashed)

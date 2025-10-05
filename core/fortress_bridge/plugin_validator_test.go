@@ -1,8 +1,8 @@
 package fortress_bridge
 
 import (
+	"encoding/json"
 	"testing"
-	"time"
 )
 
 func TestPluginValidation(t *testing.T) {

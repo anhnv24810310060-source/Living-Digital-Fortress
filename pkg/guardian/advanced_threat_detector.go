@@ -1,3 +1,6 @@
+//go:build enterprise
+// +build enterprise
+
 package guardian
 
 import (
@@ -18,29 +21,29 @@ import (
 type AdvancedThreatDetector struct {
 	// Phase 2 P0: Transformer-based sequence analyzer
 	transformerAnalyzer *ml.TransformerSequenceAnalyzer
-	
+
 	// eBPF syscall monitoring (lock-free ring buffer)
 	ebpfMonitor *ebpf.SyscallMonitor
-	
+
 	// Memory forensics engine
 	memoryForensics *MemoryForensicsEngine
-	
+
 	// Real-time threat scoring pipeline
 	threatScorer *RealTimeThreatScorer
-	
+
 	// Ensemble model weights (calibrated for production)
 	ensembleWeights EnsembleWeights
-	
+
 	// Behavioral baseline (per-user normal behavior)
 	baselineStore *BehavioralBaselineStore
-	
+
 	// Performance metrics
-	detectionLatency  time.Duration
-	totalDetections   uint64
-	falsePositives    uint64
-	truePositives     uint64
-	mu                sync.RWMutex
-	
+	detectionLatency time.Duration
+	totalDetections  uint64
+	falsePositives   uint64
+	truePositives    uint64
+	mu               sync.RWMutex
+
 	// Configuration
 	config DetectorConfig
 }
@@ -49,22 +52,22 @@ type AdvancedThreatDetector struct {
 type DetectorConfig struct {
 	// Latency budget (P0: < 100ms)
 	MaxLatencyMs int
-	
+
 	// Sensitivity (0.0-1.0)
 	Sensitivity float64
-	
+
 	// Enable/disable components
-	UseTransformer    bool
-	UseEBPF          bool
+	UseTransformer     bool
+	UseEBPF            bool
 	UseMemoryForensics bool
-	
+
 	// Scoring thresholds
 	HighThreatThreshold   float64 // 80+
 	MediumThreatThreshold float64 // 60-80
 	LowThreatThreshold    float64 // 40-60
-	
+
 	// Performance tuning
-	EBPFBufferSize      int
+	EBPFBufferSize       int
 	TransformerBatchSize int
 	ParallelWorkers      int
 }
@@ -82,8 +85,8 @@ func DefaultDetectorConfig() DetectorConfig {
 		MaxLatencyMs:          100,
 		Sensitivity:           0.75,
 		UseTransformer:        true,
-		UseEBPF:              true,
-		UseMemoryForensics:   true,
+		UseEBPF:               true,
+		UseMemoryForensics:    true,
 		HighThreatThreshold:   80.0,
 		MediumThreatThreshold: 60.0,
 		LowThreatThreshold:    40.0,
@@ -105,44 +108,44 @@ func DefaultEnsembleWeights() EnsembleWeights {
 // ThreatDetectionResult aggregates all detection signals
 type ThreatDetectionResult struct {
 	// Overall threat assessment
-	ThreatScore     float64        // 0-100
-	RiskLevel       string         // CRITICAL, HIGH, MEDIUM, LOW, SAFE
-	Confidence      float64        // 0.0-1.0
-	
+	ThreatScore float64 // 0-100
+	RiskLevel   string  // CRITICAL, HIGH, MEDIUM, LOW, SAFE
+	Confidence  float64 // 0.0-1.0
+
 	// Individual component scores
 	TransformerScore     float64
-	EBPFScore           float64
+	EBPFScore            float64
 	MemoryForensicsScore float64
-	
+
 	// Detailed findings
-	DetectedPatterns     []string
-	SuspiciousSyscalls   []string
-	MemoryAnomalies      []string
-	AttentionHighlights  []int // Syscall indices with high attention
-	
+	DetectedPatterns    []string
+	SuspiciousSyscalls  []string
+	MemoryAnomalies     []string
+	AttentionHighlights []int // Syscall indices with high attention
+
 	// Explanation
-	Explanation          string
-	RecommendedAction    string
-	
+	Explanation       string
+	RecommendedAction string
+
 	// Performance metadata
-	DetectionLatency     time.Duration
-	ComponentLatencies   map[string]time.Duration
-	
+	DetectionLatency   time.Duration
+	ComponentLatencies map[string]time.Duration
+
 	// Timestamp
-	DetectedAt           time.Time
+	DetectedAt time.Time
 }
 
 // MemoryForensicsEngine performs advanced memory artifact analysis
 type MemoryForensicsEngine struct {
 	// Volatility framework integration (production would use actual Volatility)
 	enabled bool
-	
+
 	// Malware signature database
 	signatures map[string]*MemorySignature
-	
+
 	// Yara rules for pattern matching
 	yaraRules []*YaraRule
-	
+
 	mu sync.RWMutex
 }
 
@@ -166,10 +169,10 @@ type YaraRule struct {
 type RealTimeThreatScorer struct {
 	// Historical threat data for calibration
 	historicalScores []float64
-	
+
 	// Adaptive thresholds (auto-adjust based on environment)
 	adaptiveThreshold float64
-	
+
 	mu sync.RWMutex
 }
 
@@ -181,12 +184,12 @@ type BehavioralBaselineStore struct {
 
 // BehavioralBaseline represents normal behavior for a user/workload
 type BehavioralBaseline struct {
-	UserID              string
-	NormalSyscalls      map[string]float64 // Syscall -> frequency
-	TypicalSequences    [][]string
-	AvgExecutionTime    time.Duration
-	LastUpdated         time.Time
-	SampleCount         int
+	UserID           string
+	NormalSyscalls   map[string]float64 // Syscall -> frequency
+	TypicalSequences [][]string
+	AvgExecutionTime time.Duration
+	LastUpdated      time.Time
+	SampleCount      int
 }
 
 // NewAdvancedThreatDetector creates production-ready detector
@@ -197,19 +200,19 @@ func NewAdvancedThreatDetector(config DetectorConfig) (*AdvancedThreatDetector, 
 		baselineStore:   NewBehavioralBaselineStore(),
 		threatScorer:    NewRealTimeThreatScorer(),
 	}
-	
+
 	// Initialize transformer analyzer if enabled
 	if config.UseTransformer {
 		detector.transformerAnalyzer = ml.NewTransformerSequenceAnalyzer(
 			ml.DefaultTransformerConfig(),
 		)
 	}
-	
+
 	// Initialize memory forensics if enabled
 	if config.UseMemoryForensics {
 		detector.memoryForensics = NewMemoryForensicsEngine()
 	}
-	
+
 	return detector, nil
 }
 
@@ -220,77 +223,77 @@ func NewAdvancedThreatDetector(config DetectorConfig) (*AdvancedThreatDetector, 
 // - MUST provide explainable results
 func (atd *AdvancedThreatDetector) DetectThreats(ctx context.Context, sandboxResult *sandbox.SandboxResult) (*ThreatDetectionResult, error) {
 	startTime := time.Now()
-	
+
 	// Enforce latency budget
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(atd.config.MaxLatencyMs)*time.Millisecond)
 	defer cancel()
-	
+
 	result := &ThreatDetectionResult{
 		DetectedAt:         time.Now(),
 		ComponentLatencies: make(map[string]time.Duration),
 	}
-	
+
 	// Run detection components in parallel for speed
 	var wg sync.WaitGroup
 	var transformerScore, ebpfScore, memoryScore float64
 	var transformerExplanation, ebpfExplanation, memoryExplanation string
 	var detectedPatterns, suspiciousSyscalls, memoryAnomalies []string
-	
+
 	// Component 1: Transformer sequence analysis
 	if atd.config.UseTransformer && atd.transformerAnalyzer != nil {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			
+
 			t0 := time.Now()
 			score, explanation, patterns := atd.analyzeWithTransformer(ctx, sandboxResult)
 			result.ComponentLatencies["transformer"] = time.Since(t0)
-			
+
 			transformerScore = score
 			transformerExplanation = explanation
 			detectedPatterns = patterns
 		}()
 	}
-	
+
 	// Component 2: eBPF syscall analysis
 	if atd.config.UseEBPF && len(sandboxResult.Syscalls) > 0 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			
+
 			t0 := time.Now()
 			score, explanation, suspicious := atd.analyzeWithEBPF(ctx, sandboxResult)
 			result.ComponentLatencies["ebpf"] = time.Since(t0)
-			
+
 			ebpfScore = score
 			ebpfExplanation = explanation
 			suspiciousSyscalls = suspicious
 		}()
 	}
-	
+
 	// Component 3: Memory forensics
 	if atd.config.UseMemoryForensics && atd.memoryForensics != nil {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			
+
 			t0 := time.Now()
 			score, explanation, anomalies := atd.analyzeMemoryForensics(ctx, sandboxResult)
 			result.ComponentLatencies["memory"] = time.Since(t0)
-			
+
 			memoryScore = score
 			memoryExplanation = explanation
 			memoryAnomalies = anomalies
 		}()
 	}
-	
+
 	// Wait for all components (with timeout)
 	done := make(chan struct{})
 	go func() {
 		wg.Wait()
 		close(done)
 	}()
-	
+
 	select {
 	case <-done:
 		// All components finished
@@ -298,32 +301,32 @@ func (atd *AdvancedThreatDetector) DetectThreats(ctx context.Context, sandboxRes
 		// Timeout or cancellation
 		return nil, fmt.Errorf("detection timeout: %w", ctx.Err())
 	}
-	
+
 	// Ensemble scoring: weighted combination
 	result.TransformerScore = transformerScore
 	result.EBPFScore = ebpfScore
 	result.MemoryForensicsScore = memoryScore
-	
+
 	result.ThreatScore = (transformerScore * atd.ensembleWeights.Transformer) +
 		(ebpfScore * atd.ensembleWeights.EBPF) +
 		(memoryScore * atd.ensembleWeights.MemoryForensics)
-	
+
 	// Normalize to 0-100
 	if result.ThreatScore > 100 {
 		result.ThreatScore = 100
 	}
-	
+
 	// Compute confidence (based on agreement between components)
 	result.Confidence = atd.computeConfidence(transformerScore, ebpfScore, memoryScore)
-	
+
 	// Assign risk level
 	result.RiskLevel = atd.assignRiskLevel(result.ThreatScore)
-	
+
 	// Aggregate findings
 	result.DetectedPatterns = detectedPatterns
 	result.SuspiciousSyscalls = suspiciousSyscalls
 	result.MemoryAnomalies = memoryAnomalies
-	
+
 	// Generate comprehensive explanation
 	result.Explanation = atd.generateExplanation(
 		result.ThreatScore,
@@ -331,18 +334,18 @@ func (atd *AdvancedThreatDetector) DetectThreats(ctx context.Context, sandboxRes
 		ebpfExplanation,
 		memoryExplanation,
 	)
-	
+
 	// Recommend action based on risk level
 	result.RecommendedAction = atd.recommendAction(result.RiskLevel, result.ThreatScore)
-	
+
 	// Record metrics
 	result.DetectionLatency = time.Since(startTime)
-	
+
 	atd.mu.Lock()
 	atd.detectionLatency = result.DetectionLatency
 	atd.totalDetections++
 	atd.mu.Unlock()
-	
+
 	return result, nil
 }
 
@@ -351,34 +354,34 @@ func (atd *AdvancedThreatDetector) analyzeWithTransformer(ctx context.Context, s
 	if len(sandboxResult.Syscalls) == 0 {
 		return 0.0, "No syscalls captured", nil
 	}
-	
+
 	// Extract syscall sequence
 	syscallNames := make([]string, len(sandboxResult.Syscalls))
 	timestamps := make([]time.Time, len(sandboxResult.Syscalls))
-	
+
 	for i, sc := range sandboxResult.Syscalls {
 		syscallNames[i] = sc.Name
 		timestamps[i] = sc.Timestamp
 	}
-	
+
 	// Prepare input for transformer
 	input := &ml.SequenceInput{
 		Syscalls:   syscallNames,
 		Timestamps: timestamps,
 	}
-	
+
 	// Run transformer analysis
 	analysisResult, err := atd.transformerAnalyzer.Analyze(ctx, input)
 	if err != nil {
 		return 50.0, fmt.Sprintf("Transformer error: %v", err), nil
 	}
-	
+
 	// Extract detected patterns
 	patterns := make([]string, 0)
 	for _, match := range analysisResult.MatchedPatterns {
 		patterns = append(patterns, match.Pattern.Name)
 	}
-	
+
 	return analysisResult.ThreatScore, analysisResult.Explanation, patterns
 }
 
@@ -387,18 +390,18 @@ func (atd *AdvancedThreatDetector) analyzeWithEBPF(ctx context.Context, sandboxR
 	// Count dangerous syscalls
 	dangerousCount := 0
 	suspiciousSyscalls := make([]string, 0)
-	
+
 	dangerousSet := map[string]bool{
-		"execve":    true,
-		"execveat":  true,
-		"ptrace":    true,
-		"setuid":    true,
-		"setgid":    true,
-		"mprotect":  true,
-		"clone":     true,
-		"fork":      true,
+		"execve":   true,
+		"execveat": true,
+		"ptrace":   true,
+		"setuid":   true,
+		"setgid":   true,
+		"mprotect": true,
+		"clone":    true,
+		"fork":     true,
 	}
-	
+
 	for _, sc := range sandboxResult.Syscalls {
 		if sc.Dangerous || dangerousSet[sc.Name] {
 			dangerousCount++
@@ -407,14 +410,14 @@ func (atd *AdvancedThreatDetector) analyzeWithEBPF(ctx context.Context, sandboxR
 			}
 		}
 	}
-	
+
 	// Calculate score based on dangerous syscall ratio
 	ratio := float64(dangerousCount) / float64(len(sandboxResult.Syscalls))
 	score := ratio * 100.0
-	
+
 	explanation := fmt.Sprintf("eBPF Analysis: %d/%d dangerous syscalls (%.1f%%)",
 		dangerousCount, len(sandboxResult.Syscalls), ratio*100)
-	
+
 	return score, explanation, suspiciousSyscalls
 }
 
@@ -423,18 +426,18 @@ func (atd *AdvancedThreatDetector) analyzeMemoryForensics(ctx context.Context, s
 	if atd.memoryForensics == nil || !atd.memoryForensics.enabled {
 		return 0.0, "Memory forensics disabled", nil
 	}
-	
+
 	anomalies := make([]string, 0)
 	score := 0.0
-	
+
 	// Check for memory artifacts (placeholder for production Volatility integration)
 	if len(sandboxResult.Artifacts) > 0 {
 		score += 20.0
 		anomalies = append(anomalies, "suspicious_artifacts_detected")
 	}
-	
+
 	explanation := fmt.Sprintf("Memory forensics: %d artifacts analyzed", len(sandboxResult.Artifacts))
-	
+
 	return score, explanation, anomalies
 }
 
@@ -443,25 +446,25 @@ func (atd *AdvancedThreatDetector) computeConfidence(scores ...float64) float64 
 	if len(scores) == 0 {
 		return 0.5
 	}
-	
+
 	// Calculate variance - low variance = high confidence
 	mean := 0.0
 	for _, s := range scores {
 		mean += s
 	}
 	mean /= float64(len(scores))
-	
+
 	variance := 0.0
 	for _, s := range scores {
 		diff := s - mean
 		variance += diff * diff
 	}
 	variance /= float64(len(scores))
-	
+
 	// Convert variance to confidence (inverse relationship)
 	stdDev := math.Sqrt(variance)
 	confidence := 1.0 / (1.0 + stdDev/50.0) // Normalize
-	
+
 	return confidence
 }
 
@@ -530,15 +533,15 @@ func NewMemoryForensicsEngine() *MemoryForensicsEngine {
 func (atd *AdvancedThreatDetector) GetMetrics() map[string]interface{} {
 	atd.mu.RLock()
 	defer atd.mu.RUnlock()
-	
+
 	return map[string]interface{}{
-		"total_detections":     atd.totalDetections,
-		"avg_latency_ms":       atd.detectionLatency.Milliseconds(),
-		"false_positives":      atd.falsePositives,
-		"true_positives":       atd.truePositives,
-		"accuracy":             float64(atd.truePositives) / float64(atd.totalDetections+1),
-		"transformer_enabled":  atd.config.UseTransformer,
-		"ebpf_enabled":         atd.config.UseEBPF,
+		"total_detections":         atd.totalDetections,
+		"avg_latency_ms":           atd.detectionLatency.Milliseconds(),
+		"false_positives":          atd.falsePositives,
+		"true_positives":           atd.truePositives,
+		"accuracy":                 float64(atd.truePositives) / float64(atd.totalDetections+1),
+		"transformer_enabled":      atd.config.UseTransformer,
+		"ebpf_enabled":             atd.config.UseEBPF,
 		"memory_forensics_enabled": atd.config.UseMemoryForensics,
 	}
 }

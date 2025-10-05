@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -21,10 +22,10 @@ func TestPQCService_Integration(t *testing.T) {
 
 	// Test key generation
 	keyGenResp := testKeyGeneration(t, client, server.URL)
-	
+
 	// Test handshake
 	testHandshake(t, client, server.URL, keyGenResp.SessionID)
-	
+
 	// Test session info
 	testSessionInfo(t, client, server.URL, keyGenResp.SessionID)
 }
@@ -38,13 +39,13 @@ func TestPQCService_LoadTest(t *testing.T) {
 	defer server.Close()
 
 	client := &http.Client{Timeout: 5 * time.Second}
-	
+
 	// Concurrent key generation
 	concurrency := 10
 	requests := 100
-	
+
 	results := make(chan error, concurrency)
-	
+
 	for i := 0; i < concurrency; i++ {
 		go func() {
 			for j := 0; j < requests/concurrency; j++ {
@@ -57,7 +58,7 @@ func TestPQCService_LoadTest(t *testing.T) {
 			results <- nil
 		}()
 	}
-	
+
 	// Wait for all goroutines
 	for i := 0; i < concurrency; i++ {
 		if err := <-results; err != nil {
@@ -146,24 +147,17 @@ func TestHybridKEX_EndToEndHandshake(t *testing.T) {
 	alice := NewHybridKEX(true)
 	bob := NewHybridKEX(true)
 
-	// Alice generates key pair
-	aliceSession, err := alice.GenerateKeyPair()
-	if err != nil {
-		t.Fatalf("Alice key generation failed: %v", err)
-	}
-
 	// Bob generates key pair
 	bobSession, err := bob.GenerateKeyPair()
 	if err != nil {
 		t.Fatalf("Bob key generation failed: %v", err)
 	}
 
-	// Create public key messages
-	alicePublicMsg := createPublicKeyMessage(aliceSession)
+	// Create public key message from Bob
 	bobPublicMsg := createPublicKeyMessage(bobSession)
 
 	// Alice initiates handshake with Bob's public key
-	_, aliceHandshakeMsg, err := alice.InitiateHandshake(bobPublicMsg)
+	aliceSession, aliceHandshakeMsg, err := alice.InitiateHandshake(bobPublicMsg)
 	if err != nil {
 		t.Fatalf("Alice handshake initiation failed: %v", err)
 	}
@@ -214,26 +208,26 @@ func TestHybridKEX_PerformanceBenchmark(t *testing.T) {
 	}
 
 	kex := NewHybridKEX(true)
-	
+
 	// Measure key generation performance
 	start := time.Now()
 	iterations := 1000
-	
+
 	for i := 0; i < iterations; i++ {
 		_, err := kex.GenerateKeyPair()
 		if err != nil {
 			t.Fatalf("Key generation failed: %v", err)
 		}
 	}
-	
+
 	duration := time.Since(start)
 	avgLatency := duration / time.Duration(iterations)
-	
+
 	t.Logf("Key generation performance:")
 	t.Logf("  Total time: %v", duration)
 	t.Logf("  Average latency: %v", avgLatency)
 	t.Logf("  Operations per second: %.2f", float64(iterations)/duration.Seconds())
-	
+
 	// Verify performance meets requirements (< 10ms per operation)
 	if avgLatency > 10*time.Millisecond {
 		t.Errorf("Key generation too slow: %v > 10ms", avgLatency)
@@ -303,10 +297,27 @@ func handleTestKeyGen(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var req map[string]string
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+
+	algorithm := req["algorithm"]
+	if algorithm != "hybrid" && algorithm != "x25519" {
+		http.Error(w, "unsupported algorithm", http.StatusBadRequest)
+		return
+	}
+
+	if req["client_id"] == "" {
+		http.Error(w, "client_id required", http.StatusBadRequest)
+		return
+	}
+
 	response := map[string]interface{}{
 		"session_id": "test-session-123",
 		"public_key": []byte("mock-public-key"),
-		"algorithm":  "hybrid",
+		"algorithm":  algorithm,
 		"version":    2,
 		"expires_at": time.Now().Add(24 * time.Hour).Format(time.RFC3339),
 	}
@@ -318,6 +329,17 @@ func handleTestKeyGen(w http.ResponseWriter, r *http.Request) {
 func handleTestHandshake(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		http.Error(w, "Method not allowed", 405)
+		return
+	}
+
+	var req map[string]interface{}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+
+	if sessionID, _ := req["session_id"].(string); sessionID == "" {
+		http.Error(w, "session_id required", http.StatusBadRequest)
 		return
 	}
 

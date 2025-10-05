@@ -426,9 +426,7 @@ func (pc *PooledConnection) isHealthy() bool {
 
 // Close closes the pooled connection
 func (pc *PooledConnection) Close() error {
-	if pc.Connection != nil {
-		return pc.Connection.Close()
-	}
+	pc.closed.Store(true)
 	return nil
 }
 

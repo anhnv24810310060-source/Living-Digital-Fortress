@@ -1,6 +1,6 @@
 package security
+
 // Package graphql implements GraphQL-specific security controls
-package graphql
 
 import (
 	"errors"
@@ -12,56 +12,56 @@ import (
 
 // SecurityMiddleware implements GraphQL security controls
 type SecurityMiddleware struct {
-	config        *Config
-	queryCache    sync.Map // hash -> *QueryAnalysis
+	config         *Config
+	queryCache     sync.Map // hash -> *QueryAnalysis
 	blockedQueries sync.Map // hash -> reason
-	mu            sync.RWMutex
-	
+	mu             sync.RWMutex
+
 	// Metrics
-	queriesBlocked atomic.Uint64
-	depthViolations atomic.Uint64
+	queriesBlocked       atomic.Uint64
+	depthViolations      atomic.Uint64
 	complexityViolations atomic.Uint64
 }
 
 // Config holds GraphQL security configuration
 type Config struct {
 	// Depth limiting
-	MaxDepth           int
-	MaxDepthEnabled    bool
-	
+	MaxDepth        int
+	MaxDepthEnabled bool
+
 	// Complexity analysis
-	MaxComplexity      int
-	ComplexityEnabled  bool
-	DefaultFieldCost   int
-	ConnectionCost     int // cost per connection/list field
-	
+	MaxComplexity     int
+	ComplexityEnabled bool
+	DefaultFieldCost  int
+	ConnectionCost    int // cost per connection/list field
+
 	// Query whitelisting
-	WhitelistEnabled   bool
-	AllowedQueries     map[string]bool // query hash -> allowed
-	
+	WhitelistEnabled bool
+	AllowedQueries   map[string]bool // query hash -> allowed
+
 	// Introspection control
 	DisableIntrospection bool
-	
+
 	// Batch query limits
-	MaxBatchSize       int
-	
+	MaxBatchSize int
+
 	// Alias limits (to prevent alias-based DoS)
-	MaxAliasCount      int
-	
+	MaxAliasCount int
+
 	// Directive limits
-	AllowedDirectives  map[string]bool
+	AllowedDirectives map[string]bool
 }
 
 // QueryAnalysis holds analysis results for a GraphQL query
 type QueryAnalysis struct {
-	Hash          string
-	Depth         int
-	Complexity    int
-	AliasCount    int
-	FieldCount    int
+	Hash             string
+	Depth            int
+	Complexity       int
+	AliasCount       int
+	FieldCount       int
 	HasIntrospection bool
-	Directives    []string
-	Errors        []string
+	Directives       []string
+	Errors           []string
 }
 
 // NewSecurityMiddleware creates a new GraphQL security middleware
@@ -77,17 +77,17 @@ func NewSecurityMiddleware(cfg *Config) *SecurityMiddleware {
 // DefaultConfig returns default GraphQL security configuration
 func DefaultConfig() *Config {
 	return &Config{
-		MaxDepth:           10,
-		MaxDepthEnabled:    true,
-		MaxComplexity:      1000,
-		ComplexityEnabled:  true,
-		DefaultFieldCost:   1,
-		ConnectionCost:     10,
-		WhitelistEnabled:   false,
-		AllowedQueries:     make(map[string]bool),
+		MaxDepth:             10,
+		MaxDepthEnabled:      true,
+		MaxComplexity:        1000,
+		ComplexityEnabled:    true,
+		DefaultFieldCost:     1,
+		ConnectionCost:       10,
+		WhitelistEnabled:     false,
+		AllowedQueries:       make(map[string]bool),
 		DisableIntrospection: true,
-		MaxBatchSize:       10,
-		MaxAliasCount:      15,
+		MaxBatchSize:         10,
+		MaxAliasCount:        15,
 		AllowedDirectives: map[string]bool{
 			"include":    true,
 			"skip":       true,
@@ -103,18 +103,18 @@ func (sm *SecurityMiddleware) ValidateQuery(query string) (*QueryAnalysis, error
 	if cached, ok := sm.queryCache.Load(hash); ok {
 		return cached.(*QueryAnalysis), nil
 	}
-	
+
 	// Check if query is blocked
 	if reason, ok := sm.blockedQueries.Load(hash); ok {
 		sm.queriesBlocked.Add(1)
 		return nil, fmt.Errorf("query blocked: %v", reason)
 	}
-	
+
 	// Analyze query
 	analysis := &QueryAnalysis{
 		Hash: hash,
 	}
-	
+
 	// Parse and analyze (simplified - production would use actual GraphQL parser)
 	analysis.Depth = sm.calculateDepth(query)
 	analysis.Complexity = sm.calculateComplexity(query)
@@ -122,33 +122,33 @@ func (sm *SecurityMiddleware) ValidateQuery(query string) (*QueryAnalysis, error
 	analysis.FieldCount = sm.countFields(query)
 	analysis.HasIntrospection = sm.hasIntrospection(query)
 	analysis.Directives = sm.extractDirectives(query)
-	
+
 	// Apply depth limit
 	if sm.config.MaxDepthEnabled && analysis.Depth > sm.config.MaxDepth {
 		sm.depthViolations.Add(1)
 		analysis.Errors = append(analysis.Errors, fmt.Sprintf("depth %d exceeds limit %d", analysis.Depth, sm.config.MaxDepth))
 		return analysis, errors.New("depth limit exceeded")
 	}
-	
+
 	// Apply complexity limit
 	if sm.config.ComplexityEnabled && analysis.Complexity > sm.config.MaxComplexity {
 		sm.complexityViolations.Add(1)
 		analysis.Errors = append(analysis.Errors, fmt.Sprintf("complexity %d exceeds limit %d", analysis.Complexity, sm.config.MaxComplexity))
 		return analysis, errors.New("complexity limit exceeded")
 	}
-	
+
 	// Check introspection
 	if sm.config.DisableIntrospection && analysis.HasIntrospection {
 		analysis.Errors = append(analysis.Errors, "introspection disabled in production")
 		return analysis, errors.New("introspection disabled")
 	}
-	
+
 	// Check alias count
 	if analysis.AliasCount > sm.config.MaxAliasCount {
 		analysis.Errors = append(analysis.Errors, fmt.Sprintf("alias count %d exceeds limit %d", analysis.AliasCount, sm.config.MaxAliasCount))
 		return analysis, errors.New("too many aliases")
 	}
-	
+
 	// Check directives
 	for _, directive := range analysis.Directives {
 		if _, allowed := sm.config.AllowedDirectives[directive]; !allowed {
@@ -156,7 +156,7 @@ func (sm *SecurityMiddleware) ValidateQuery(query string) (*QueryAnalysis, error
 			return analysis, fmt.Errorf("directive @%s not allowed", directive)
 		}
 	}
-	
+
 	// Check whitelist (if enabled)
 	if sm.config.WhitelistEnabled {
 		if _, ok := sm.config.AllowedQueries[hash]; !ok {
@@ -164,10 +164,10 @@ func (sm *SecurityMiddleware) ValidateQuery(query string) (*QueryAnalysis, error
 			return analysis, errors.New("query not whitelisted")
 		}
 	}
-	
+
 	// Cache successful analysis
 	sm.queryCache.Store(hash, analysis)
-	
+
 	return analysis, nil
 }
 
@@ -176,7 +176,7 @@ func (sm *SecurityMiddleware) calculateDepth(query string) int {
 	// Simplified depth calculation by counting nested braces
 	maxDepth := 0
 	currentDepth := 0
-	
+
 	for _, ch := range query {
 		if ch == '{' {
 			currentDepth++
@@ -187,7 +187,7 @@ func (sm *SecurityMiddleware) calculateDepth(query string) int {
 			currentDepth--
 		}
 	}
-	
+
 	return maxDepth
 }
 
@@ -196,10 +196,10 @@ func (sm *SecurityMiddleware) calculateComplexity(query string) int {
 	// Simplified complexity: field count * cost + connection multipliers
 	fieldCount := sm.countFields(query)
 	connectionCount := sm.countConnections(query)
-	
-	complexity := fieldCount*sm.config.DefaultFieldCost + 
+
+	complexity := fieldCount*sm.config.DefaultFieldCost +
 		connectionCount*sm.config.ConnectionCost
-	
+
 	return complexity
 }
 
@@ -249,21 +249,21 @@ func (sm *SecurityMiddleware) hasIntrospection(query string) bool {
 		"__InputValue",
 		"__Directive",
 	}
-	
+
 	lowerQuery := strings.ToLower(query)
 	for _, keyword := range introspectionKeywords {
 		if strings.Contains(lowerQuery, strings.ToLower(keyword)) {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
 // extractDirectives extracts directive names from query
 func (sm *SecurityMiddleware) extractDirectives(query string) []string {
 	directives := []string{}
-	
+
 	// Simple pattern matching for @directive
 	tokens := strings.Split(query, "@")
 	for i := 1; i < len(tokens); i++ {
@@ -276,7 +276,7 @@ func (sm *SecurityMiddleware) extractDirectives(query string) []string {
 			directives = append(directives, name)
 		}
 	}
-	
+
 	return directives
 }
 
@@ -297,7 +297,7 @@ func hashQuery(query string) string {
 	// Normalize query: remove whitespace and comments
 	normalized := strings.Join(strings.Fields(query), " ")
 	normalized = removeComments(normalized)
-	
+
 	// Simple hash (production: use crypto/sha256)
 	return fmt.Sprintf("%x", len(normalized))
 }
@@ -321,13 +321,13 @@ func (sm *SecurityMiddleware) Stats() map[string]interface{} {
 		cacheSize++
 		return true
 	})
-	
+
 	blockedSize := 0
 	sm.blockedQueries.Range(func(k, v interface{}) bool {
 		blockedSize++
 		return true
 	})
-	
+
 	return map[string]interface{}{
 		"queriesBlocked":       sm.queriesBlocked.Load(),
 		"depthViolations":      sm.depthViolations.Load(),
@@ -338,11 +338,11 @@ func (sm *SecurityMiddleware) Stats() map[string]interface{} {
 }
 
 // ValidateBatch validates a batch of GraphQL queries
-func (sm *SecurityMiddleware) ValidateBatch(queries []string) ([]* QueryAnalysis, error) {
+func (sm *SecurityMiddleware) ValidateBatch(queries []string) ([]*QueryAnalysis, error) {
 	if len(queries) > sm.config.MaxBatchSize {
 		return nil, fmt.Errorf("batch size %d exceeds limit %d", len(queries), sm.config.MaxBatchSize)
 	}
-	
+
 	results := make([]*QueryAnalysis, len(queries))
 	for i, query := range queries {
 		analysis, err := sm.ValidateQuery(query)
@@ -351,7 +351,7 @@ func (sm *SecurityMiddleware) ValidateBatch(queries []string) ([]* QueryAnalysis
 		}
 		results[i] = analysis
 	}
-	
+
 	return results, nil
 }
 
@@ -362,8 +362,8 @@ func GenerateQueryID(operation string, query string) string {
 
 // CostEstimator estimates the cost of executing a query (for budgeting)
 type CostEstimator struct {
-	FieldCosts      map[string]int // fieldName -> cost
-	DefaultCost     int
+	FieldCosts           map[string]int // fieldName -> cost
+	DefaultCost          int
 	ConnectionMultiplier int
 }
 
@@ -371,13 +371,13 @@ type CostEstimator struct {
 func NewCostEstimator() *CostEstimator {
 	return &CostEstimator{
 		FieldCosts: map[string]int{
-			"user":         10,
-			"users":        50,
-			"post":         5,
-			"posts":        25,
-			"comment":      2,
-			"comments":     10,
-			"search":       100, // expensive
+			"user":     10,
+			"users":    50,
+			"post":     5,
+			"posts":    25,
+			"comment":  2,
+			"comments": 10,
+			"search":   100, // expensive
 		},
 		DefaultCost:          1,
 		ConnectionMultiplier: 10,
@@ -390,7 +390,7 @@ func (ce *CostEstimator) EstimateCost(analysis *QueryAnalysis) int {
 	baseCost := analysis.FieldCount * ce.DefaultCost
 	complexityPenalty := analysis.Complexity
 	depthPenalty := analysis.Depth * 10
-	
+
 	totalCost := baseCost + complexityPenalty + depthPenalty
 	return totalCost
 }

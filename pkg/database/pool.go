@@ -29,7 +29,7 @@ type Pool struct {
 	config          PoolConfig
 	metrics         *PoolMetrics
 	slowQueryLogger *SlowQueryLogger
-	healthChecker   *HealthChecker
+	healthChecker   *PoolHealthChecker
 	mu              sync.RWMutex
 	lastHealthCheck time.Time
 	healthy         bool
@@ -60,8 +60,9 @@ type SlowQuery struct {
 	Timestamp time.Time
 }
 
-// HealthChecker monitors database health
-type HealthChecker struct {
+// PoolHealthChecker monitors database health at the connection pool level.
+// Renamed from HealthChecker to avoid collision with cluster-level checker in health.go
+type PoolHealthChecker struct {
 	pool     *Pool
 	interval time.Duration
 	stopCh   chan struct{}
@@ -123,11 +124,7 @@ func NewPool(config PoolConfig) (*Pool, error) {
 	}
 
 	// Start health checker
-	pool.healthChecker = &HealthChecker{
-		pool:     pool,
-		interval: config.HealthCheckInterval,
-		stopCh:   make(chan struct{}),
-	}
+	pool.healthChecker = &PoolHealthChecker{pool: pool, interval: config.HealthCheckInterval, stopCh: make(chan struct{})}
 	go pool.healthChecker.start()
 
 	log.Printf("[db] Connection pool initialized: max_open=%d, max_idle=%d, lifetime=%v",
@@ -290,7 +287,7 @@ func (sql *SlowQueryLogger) getRecent(limit int) []SlowQuery {
 }
 
 // start begins health check routine
-func (hc *HealthChecker) start() {
+func (hc *PoolHealthChecker) start() {
 	ticker := time.NewTicker(hc.interval)
 	defer ticker.Stop()
 
@@ -305,7 +302,7 @@ func (hc *HealthChecker) start() {
 }
 
 // check performs health check
-func (hc *HealthChecker) check() {
+func (hc *PoolHealthChecker) check() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -352,19 +349,19 @@ func truncateQuery(query string, maxLen int) string {
 func (p *Pool) OptimizePool() {
 	stats := p.GetStats()
 
-	// If wait count is high, we need more connections
+	// If wait count is high, consider increasing max open connections (cap at 200)
 	if stats.WaitCount > 100 && stats.MaxOpenConnections < 200 {
 		newMax := stats.MaxOpenConnections + 10
 		p.db.SetMaxOpenConns(newMax)
 		log.Printf("[db] Increased max open connections to %d (wait_count=%d)", newMax, stats.WaitCount)
 	}
 
-	// If idle connections are high, reduce idle pool
-	if stats.Idle > stats.MaxIdleConnections/2 {
-		newIdle := stats.MaxIdleConnections - 5
+	// If idle connections are high relative to in-use, reduce idle pool slightly
+	if stats.Idle > stats.InUse*2 && stats.Idle > 20 { // heuristic
+		newIdle := stats.Idle - 5
 		if newIdle > 10 {
 			p.db.SetMaxIdleConns(newIdle)
-			log.Printf("[db] Reduced max idle connections to %d", newIdle)
+			log.Printf("[db] Adjusted max idle connections to %d", newIdle)
 		}
 	}
 }

@@ -1,13 +1,13 @@
 package pqcrypto
+
 // Package pqcrypto implements post-quantum cryptography using Kyber-1024 and Dilithium-5
-package pqcrypto
 
 import (
 	"crypto/rand"
 	"errors"
 	"fmt"
 	"io"
-	
+
 	// Using Cloudflare's CIRCL library for PQC (production-ready implementation)
 	"github.com/cloudflare/circl/kem/kyber/kyber1024"
 	"github.com/cloudflare/circl/sign/dilithium/mode5"
@@ -50,10 +50,9 @@ func (pub *KyberPublicKey) Encapsulate() ([]byte, []byte, error) {
 	if pub == nil || pub.pk == nil {
 		return nil, nil, errors.New("nil public key")
 	}
-	ct, ss, err := kyber1024.EncapsulateTo(nil, nil, pub.pk, rand.Reader)
-	if err != nil {
-		return nil, nil, fmt.Errorf("kyber encap: %w", err)
-	}
+	ct := make([]byte, kyber1024.CiphertextSize)
+	ss := make([]byte, kyber1024.SharedKeySize)
+	pub.pk.EncapsulateTo(ct, ss, nil)
 	return ct, ss, nil
 }
 
@@ -63,10 +62,11 @@ func (priv *KyberPrivateKey) Decapsulate(ciphertext []byte) ([]byte, error) {
 	if priv == nil || priv.sk == nil {
 		return nil, errors.New("nil private key")
 	}
-	ss, err := kyber1024.DecapsulateTo(nil, priv.sk, ciphertext)
-	if err != nil {
-		return nil, fmt.Errorf("kyber decap: %w", err)
+	if len(ciphertext) != kyber1024.CiphertextSize {
+		return nil, fmt.Errorf("invalid ciphertext length: %d", len(ciphertext))
 	}
+	ss := make([]byte, kyber1024.SharedKeySize)
+	priv.sk.DecapsulateTo(ss, ciphertext)
 	return ss, nil
 }
 
@@ -85,9 +85,10 @@ func (pub *KyberPublicKey) MarshalBinary() ([]byte, error) {
 // UnmarshalBinary decodes Kyber public key from bytes
 func (pub *KyberPublicKey) UnmarshalBinary(data []byte) error {
 	pk := new(kyber1024.PublicKey)
-	if err := pk.UnmarshalBinary(data); err != nil {
-		return fmt.Errorf("unmarshal kyber pub: %w", err)
+	if len(data) != kyber1024.PublicKeySize {
+		return fmt.Errorf("invalid kyber public key size: %d", len(data))
 	}
+	pk.Unpack(data)
 	pub.pk = pk
 	return nil
 }
@@ -107,9 +108,10 @@ func (priv *KyberPrivateKey) MarshalBinary() ([]byte, error) {
 // UnmarshalBinary decodes Kyber private key from bytes
 func (priv *KyberPrivateKey) UnmarshalBinary(data []byte) error {
 	sk := new(kyber1024.PrivateKey)
-	if err := sk.UnmarshalBinary(data); err != nil {
-		return fmt.Errorf("unmarshal kyber priv: %w", err)
+	if len(data) != kyber1024.PrivateKeySize {
+		return fmt.Errorf("invalid kyber private key size: %d", len(data))
 	}
+	sk.Unpack(data)
 	priv.sk = sk
 	return nil
 }
@@ -131,7 +133,9 @@ func (priv *DilithiumPrivateKey) Sign(message []byte) ([]byte, error) {
 	if priv == nil || priv.sk == nil {
 		return nil, errors.New("nil private key")
 	}
-	return mode5.Sign(priv.sk, message), nil
+	sig := make([]byte, mode5.SignatureSize)
+	mode5.SignTo(priv.sk, message, sig)
+	return sig, nil
 }
 
 // Verify checks the signature for the message using Dilithium-5
@@ -214,7 +218,7 @@ func (h *HybridKEM) Encapsulate() (ciphertext []byte, sharedSecret []byte, err e
 	if err != nil {
 		return nil, nil, err
 	}
-	
+
 	// TODO: Add classical ECDH component and XOR/KDF the secrets
 	// For now, return PQC only (can be enhanced later)
 	return ctPQ, ssPQ, nil

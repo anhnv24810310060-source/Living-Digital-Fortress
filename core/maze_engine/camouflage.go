@@ -300,7 +300,7 @@ func (ce *CamouflageEngine) isVulnerabilityProbe(path string, template *Template
 	}
 
 	// Check for common vulnerability patterns
-	patterns := []string{"../", "..\\", "%2e%2e", "/etc/passwd", "/admin", "/.git"}
+	patterns := []string{"../", "..\\", "%2e%2e", "/etc/passwd", "/admin", "/.git", "/backup", "database.sql"}
 	for _, pattern := range patterns {
 		if strings.Contains(strings.ToLower(path), pattern) {
 			return true
@@ -330,7 +330,7 @@ func (ce *CamouflageEngine) handleVulnerabilityProbe(path string, template *Temp
 	if errorPage, exists := template.ErrorPages["403"]; exists {
 		return 403, errorPage.Body
 	}
-	return 400, "Bad Request"
+	return 400, "Bad Request: Potential vulnerability detected"
 }
 
 func (ce *CamouflageEngine) generateDefaultPage(template *Template) string {
@@ -374,7 +374,11 @@ func (ce *CamouflageEngine) generateDefaultPage(template *Template) string {
 </body>
 </html>`
 	default:
-		return "<html><body><h1>Welcome</h1></body></html>"
+		serverBanner := template.Headers["Server"]
+		if serverBanner == "" {
+			serverBanner = "Generic/1.0"
+		}
+		return fmt.Sprintf("<html><body><h1>Welcome</h1><p>Served by %s</p></body></html>", serverBanner)
 	}
 }
 
