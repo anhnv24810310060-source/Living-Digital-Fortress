@@ -1,4 +1,4 @@
-package main
+package locator
 
 import (
     "crypto/ed25519"
@@ -172,7 +172,8 @@ func handleRevoke(w http.ResponseWriter, r *http.Request) {
     writeJSON(w, http.StatusOK, RevokeResponse{Revoked: true})
 }
 
-func main() {
+// Run starts the locator HTTP server (extracted from main for reuse).
+func Run() {
     port := getenvInt("LOCATOR_PORT", 8080)
     // OpenTelemetry tracing (no-op if OTEL_EXPORTER_OTLP_ENDPOINT unset)
     shutdown := otelobs.InitTracer(serviceName)
