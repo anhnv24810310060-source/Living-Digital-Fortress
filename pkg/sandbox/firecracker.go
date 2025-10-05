@@ -1,4 +1,4 @@
-//go:build linux
+//go:build firecracker_sdk
 
 package sandbox
 

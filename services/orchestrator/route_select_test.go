@@ -84,7 +84,6 @@ func TestRendezvousDeterministic(t *testing.T) {
 
 func TestHandlePolicyEndpoint(t *testing.T) {
 	// set globals minimally
-	basePolicy = basePolicy // no-op; ensure compiled
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/policy", nil)
 	handlePolicy(rr, req)

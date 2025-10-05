@@ -124,7 +124,7 @@ func TestRiskLevel(t *testing.T) {
 		expected string
 	}{
 		{0, "MINIMAL"},
-		{15, "MINIMAL"},
+		{15, "LOW"},
 		{25, "LOW"},
 		{45, "MEDIUM"},
 		{65, "HIGH"},

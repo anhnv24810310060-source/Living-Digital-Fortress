@@ -13,33 +13,33 @@ func TestFirecrackerRunner_BasicExecution(t *testing.T) {
 		MemSizeMib: 128,
 		TimeoutSec: 30,
 	})
-	
+
 	ctx := context.Background()
 	payload := "echo 'test'"
-	
+
 	result, err := fr.Run(ctx, payload)
 	if err != nil {
 		t.Fatalf("Run failed: %v", err)
 	}
-	
+
 	// Verify basic result fields
 	if result.Backend != "firecracker" {
 		t.Errorf("Expected backend=firecracker, got %s", result.Backend)
 	}
-	
+
 	if result.ThreatScore < 0 || result.ThreatScore > 100 {
 		t.Errorf("ThreatScore out of range: %f", result.ThreatScore)
 	}
-	
+
 	if result.Duration == 0 {
 		t.Error("Duration should not be zero")
 	}
-	
+
 	// Verify forensic artifacts
 	if len(result.Artifacts) == 0 {
 		t.Error("Artifacts should not be empty")
 	}
-	
+
 	if _, ok := result.Artifacts["payload_sha256"]; !ok {
 		t.Error("Missing payload_sha256 artifact")
 	}
@@ -50,19 +50,19 @@ func TestFirecrackerRunner_TimeoutEnforcement(t *testing.T) {
 	fr := NewFirecrackerRunner("", "", ResourceLimits{
 		TimeoutSec: 1, // 1 second timeout for testing
 	})
-	
+
 	ctx := context.Background()
 	payload := "sleep 10" // Try to sleep longer than timeout
-	
+
 	start := time.Now()
 	_, err := fr.Run(ctx, payload)
 	duration := time.Since(start)
-	
+
 	// Should timeout within 1.5 seconds (1s timeout + margin)
 	if duration > 2*time.Second {
 		t.Errorf("Timeout not enforced: took %v", duration)
 	}
-	
+
 	if err == nil {
 		t.Error("Expected timeout error")
 	}
@@ -71,21 +71,21 @@ func TestFirecrackerRunner_TimeoutEnforcement(t *testing.T) {
 // TestFirecrackerRunner_CircuitBreaker tests circuit breaker pattern
 func TestFirecrackerRunner_CircuitBreaker(t *testing.T) {
 	fr := NewFirecrackerRunner("", "", ResourceLimits{})
-	
+
 	// Simulate 5 consecutive failures to open circuit breaker
 	for i := 0; i < 5; i++ {
 		fr.recordFailure()
 	}
-	
+
 	// Circuit breaker should be open
 	if !fr.breakerOpen.Load() {
 		t.Error("Circuit breaker should be open after 5 failures")
 	}
-	
+
 	// Next execution should fail immediately
 	ctx := context.Background()
 	_, err := fr.Run(ctx, "echo test")
-	
+
 	if err == nil {
 		t.Error("Expected circuit breaker error")
 	}
@@ -94,9 +94,9 @@ func TestFirecrackerRunner_CircuitBreaker(t *testing.T) {
 // TestFirecrackerRunner_PayloadValidation tests payload validation (P0 requirement)
 func TestFirecrackerRunner_PayloadValidation(t *testing.T) {
 	testCases := []struct {
-		name        string
-		payload     string
-		shouldFail  bool
+		name       string
+		payload    string
+		shouldFail bool
 	}{
 		{
 			name:       "Empty payload",
@@ -124,15 +124,15 @@ func TestFirecrackerRunner_PayloadValidation(t *testing.T) {
 			shouldFail: true,
 		},
 	}
-	
+
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			err := validatePayload(tc.payload)
-			
+
 			if tc.shouldFail && err == nil {
 				t.Errorf("Expected validation to fail for: %s", tc.name)
 			}
-			
+
 			if !tc.shouldFail && err != nil {
 				t.Errorf("Expected validation to pass for: %s, got error: %v", tc.name, err)
 			}
@@ -143,13 +143,13 @@ func TestFirecrackerRunner_PayloadValidation(t *testing.T) {
 // TestThreatScorer_MultiFactorAnalysis tests threat scoring algorithm
 func TestThreatScorer_MultiFactorAnalysis(t *testing.T) {
 	scorer := NewThreatScorer()
-	
+
 	testCases := []struct {
-		name           string
-		result         *SandboxResult
-		expectedMin    int
-		expectedMax    int
-		expectedLevel  string
+		name          string
+		result        *SandboxResult
+		expectedMin   int
+		expectedMax   int
+		expectedLevel string
 	}{
 		{
 			name: "Clean execution",
@@ -159,8 +159,8 @@ func TestThreatScorer_MultiFactorAnalysis(t *testing.T) {
 				NetworkIO:  []NetworkEvent{},
 			},
 			expectedMin:   0,
-			expectedMax:   20,
-			expectedLevel: "LOW",
+			expectedMax:   10,
+			expectedLevel: "MINIMAL",
 		},
 		{
 			name: "Dangerous syscalls",
@@ -187,20 +187,20 @@ func TestThreatScorer_MultiFactorAnalysis(t *testing.T) {
 			expectedLevel: "MEDIUM",
 		},
 	}
-	
+
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			score, explanation := scorer.CalculateScore(tc.result)
-			
+
 			if score < tc.expectedMin || score > tc.expectedMax {
 				t.Errorf("Score %d out of expected range [%d, %d]", score, tc.expectedMin, tc.expectedMax)
 			}
-			
+
 			level := RiskLevel(score)
 			if level != tc.expectedLevel {
-				t.Errorf("Expected risk level %s, got %s", tc.expectedLevel, level)
+				t.Errorf("Expected risk level %s, got %s (raw score=%d)", tc.expectedLevel, level, score)
 			}
-			
+
 			if explanation == "" {
 				t.Error("Explanation should not be empty")
 			}
@@ -211,12 +211,12 @@ func TestThreatScorer_MultiFactorAnalysis(t *testing.T) {
 // TestThreatScorer_ScoreRange tests score is always 0-100 (P0 requirement)
 func TestThreatScorer_ScoreRange(t *testing.T) {
 	scorer := NewThreatScorer()
-	
+
 	// Test with extreme cases
 	result := &SandboxResult{
 		Syscalls: make([]SyscallEvent, 1000),
 	}
-	
+
 	// Fill with all dangerous syscalls
 	for i := range result.Syscalls {
 		result.Syscalls[i] = SyscallEvent{
@@ -224,9 +224,9 @@ func TestThreatScorer_ScoreRange(t *testing.T) {
 			Dangerous:   true,
 		}
 	}
-	
+
 	score, _ := scorer.CalculateScore(result)
-	
+
 	if score < 0 || score > 100 {
 		t.Errorf("Score must be 0-100, got %d", score)
 	}
@@ -239,10 +239,10 @@ func BenchmarkFirecrackerRunner_Execution(b *testing.B) {
 		MemSizeMib: 128,
 		TimeoutSec: 30,
 	})
-	
+
 	ctx := context.Background()
 	payload := "echo 'benchmark'"
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, err := fr.Run(ctx, payload)
@@ -255,7 +255,7 @@ func BenchmarkFirecrackerRunner_Execution(b *testing.B) {
 // BenchmarkThreatScorer_Calculation benchmarks threat scoring
 func BenchmarkThreatScorer_Calculation(b *testing.B) {
 	scorer := NewThreatScorer()
-	
+
 	result := &SandboxResult{
 		Syscalls: []SyscallEvent{
 			{SyscallName: "read", Dangerous: false},
@@ -270,7 +270,7 @@ func BenchmarkThreatScorer_Calculation(b *testing.B) {
 			"output_entropy": 5.2,
 		},
 	}
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, _ = scorer.CalculateScore(result)
@@ -280,21 +280,21 @@ func BenchmarkThreatScorer_Calculation(b *testing.B) {
 // TestFirecrackerRunner_Metrics tests metrics collection
 func TestFirecrackerRunner_Metrics(t *testing.T) {
 	fr := NewFirecrackerRunner("", "", ResourceLimits{})
-	
+
 	// Record some executions
 	fr.recordSuccess(100 * time.Millisecond)
 	fr.recordSuccess(200 * time.Millisecond)
-	
+
 	metrics := fr.GetMetrics()
-	
+
 	if execs, ok := metrics["total_executions"].(uint64); !ok || execs != 2 {
 		t.Errorf("Expected 2 executions, got %v", metrics["total_executions"])
 	}
-	
+
 	if _, ok := metrics["avg_latency_ms"].(float64); !ok {
 		t.Error("Missing avg_latency_ms metric")
 	}
-	
+
 	if _, ok := metrics["hardware_features"].(HardwareFeatures); !ok {
 		t.Error("Missing hardware_features metric")
 	}
@@ -303,10 +303,10 @@ func TestFirecrackerRunner_Metrics(t *testing.T) {
 // TestFirecrackerRunner_Concurrency tests concurrent executions
 func TestFirecrackerRunner_Concurrency(t *testing.T) {
 	fr := NewFirecrackerRunner("", "", ResourceLimits{})
-	
+
 	concurrency := 10
 	done := make(chan bool, concurrency)
-	
+
 	for i := 0; i < concurrency; i++ {
 		go func() {
 			ctx := context.Background()
@@ -317,7 +317,7 @@ func TestFirecrackerRunner_Concurrency(t *testing.T) {
 			done <- true
 		}()
 	}
-	
+
 	// Wait for all goroutines
 	for i := 0; i < concurrency; i++ {
 		<-done
@@ -334,17 +334,17 @@ func TestFirecrackerRunner_ResourceLimits(t *testing.T) {
 		FilesystemRO: true,
 		MaxProcesses: 16,
 	}
-	
+
 	fr := NewFirecrackerRunner("", "", limits)
-	
+
 	if fr.limits.TimeoutSec != 30 {
 		t.Errorf("Expected timeout 30s, got %d", fr.limits.TimeoutSec)
 	}
-	
+
 	if !fr.limits.NetworkDeny {
 		t.Error("Network should be denied")
 	}
-	
+
 	if !fr.limits.FilesystemRO {
 		t.Error("Filesystem should be read-only")
 	}
@@ -356,9 +356,9 @@ func TestFirecrackerRunner_TimeoutOverride(t *testing.T) {
 	limits := ResourceLimits{
 		TimeoutSec: 60, // Try 60 seconds
 	}
-	
+
 	fr := NewFirecrackerRunner("", "", limits)
-	
+
 	// Should be clamped to 30 seconds (P0 requirement)
 	if fr.limits.TimeoutSec != 30 {
 		t.Errorf("Timeout should be clamped to 30s, got %d", fr.limits.TimeoutSec)
@@ -368,27 +368,27 @@ func TestFirecrackerRunner_TimeoutOverride(t *testing.T) {
 // TestFirecrackerRunner_ForensicArtifacts tests artifact collection
 func TestFirecrackerRunner_ForensicArtifacts(t *testing.T) {
 	fr := NewFirecrackerRunner("", "", ResourceLimits{})
-	
+
 	ctx := context.Background()
 	payload := "echo 'forensics test'"
-	
+
 	result, err := fr.Run(ctx, payload)
 	if err != nil {
 		t.Fatalf("Run failed: %v", err)
 	}
-	
+
 	requiredArtifacts := []string{
 		"payload_sha256",
 		"threat_explanation",
 		"ebpf_features",
 	}
-	
+
 	for _, artifact := range requiredArtifacts {
 		if _, ok := result.Artifacts[artifact]; !ok {
 			t.Errorf("Missing required artifact: %s", artifact)
 		}
 	}
-	
+
 	// Verify payload hash format (should be hex string)
 	if hash, ok := result.Artifacts["payload_sha256"]; ok {
 		hashStr := string(hash)

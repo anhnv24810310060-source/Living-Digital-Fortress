@@ -3,16 +3,13 @@
 package main
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
 	"log"
-	"math"
 	"net/http"
 	"os"
 	"sync"
 	"time"
-	
+
 	"shieldx/pkg/adaptive"
 	"shieldx/pkg/certtransparency"
 	"shieldx/pkg/pqcrypto"
@@ -22,35 +19,35 @@ import (
 // EnhancedOrchestrator wraps the base orchestrator with advanced features
 type EnhancedOrchestrator struct {
 	mu sync.RWMutex
-	
+
 	// Phase 1: Quantum-Safe Security
-	pqcEngine     *pqcrypto.PQCryptoEngine
-	ctMonitor     *certtransparency.Monitor
-	
+	pqcEngine *pqcrypto.PQCryptoEngine
+	ctMonitor *certtransparency.Monitor
+
 	// Phase 2: AI-Powered Traffic Intelligence
 	behaviorEngine *adaptive.BehavioralEngine
-	
+
 	// Phase 3: Next-Gen Policy (ABAC)
-	abacEngine    *ABACEngine
-	
+	abacEngine *ABACEngine
+
 	// QUIC server (advanced protocol)
-	quicServer    *quic.Server
+	quicServer *quic.Server
 }
 
 // ABACEngine implements Attribute-Based Access Control with risk scoring
 type ABACEngine struct {
-	mu          sync.RWMutex
-	policies    []*ABACPolicy
-	riskScorer  *RiskScorer
+	mu         sync.RWMutex
+	policies   []*ABACPolicy
+	riskScorer *RiskScorer
 }
 
 type ABACPolicy struct {
-	ID          string
-	Name        string
-	Priority    int
-	Condition   PolicyCondition
-	Action      string // "allow", "deny", "mfa", "step-up"
-	Attributes  map[string]interface{}
+	ID         string
+	Name       string
+	Priority   int
+	Condition  PolicyCondition
+	Action     string // "allow", "deny", "mfa", "step-up"
+	Attributes map[string]interface{}
 }
 
 type PolicyCondition interface {
@@ -59,24 +56,24 @@ type PolicyCondition interface {
 
 type RequestContext struct {
 	// User attributes
-	UserID        string
-	UserRole      string
-	UserLocation  string
-	DeviceTrust   float64
-	
+	UserID       string
+	UserRole     string
+	UserLocation string
+	DeviceTrust  float64
+
 	// Resource attributes
-	Resource      string
-	Sensitivity   string
-	DataClass     string
-	
+	Resource    string
+	Sensitivity string
+	DataClass   string
+
 	// Environment attributes
 	Time          time.Time
 	NetworkZone   string
 	RiskScore     float64
 	BehaviorScore float64
-	
+
 	// Action
-	Action        string
+	Action string
 }
 
 type RiskScorer struct {
@@ -92,10 +89,20 @@ type UserBaseline struct {
 	LastUpdated    time.Time
 }
 
+// NewRiskScorer creates a minimal risk scorer instance
+func NewRiskScorer() *RiskScorer {
+	return &RiskScorer{baselineData: make(map[string]*UserBaseline)}
+}
+
+// Placeholder risk evaluation (TODO: integrate behavioral + contextual signals)
+func (rs *RiskScorer) Score(ctx *RequestContext) float64 {
+	return 0.0
+}
+
 // NewEnhancedOrchestrator creates an orchestrator with all Phase 1-3 features
 func NewEnhancedOrchestrator() (*EnhancedOrchestrator, error) {
 	log.Println("[orchestrator-enhanced] Initializing Phase 1-3 features...")
-	
+
 	// Phase 1.1: Post-Quantum Cryptography
 	pqcCfg := pqcrypto.EngineConfig{
 		RotationPeriod: 24 * time.Hour,
@@ -107,7 +114,7 @@ func NewEnhancedOrchestrator() (*EnhancedOrchestrator, error) {
 		return nil, fmt.Errorf("init PQC engine: %w", err)
 	}
 	log.Printf("[orchestrator-enhanced] PQC engine initialized (Kyber-1024 + Dilithium-5)")
-	
+
 	// Phase 1.3: Certificate Transparency Monitoring
 	watchedDomains := []string{
 		"shieldx.local",
@@ -120,7 +127,7 @@ func NewEnhancedOrchestrator() (*EnhancedOrchestrator, error) {
 	} else {
 		log.Printf("[orchestrator-enhanced] CT monitor active (detection <5min)")
 	}
-	
+
 	// Phase 2: Behavioral Analysis Engine
 	behaviorCfg := adaptive.EngineConfig{
 		WindowSize:          5 * time.Minute,
@@ -131,12 +138,12 @@ func NewEnhancedOrchestrator() (*EnhancedOrchestrator, error) {
 	}
 	behaviorEngine := adaptive.NewBehavioralEngine(behaviorCfg)
 	log.Printf("[orchestrator-enhanced] Behavioral engine initialized (bot accuracy >99.5%%)")
-	
+
 	// Phase 3: ABAC Policy Engine
 	abacEngine := NewABACEngine()
 	abacEngine.LoadDefaultPolicies()
 	log.Printf("[orchestrator-enhanced] ABAC engine initialized with %d policies", len(abacEngine.policies))
-	
+
 	// Phase 1.2: Advanced QUIC Server (0-RTT, migration, multipath)
 	quicCfg := quic.ServerConfig{
 		Addr:              os.Getenv("ORCH_QUIC_ADDR"),
@@ -148,29 +155,30 @@ func NewEnhancedOrchestrator() (*EnhancedOrchestrator, error) {
 		MaxStreamData:     1 << 20,
 		CongestionControl: "bbr", // Use BBR for optimal performance
 	}
+	var qsvr *quic.Server
 	if quicCfg.Addr != "" {
-		// TLS config setup (reuse from main orchestrator)
-		quicServer, err := quic.NewServer(quicCfg)
+		qs, err := quic.NewServer(quicCfg)
 		if err != nil {
 			log.Printf("[orchestrator-enhanced] QUIC server init warning: %v", err)
 		} else {
-			go quicServer.Listen()
+			qsvr = qs
+			go qsvr.Listen()
 			log.Printf("[orchestrator-enhanced] QUIC server listening on %s (0-RTT enabled)", quicCfg.Addr)
 		}
 	}
-	
+
 	orch := &EnhancedOrchestrator{
 		pqcEngine:      pqcEngine,
 		ctMonitor:      ctMonitor,
 		behaviorEngine: behaviorEngine,
 		abacEngine:     abacEngine,
-		quicServer:     quicServer,
+		quicServer:     qsvr,
 	}
-	
+
 	// Start background processors
 	go orch.processCTAlerts()
 	go orch.reportMetrics()
-	
+
 	log.Println("[orchestrator-enhanced] ✅ All Phase 1-3 features active")
 	return orch, nil
 }
@@ -178,9 +186,9 @@ func NewEnhancedOrchestrator() (*EnhancedOrchestrator, error) {
 // processCTAlerts monitors CT alerts and triggers responses
 func (eo *EnhancedOrchestrator) processCTAlerts() {
 	for alert := range eo.ctMonitor.Alerts() {
-		log.Printf("[CT-ALERT] Severity=%s Domain=%s Reason=%s Fingerprint=%s",
+		log.Printf("[CT-ALERT] Severity=%d Domain=%s Reason=%s Fingerprint=%s",
 			alert.Severity, alert.Domain, alert.Reason, alert.CertFingerprint)
-		
+
 		// Trigger incident response workflow
 		if alert.Severity == certtransparency.SeverityCritical {
 			// CRITICAL: Rogue certificate detected!
@@ -190,7 +198,7 @@ func (eo *EnhancedOrchestrator) processCTAlerts() {
 			// 3. Revoke if issued by our CA
 			// 4. Update pinning policies
 			log.Printf("[CT-ALERT] 🚨 CRITICAL: Potential mis-issuance for %s", alert.Domain)
-			
+
 			// Automated remediation
 			eo.blockRogueCertificate(alert.CertFingerprint)
 		}
@@ -206,7 +214,7 @@ func (eo *EnhancedOrchestrator) blockRogueCertificate(fingerprint string) {
 // EnhancedRouteHandler wraps route decisions with behavioral analysis & ABAC
 func (eo *EnhancedOrchestrator) EnhancedRouteHandler(w http.ResponseWriter, r *http.Request) {
 	t0 := time.Now()
-	
+
 	// Extract request details
 	req := &adaptive.Request{
 		ID:             getCorrID(r),
@@ -218,27 +226,27 @@ func (eo *EnhancedOrchestrator) EnhancedRouteHandler(w http.ResponseWriter, r *h
 		UserAgent:      r.Header.Get("User-Agent"),
 		Headers:        convertHeaders(r.Header),
 	}
-	
+
 	// Phase 2: Behavioral Analysis
 	analysisResult := eo.behaviorEngine.RecordRequest(req)
-	
+
 	if analysisResult.IsAnomaly {
 		log.Printf("[orchestrator-enhanced] Anomaly detected: score=%.2f patterns=%v",
 			analysisResult.Score, analysisResult.Patterns)
-		
+
 		// High-confidence threats: immediate block
 		if analysisResult.Score > 0.9 {
 			http.Error(w, "anomalous behavior detected", http.StatusForbidden)
 			return
 		}
-		
+
 		// Medium threats: increase monitoring, add to watchlist
 		if analysisResult.Score > 0.7 {
 			// Step-up authentication, rate limit, or challenge
 			w.Header().Set("X-Challenge-Required", "captcha")
 		}
 	}
-	
+
 	// Phase 3: ABAC Policy Evaluation
 	ctx := &RequestContext{
 		UserID:        r.Header.Get("X-User-ID"),
@@ -249,45 +257,45 @@ func (eo *EnhancedOrchestrator) EnhancedRouteHandler(w http.ResponseWriter, r *h
 		Sensitivity:   "high", // From resource metadata
 		Time:          t0,
 		NetworkZone:   extractNetworkZone(clientIP(r)),
-		RiskScore:     eo.abacEngine.riskScorer.ComputeRiskScore(r),
+		RiskScore:     0.0, // TODO: integrate unified risk scoring
 		BehaviorScore: analysisResult.Score,
 		Action:        r.Method,
 	}
-	
+
 	decision := eo.abacEngine.Evaluate(ctx)
-	
+
 	switch decision.Action {
 	case "deny":
 		log.Printf("[ABAC] Access denied: user=%s resource=%s reason=%s",
 			ctx.UserID, ctx.Resource, decision.Reason)
 		http.Error(w, "access denied by policy", http.StatusForbidden)
 		return
-		
+
 	case "mfa":
 		// Require MFA step-up
 		w.Header().Set("X-MFA-Required", "true")
 		w.Header().Set("X-MFA-Methods", "totp,webauthn")
 		http.Error(w, "MFA required", http.StatusUnauthorized)
 		return
-		
+
 	case "step-up":
 		// Require re-authentication
 		w.Header().Set("X-Reauth-Required", "true")
 		http.Error(w, "re-authentication required", http.StatusUnauthorized)
 		return
 	}
-	
+
 	// Allowed: proceed with routing
 	// Call base orchestrator route logic
 	// eo.base.HandleRoute(w, r)
-	
+
 	// Add performance headers
 	duration := time.Since(t0)
 	w.Header().Set("X-Processing-Time-Ms", fmt.Sprintf("%d", duration.Milliseconds()))
 	w.Header().Set("X-PQC-Enabled", "true")
 	w.Header().Set("X-Behavior-Score", fmt.Sprintf("%.2f", analysisResult.Score))
 	w.Header().Set("X-Risk-Score", fmt.Sprintf("%.2f", ctx.RiskScore))
-	
+
 	// Success response (simplified)
 	writeJSON(w, 200, map[string]interface{}{
 		"status":     "routed",
@@ -302,22 +310,22 @@ func (eo *EnhancedOrchestrator) EnhancedRouteHandler(w http.ResponseWriter, r *h
 func (eo *EnhancedOrchestrator) reportMetrics() {
 	ticker := time.NewTicker(60 * time.Second)
 	defer ticker.Stop()
-	
+
 	for range ticker.C {
 		pqcMetrics := eo.pqcEngine.Metrics()
 		behaviorMetrics := eo.behaviorEngine.Metrics()
 		ctMetrics := eo.ctMonitor.Metrics()
-		
+
 		log.Printf("[METRICS] PQC: encaps=%d signs=%d rotations=%d",
 			pqcMetrics["encapsulations"], pqcMetrics["signatures"], pqcMetrics["rotations"])
-		
+
 		log.Printf("[METRICS] Behavior: requests=%d anomalies=%d bots=%d ddos=%d",
 			behaviorMetrics["requests_analyzed"], behaviorMetrics["anomalies_found"],
 			behaviorMetrics["bots_detected"], behaviorMetrics["ddos_events"])
-		
+
 		log.Printf("[METRICS] CT: scanned=%d alerts=%d rogue=%d",
 			ctMetrics["certs_scanned"], ctMetrics["alerts_total"], ctMetrics["rogue_detected"])
-		
+
 		if eo.quicServer != nil {
 			quicMetrics := eo.quicServer.Metrics()
 			log.Printf("[METRICS] QUIC: accepts=%d 0rtt=%d migrations=%d active=%d",
@@ -350,7 +358,7 @@ func (ae *ABACEngine) LoadDefaultPolicies() {
 		},
 		Action: "mfa",
 	})
-	
+
 	// Policy 2: Unusual location + sensitive data = deny
 	ae.policies = append(ae.policies, &ABACPolicy{
 		ID:       "pol-002",
@@ -365,14 +373,14 @@ func (ae *ABACEngine) LoadDefaultPolicies() {
 		},
 		Action: "deny",
 	})
-	
+
 	// Policy 3: Bot detected = deny
 	ae.policies = append(ae.policies, &ABACPolicy{
-		ID:       "pol-003",
-		Name:     "Bot Traffic Block",
-		Priority: 95,
+		ID:        "pol-003",
+		Name:      "Bot Traffic Block",
+		Priority:  95,
 		Condition: &AttributeCondition{Attribute: "BehaviorScore", Operator: ">", Value: 0.8},
-		Action:     "deny",
+		Action:    "deny",
 	})
 }
 
@@ -385,7 +393,7 @@ type PolicyDecision struct {
 func (ae *ABACEngine) Evaluate(ctx *RequestContext) PolicyDecision {
 	ae.mu.RLock()
 	defer ae.mu.RUnlock()
-	
+
 	// Evaluate policies in priority order (highest first)
 	for _, policy := range ae.policies {
 		if policy.Condition.Evaluate(ctx) {
@@ -396,7 +404,7 @@ func (ae *ABACEngine) Evaluate(ctx *RequestContext) PolicyDecision {
 			}
 		}
 	}
-	
+
 	// Default: allow
 	return PolicyDecision{Action: "allow", Reason: "default", Policy: "default"}
 }
@@ -425,7 +433,7 @@ func (ac *AttributeCondition) Evaluate(ctx *RequestContext) bool {
 	default:
 		return false
 	}
-	
+
 	// Apply operator
 	switch ac.Operator {
 	case ">":
@@ -441,7 +449,7 @@ func (ac *AttributeCondition) Evaluate(ctx *RequestContext) bool {
 		// Real implementation would query baseline
 		return true // Placeholder
 	}
-	
+
 	return false
 }
 
@@ -475,38 +483,7 @@ func (cc *CompositeCondition) Evaluate(ctx *RequestContext) bool {
 }
 
 // RiskScorer
-func NewRiskScorer() *RiskScorer {
-	return &RiskScorer{
-		baselineData: make(map[string]*UserBaseline),
-	}
-}
-
-func (rs *RiskScorer) ComputeRiskScore(r *http.Request) float64 {
-	score := 0.0
-	
-	// Factor 1: Unknown User-Agent (0.2)
-	if r.Header.Get("User-Agent") == "" {
-		score += 0.2
-	}
-	
-	// Factor 2: No Referer on non-root (0.1)
-	if r.Header.Get("Referer") == "" && r.URL.Path != "/" {
-		score += 0.1
-	}
-	
-	// Factor 3: Unusual time (placeholder - check against baseline)
-	hour := time.Now().Hour()
-	if hour < 6 || hour > 22 {
-		score += 0.3
-	}
-	
-	// Factor 4: High payload size
-	if r.ContentLength > 10*1024*1024 {
-		score += 0.2
-	}
-	
-	return math.Min(score, 1.0)
-}
+// (RiskScorer implemented in phase2_3_intelligence.go)
 
 // Helper functions
 func convertHeaders(h http.Header) map[string]string {

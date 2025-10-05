@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sync"
 )
 
 // Encryptor provides simple AES-256-GCM encryption for data-at-rest.
@@ -34,22 +35,62 @@ func New(key []byte) (*Encryptor, error) {
 }
 
 // NewFromEnv creates an Encryptor using key from env var (raw/base64/hex).
+var (
+	envOnce    sync.Mutex
+	cachedKeys = make(map[string]*Encryptor)
+)
+
 func NewFromEnv(envKey string) (*Encryptor, error) {
+	envOnce.Lock()
+	if e, ok := cachedKeys[envKey]; ok {
+		envOnce.Unlock()
+		return e, nil
+	}
+	envOnce.Unlock()
 	v := os.Getenv(envKey)
 	if v == "" {
-		return nil, errors.New("encryption key env not set: " + envKey)
+		// Fallback: try file-based injection (ENV + _FILE)
+		if fp := os.Getenv(envKey + "_FILE"); fp != "" {
+			if b, err := os.ReadFile(fp); err == nil {
+				v = string(b)
+			}
+		}
+		if v == "" {
+			return nil, errors.New("encryption key env not set: " + envKey)
+		}
 	}
-	// try raw 32 bytes
-	if len(v) == 32 {
-		if e, err := New([]byte(v)); err == nil {
+	try := func(k []byte) (*Encryptor, bool) {
+		if len(k) != 32 {
+			return nil, false
+		}
+		e, err := New(k)
+		if err != nil {
+			return nil, false
+		}
+		return e, true
+	}
+	// raw bytes
+	if e, ok := try([]byte(v)); ok {
+		envOnce.Lock()
+		cachedKeys[envKey] = e
+		envOnce.Unlock()
+		return e, nil
+	}
+	if b, err := base64.StdEncoding.DecodeString(v); err == nil {
+		if e, ok := try(b); ok {
+			envOnce.Lock()
+			cachedKeys[envKey] = e
+			envOnce.Unlock()
 			return e, nil
 		}
 	}
-	if b, err := base64.StdEncoding.DecodeString(v); err == nil && len(b) == 32 {
-		return New(b)
-	}
-	if b, err := hex.DecodeString(v); err == nil && len(b) == 32 {
-		return New(b)
+	if b, err := hex.DecodeString(v); err == nil {
+		if e, ok := try(b); ok {
+			envOnce.Lock()
+			cachedKeys[envKey] = e
+			envOnce.Unlock()
+			return e, nil
+		}
 	}
 	return nil, errors.New("invalid key format for " + envKey + ": need 32B raw/base64/hex")
 }

@@ -479,14 +479,15 @@ func (pv *PolicyValidator) calculateComplexity(pol policy.Config) int {
 	// Advanced rules: O(n * m) where m is average conditions
 	for _, rule := range pol.Advanced {
 		ruleComplexity := 1
-		if rule.TenantMatch != "" {
+		if rule.Tenant != "" { // correct field names from policy.AdvancedRule
 			ruleComplexity++
 		}
-		if rule.ScopeMatch != "" {
-			ruleComplexity++
+		if len(rule.Scopes) > 0 {
+			ruleComplexity += len(rule.Scopes)
 		}
-		if len(rule.PathPrefix) > 0 {
-			ruleComplexity += len(rule.PathPrefix)
+		if rule.PathPrefix != "" {
+			// single prefix string
+			ruleComplexity++
 		}
 		complexity += ruleComplexity
 	}
@@ -496,23 +497,21 @@ func (pv *PolicyValidator) calculateComplexity(pol policy.Config) int {
 
 // containsPattern checks if rule contains forbidden pattern
 func (pv *PolicyValidator) containsPattern(rule policy.AdvancedRule, pattern string) bool {
-	// Check in all string fields
-	if contains(rule.TenantMatch, pattern) {
+	if pattern == "" {
+		return false
+	}
+	if rule.Tenant != "" && matchSubstring(rule.Tenant, pattern) {
 		return true
 	}
-	if contains(rule.ScopeMatch, pattern) {
-		return true
-	}
-	for _, prefix := range rule.PathPrefix {
-		if contains(prefix, pattern) {
+	for _, sc := range rule.Scopes {
+		if matchSubstring(sc, pattern) {
 			return true
 		}
 	}
+	if rule.PathPrefix != "" && matchSubstring(rule.PathPrefix, pattern) {
+		return true
+	}
 	return false
-}
-
-func contains(s, substr string) bool {
-	return len(s) > 0 && len(substr) > 0 && matchSubstring(s, substr)
 }
 
 func matchSubstring(s, substr string) bool {
