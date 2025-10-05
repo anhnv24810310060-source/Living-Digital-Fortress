@@ -1,15 +1,18 @@
 # syntax=docker/dockerfile:1
 
-FROM golang:1.24 AS builder
+FROM golang:1.25 AS builder
 WORKDIR /src
 ARG GO_TAGS=""
 ENV CGO_ENABLED=0
-COPY go.mod ./
+COPY go.mod go.sum ./
+COPY services/shieldx-gateway/go.mod services/shieldx-gateway/go.mod
+COPY services/shieldx-gateway/go.sum services/shieldx-gateway/go.sum
 COPY . .
 RUN --mount=type=cache,target=/go/pkg/mod \
+    cd services/shieldx-gateway && go mod tidy
+RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    cd services/shieldx-gateway && go mod tidy && \
-    go build -tags="$GO_TAGS" -o /out/shieldx-gateway .
+    cd services/shieldx-gateway && go build -tags="$GO_TAGS" -o /out/shieldx-gateway .
 
 FROM gcr.io/distroless/static-debian12:nonroot
 WORKDIR /app

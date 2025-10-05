@@ -5,20 +5,18 @@ WORKDIR /src
 ARG GO_TAGS=""
 ENV CGO_ENABLED=0
 COPY go.mod go.sum ./
-COPY services/contauth/go.mod services/contauth/go.mod
-COPY services/contauth/go.sum services/contauth/go.sum
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
 COPY . .
 RUN --mount=type=cache,target=/go/pkg/mod \
-    cd services/contauth && go mod tidy
-RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    cd services/contauth && go build -tags="$GO_TAGS" -o /out/contauth .
+    go build -tags="$GO_TAGS" -o /out/guardian ./services/guardian
 
 FROM gcr.io/distroless/static-debian12:nonroot
 WORKDIR /app
+ENV GUARDIAN_PORT=9090
 ENV OTEL_EXPORTER_OTLP_ENDPOINT=
-ENV PORT=5002
-COPY --from=builder /out/contauth /app/contauth
-EXPOSE 5002
+COPY --from=builder /out/guardian /app/guardian
+EXPOSE 9090
 USER nonroot:nonroot
-ENTRYPOINT ["/app/contauth"]
+ENTRYPOINT ["/app/guardian"]

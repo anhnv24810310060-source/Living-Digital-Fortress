@@ -28,14 +28,14 @@ import (
 type BehavioralBiometricsEngine struct {
 	// Privacy-preserving feature extraction
 	hmacKey []byte
-	
+
 	// Behavioral models per user
-	mu            sync.RWMutex
-	userModels    map[string]*BehavioralModel
-	
+	mu         sync.RWMutex
+	userModels map[string]*BehavioralModel
+
 	// Configuration
-	config        BiometricsConfig
-	
+	config BiometricsConfig
+
 	// Performance metrics
 	analysisCount uint64
 	avgLatencyMs  float64
@@ -44,119 +44,119 @@ type BehavioralBiometricsEngine struct {
 // BiometricsConfig defines behavioral analysis parameters
 type BiometricsConfig struct {
 	// Keystroke dynamics
-	TypingSpeedBuckets     int     // Bucket size for k-anonymity
-	DigrathThreshold       float64 // Digraph timing threshold (ms)
-	DwellTimeWeight        float64 // Dwell time importance
-	FlightTimeWeight       float64 // Flight time importance
-	
+	TypingSpeedBuckets int     // Bucket size for k-anonymity
+	DigrathThreshold   float64 // Digraph timing threshold (ms)
+	DwellTimeWeight    float64 // Dwell time importance
+	FlightTimeWeight   float64 // Flight time importance
+
 	// Mouse behavior
-	MouseVelocityBuckets   int
-	TrajectorySmoothing    int     // Moving average window
-	ClickPressureBuckets   int
-	
+	MouseVelocityBuckets int
+	TrajectorySmoothing  int // Moving average window
+	ClickPressureBuckets int
+
 	// Device fingerprinting
-	DeviceFingerprintSalt  string
-	FingerprintRotation    time.Duration
-	
+	DeviceFingerprintSalt string
+	FingerprintRotation   time.Duration
+
 	// Risk thresholds
-	SuspiciousThreshold    float64 // 0.0-1.0
-	BlockThreshold         float64
-	MinSamplesForBaseline  int
+	SuspiciousThreshold   float64 // 0.0-1.0
+	BlockThreshold        float64
+	MinSamplesForBaseline int
 }
 
 // BehavioralModel represents user's unique behavioral baseline
 type BehavioralModel struct {
-	UserID              string
-	CreatedAt           time.Time
-	LastUpdated         time.Time
-	SampleCount         int
-	
+	UserID      string
+	CreatedAt   time.Time
+	LastUpdated time.Time
+	SampleCount int
+
 	// Keystroke dynamics (privacy-preserved)
 	AvgTypingSpeedWPM   float64
 	StdDevTypingSpeed   float64
 	AvgDwellTimeMs      float64
 	AvgFlightTimeMs     float64
 	DigraPhDistribution map[string]float64 // Hashed digraph timings
-	
+
 	// Mouse behavior
 	AvgMouseVelocity    float64
 	StdDevMouseVelocity float64
 	AvgClickPressure    float64
 	MouseTrajectoryHash string // Hashed trajectory patterns
-	
+
 	// Device characteristics
-	KnownDeviceHashes   map[string]time.Time // Device -> last seen
-	TypicalAccessHours  []int                 // Hours of day [0-23]
-	
+	KnownDeviceHashes  map[string]time.Time // Device -> last seen
+	TypicalAccessHours []int                // Hours of day [0-23]
+
 	// Trust score (adaptive)
-	TrustScore          float64 // 0.0-1.0
+	TrustScore float64 // 0.0-1.0
 }
 
 // KeystrokeTelemetry contains raw keystroke data (processed immediately, never stored)
 type KeystrokeTelemetry struct {
-	Timestamp   time.Time
-	KeyCode     int    // Virtual key code (NOT the actual key for privacy)
-	DwellTime   int    // Key press duration (ms)
-	FlightTime  int    // Time to next key (ms)
-	Pressure    float64 // Key press force (0.0-1.0) if available
+	Timestamp  time.Time
+	KeyCode    int     // Virtual key code (NOT the actual key for privacy)
+	DwellTime  int     // Key press duration (ms)
+	FlightTime int     // Time to next key (ms)
+	Pressure   float64 // Key press force (0.0-1.0) if available
 }
 
 // MouseTelemetry contains raw mouse data (processed immediately, never stored)
 type MouseTelemetry struct {
-	Timestamp   time.Time
-	X           int
-	Y           int
-	VelocityX   float64
-	VelocityY   float64
+	Timestamp    time.Time
+	X            int
+	Y            int
+	VelocityX    float64
+	VelocityY    float64
 	Acceleration float64
-	ClickType   string // left/right/middle
-	Pressure    float64
+	ClickType    string // left/right/middle
+	Pressure     float64
 }
 
 // DeviceTelemetry contains device characteristics
 type DeviceTelemetry struct {
-	UserAgent       string
+	UserAgent        string
 	ScreenResolution string
-	Timezone        string
-	Language        string
-	Plugins         []string
-	Canvas          string // Canvas fingerprint hash
-	WebGL           string // WebGL fingerprint hash
-	AudioContext    string // Audio fingerprint hash
+	Timezone         string
+	Language         string
+	Plugins          []string
+	Canvas           string // Canvas fingerprint hash
+	WebGL            string // WebGL fingerprint hash
+	AudioContext     string // Audio fingerprint hash
 }
 
 // BiometricFeatures contains extracted privacy-safe features
 type BiometricFeatures struct {
 	// Keystroke features (bucketed/hashed)
-	TypingSpeedBucket   int
-	DwellTimeBucket     int
-	FlightTimeBucket    int
-	DigraPhHash         string
-	
+	TypingSpeedBucket int
+	DwellTimeBucket   int
+	FlightTimeBucket  int
+	DigraPhHash       string
+
 	// Mouse features (aggregated)
 	MouseVelocityBucket int
 	TrajectoryHash      string
 	ClickPressureBucket int
-	
+
 	// Device features (hashed)
 	DeviceFingerprintHash string
 	IsNewDevice           bool
 	IsUnusualTime         bool
-	
+
 	// Context
-	SessionID           string
-	Timestamp           time.Time
+	SessionID string
+	Timestamp time.Time
 }
 
 // RiskAssessment contains behavioral risk analysis result
 type RiskAssessment struct {
-	RiskScore       float64   // 0.0-1.0
-	Confidence      float64   // 0.0-1.0
-	Decision        string    // allow/challenge/deny
-	RiskFactors     []string
-	Recommendation  string
-	AnalyzedAt      time.Time
-	LatencyMs       float64
+	RiskScore      float64 // 0.0-1.0
+	Confidence     float64 // 0.0-1.0
+	Decision       string  // allow/challenge/deny
+	RiskFactors    []string
+	Recommendation string
+	AnalyzedAt     time.Time
+	LatencyMs      float64
 }
 
 // NewBehavioralBiometricsEngine creates engine with secure defaults
@@ -166,7 +166,7 @@ func NewBehavioralBiometricsEngine(hmacKey []byte) *BehavioralBiometricsEngine {
 		hmacKey = make([]byte, 32)
 		copy(hmacKey, []byte("shieldx-biometrics-key-2024"))
 	}
-	
+
 	return &BehavioralBiometricsEngine{
 		hmacKey:    hmacKey,
 		userModels: make(map[string]*BehavioralModel),
@@ -193,26 +193,26 @@ func (bbe *BehavioralBiometricsEngine) AnalyzeBehavior(
 	mouseRaw []*MouseTelemetry,
 	deviceRaw *DeviceTelemetry,
 ) (*RiskAssessment, error) {
-	
+
 	startTime := time.Now()
-	
+
 	// Step 1: Extract privacy-safe features (immediate processing, no raw storage)
 	features := bbe.extractFeatures(userID, keystrokesRaw, mouseRaw, deviceRaw)
-	
+
 	// Step 2: Get or create user behavioral model
 	model := bbe.getUserModel(userID)
-	
+
 	// Step 3: Compute risk score
 	riskScore := bbe.computeRiskScore(features, model)
-	
+
 	// Step 4: Make authentication decision
 	decision, recommendation := bbe.makeDecision(riskScore, model.TrustScore)
-	
+
 	// Step 5: Update model if legitimate (incremental learning)
 	if riskScore < bbe.config.SuspiciousThreshold {
 		bbe.updateUserModel(userID, features)
 	}
-	
+
 	assessment := &RiskAssessment{
 		RiskScore:      riskScore,
 		Confidence:     bbe.calculateConfidence(model),
@@ -222,7 +222,7 @@ func (bbe *BehavioralBiometricsEngine) AnalyzeBehavior(
 		AnalyzedAt:     time.Now(),
 		LatencyMs:      time.Since(startTime).Seconds() * 1000,
 	}
-	
+
 	return assessment, nil
 }
 
@@ -234,33 +234,33 @@ func (bbe *BehavioralBiometricsEngine) extractFeatures(
 	mouse []*MouseTelemetry,
 	device *DeviceTelemetry,
 ) *BiometricFeatures {
-	
+
 	features := &BiometricFeatures{
 		Timestamp: time.Now(),
 	}
-	
+
 	// Keystroke feature extraction
 	if len(keystrokes) > 0 {
 		avgDwell, avgFlight := bbe.analyzeKeystrokeDynamics(keystrokes)
-		
+
 		// Bucket typing speed for k-anonymity
 		typingSpeedWPM := bbe.calculateTypingSpeed(keystrokes)
 		features.TypingSpeedBucket = int(typingSpeedWPM / float64(bbe.config.TypingSpeedBuckets))
-		
+
 		// Bucket timings
 		features.DwellTimeBucket = int(avgDwell / 10.0) // 10ms buckets
 		features.FlightTimeBucket = int(avgFlight / 10.0)
-		
+
 		// Hash digraph patterns (NEVER store raw keystrokes)
 		features.DigraPhHash = bbe.hashDigraphPattern(keystrokes)
 	}
-	
+
 	// Mouse feature extraction
 	if len(mouse) > 0 {
 		avgVelocity := bbe.analyzeMouseBehavior(mouse)
 		features.MouseVelocityBucket = int(avgVelocity / float64(bbe.config.MouseVelocityBuckets))
 		features.TrajectoryHash = bbe.hashMouseTrajectory(mouse)
-		
+
 		if len(mouse) > 0 {
 			avgPressure := 0.0
 			for _, m := range mouse {
@@ -270,13 +270,13 @@ func (bbe *BehavioralBiometricsEngine) extractFeatures(
 			features.ClickPressureBucket = int(avgPressure * float64(bbe.config.ClickPressureBuckets))
 		}
 	}
-	
+
 	// Device fingerprint (hashed for privacy)
 	if device != nil {
 		features.DeviceFingerprintHash = bbe.hashDeviceFingerprint(device)
 		features.IsUnusualTime = bbe.isUnusualAccessTime()
 	}
-	
+
 	return features
 }
 
@@ -285,18 +285,18 @@ func (bbe *BehavioralBiometricsEngine) analyzeKeystrokeDynamics(keystrokes []*Ke
 	if len(keystrokes) == 0 {
 		return 0, 0
 	}
-	
+
 	totalDwell := 0.0
 	totalFlight := 0.0
-	
+
 	for _, ks := range keystrokes {
 		totalDwell += float64(ks.DwellTime)
 		totalFlight += float64(ks.FlightTime)
 	}
-	
+
 	avgDwell = totalDwell / float64(len(keystrokes))
 	avgFlight = totalFlight / float64(len(keystrokes))
-	
+
 	return avgDwell, avgFlight
 }
 
@@ -305,17 +305,17 @@ func (bbe *BehavioralBiometricsEngine) calculateTypingSpeed(keystrokes []*Keystr
 	if len(keystrokes) < 2 {
 		return 0
 	}
-	
+
 	// Estimate based on average inter-keystroke interval
 	totalTime := keystrokes[len(keystrokes)-1].Timestamp.Sub(keystrokes[0].Timestamp).Seconds()
 	if totalTime == 0 {
 		return 0
 	}
-	
+
 	// Rough estimate: 5 chars per word
 	charsPerSec := float64(len(keystrokes)) / totalTime
 	wpm := (charsPerSec / 5.0) * 60.0
-	
+
 	return wpm
 }
 
@@ -325,7 +325,7 @@ func (bbe *BehavioralBiometricsEngine) hashDigraphPattern(keystrokes []*Keystrok
 	if len(keystrokes) < 2 {
 		return ""
 	}
-	
+
 	// Extract timing features only (not actual keys)
 	pattern := ""
 	for i := 0; i < len(keystrokes)-1; i++ {
@@ -334,7 +334,7 @@ func (bbe *BehavioralBiometricsEngine) hashDigraphPattern(keystrokes []*Keystrok
 		flight := keystrokes[i].FlightTime / 10
 		pattern += fmt.Sprintf("%d:%d,", dwell, flight)
 	}
-	
+
 	h := hmac.New(sha256.New, bbe.hmacKey)
 	h.Write([]byte(pattern))
 	return hex.EncodeToString(h.Sum(nil))
@@ -345,13 +345,13 @@ func (bbe *BehavioralBiometricsEngine) analyzeMouseBehavior(mouse []*MouseTeleme
 	if len(mouse) == 0 {
 		return 0
 	}
-	
+
 	totalVelocity := 0.0
 	for _, m := range mouse {
 		velocity := math.Sqrt(m.VelocityX*m.VelocityX + m.VelocityY*m.VelocityY)
 		totalVelocity += velocity
 	}
-	
+
 	return totalVelocity / float64(len(mouse))
 }
 
@@ -360,19 +360,19 @@ func (bbe *BehavioralBiometricsEngine) hashMouseTrajectory(mouse []*MouseTelemet
 	if len(mouse) < 5 {
 		return ""
 	}
-	
+
 	// Extract movement direction changes (curvature features)
 	directions := ""
 	for i := 1; i < len(mouse); i++ {
 		dx := mouse[i].X - mouse[i-1].X
 		dy := mouse[i].Y - mouse[i-1].Y
-		
+
 		// Quantize to 8 directions (N, NE, E, SE, S, SW, W, NW)
 		angle := math.Atan2(float64(dy), float64(dx)) * 180 / math.Pi
-		dir := int((angle + 22.5) / 45.0) % 8
+		dir := int((angle+22.5)/45.0) % 8
 		directions += fmt.Sprintf("%d", dir)
 	}
-	
+
 	h := hmac.New(sha256.New, bbe.hmacKey)
 	h.Write([]byte(directions))
 	return hex.EncodeToString(h.Sum(nil))
@@ -389,11 +389,11 @@ func (bbe *BehavioralBiometricsEngine) hashDeviceFingerprint(device *DeviceTelem
 		device.WebGL,
 		device.AudioContext,
 	)
-	
+
 	h := hmac.New(sha256.New, bbe.hmacKey)
 	h.Write([]byte(fingerprint))
 	h.Write([]byte(bbe.config.DeviceFingerprintSalt))
-	
+
 	return hex.EncodeToString(h.Sum(nil))
 }
 
@@ -409,15 +409,15 @@ func (bbe *BehavioralBiometricsEngine) getUserModel(userID string) *BehavioralMo
 	bbe.mu.RLock()
 	model, exists := bbe.userModels[userID]
 	bbe.mu.RUnlock()
-	
+
 	if exists {
 		return model
 	}
-	
+
 	// Create new model
 	bbe.mu.Lock()
 	defer bbe.mu.Unlock()
-	
+
 	model = &BehavioralModel{
 		UserID:              userID,
 		CreatedAt:           time.Now(),
@@ -427,7 +427,7 @@ func (bbe *BehavioralBiometricsEngine) getUserModel(userID string) *BehavioralMo
 		TypicalAccessHours:  []int{9, 10, 11, 12, 13, 14, 15, 16, 17},
 		TrustScore:          1.0, // Initial trust
 	}
-	
+
 	bbe.userModels[userID] = model
 	return model
 }
@@ -435,12 +435,12 @@ func (bbe *BehavioralBiometricsEngine) getUserModel(userID string) *BehavioralMo
 // computeRiskScore calculates behavioral risk (0.0-1.0)
 func (bbe *BehavioralBiometricsEngine) computeRiskScore(features *BiometricFeatures, model *BehavioralModel) float64 {
 	riskScore := 0.0
-	
+
 	// Insufficient baseline data = medium risk
 	if model.SampleCount < bbe.config.MinSamplesForBaseline {
 		return 0.5
 	}
-	
+
 	// Factor 1: Typing speed deviation (20% weight)
 	if model.StdDevTypingSpeed > 0 {
 		speedDiff := math.Abs(float64(features.TypingSpeedBucket)*float64(bbe.config.TypingSpeedBuckets) - model.AvgTypingSpeedWPM)
@@ -449,7 +449,7 @@ func (bbe *BehavioralBiometricsEngine) computeRiskScore(features *BiometricFeatu
 			riskScore += 0.20
 		}
 	}
-	
+
 	// Factor 2: Mouse behavior deviation (20% weight)
 	if model.StdDevMouseVelocity > 0 {
 		velocityDiff := math.Abs(float64(features.MouseVelocityBucket)*float64(bbe.config.MouseVelocityBuckets) - model.AvgMouseVelocity)
@@ -458,34 +458,34 @@ func (bbe *BehavioralBiometricsEngine) computeRiskScore(features *BiometricFeatu
 			riskScore += 0.20
 		}
 	}
-	
+
 	// Factor 3: Unknown device (30% weight)
 	if _, known := model.KnownDeviceHashes[features.DeviceFingerprintHash]; !known {
 		riskScore += 0.30
 	}
-	
+
 	// Factor 4: Unusual access time (15% weight)
 	if features.IsUnusualTime {
 		riskScore += 0.15
 	}
-	
+
 	// Factor 5: Digraph pattern mismatch (15% weight)
 	if features.DigraPhHash != "" && model.DigraPhDistribution != nil {
 		if _, exists := model.DigraPhDistribution[features.DigraPhHash]; !exists {
 			riskScore += 0.15
 		}
 	}
-	
+
 	// Apply trust score adjustment
 	riskScore = riskScore * (2.0 - model.TrustScore) // Low trust amplifies risk
-	
+
 	return math.Min(riskScore, 1.0)
 }
 
 // makeDecision determines authentication decision
 func (bbe *BehavioralBiometricsEngine) makeDecision(riskScore, trustScore float64) (decision, recommendation string) {
 	adjustedRisk := riskScore * (2.0 - trustScore)
-	
+
 	switch {
 	case adjustedRisk >= bbe.config.BlockThreshold:
 		return "deny", "block_and_require_password_reset"
@@ -499,7 +499,7 @@ func (bbe *BehavioralBiometricsEngine) makeDecision(riskScore, trustScore float6
 // identifyRiskFactors extracts risk contributing factors
 func (bbe *BehavioralBiometricsEngine) identifyRiskFactors(features *BiometricFeatures, model *BehavioralModel) []string {
 	factors := []string{}
-	
+
 	if features.IsNewDevice {
 		factors = append(factors, "new_device")
 	}
@@ -509,7 +509,7 @@ func (bbe *BehavioralBiometricsEngine) identifyRiskFactors(features *BiometricFe
 	if model.SampleCount < bbe.config.MinSamplesForBaseline {
 		factors = append(factors, "insufficient_baseline")
 	}
-	
+
 	return factors
 }
 
@@ -518,7 +518,7 @@ func (bbe *BehavioralBiometricsEngine) calculateConfidence(model *BehavioralMode
 	if model.SampleCount == 0 {
 		return 0.0
 	}
-	
+
 	// Confidence increases with more samples (asymptotic to 1.0)
 	confidence := 1.0 - math.Exp(-float64(model.SampleCount)/50.0)
 	return confidence
@@ -528,15 +528,15 @@ func (bbe *BehavioralBiometricsEngine) calculateConfidence(model *BehavioralMode
 func (bbe *BehavioralBiometricsEngine) updateUserModel(userID string, features *BiometricFeatures) {
 	bbe.mu.Lock()
 	defer bbe.mu.Unlock()
-	
+
 	model := bbe.userModels[userID]
 	if model == nil {
 		return
 	}
-	
+
 	// Exponential moving average (alpha = 0.1)
 	alpha := 0.1
-	
+
 	// Update typing speed
 	newTypingSpeed := float64(features.TypingSpeedBucket) * float64(bbe.config.TypingSpeedBuckets)
 	if model.SampleCount > 0 {
@@ -544,7 +544,7 @@ func (bbe *BehavioralBiometricsEngine) updateUserModel(userID string, features *
 	} else {
 		model.AvgTypingSpeedWPM = newTypingSpeed
 	}
-	
+
 	// Update mouse velocity
 	newVelocity := float64(features.MouseVelocityBucket) * float64(bbe.config.MouseVelocityBuckets)
 	if model.SampleCount > 0 {
@@ -552,15 +552,15 @@ func (bbe *BehavioralBiometricsEngine) updateUserModel(userID string, features *
 	} else {
 		model.AvgMouseVelocity = newVelocity
 	}
-	
+
 	// Add device to known devices
 	model.KnownDeviceHashes[features.DeviceFingerprintHash] = time.Now()
-	
+
 	// Update digraph distribution
 	if features.DigraPhHash != "" {
-		model.DigraPhDistribution[features.DigraPhHash] = time.Now().Unix() / float64(time.Hour.Seconds())
+		model.DigraPhDistribution[features.DigraPhHash] = float64(time.Now().Unix()) / time.Hour.Seconds()
 	}
-	
+
 	model.SampleCount++
 	model.LastUpdated = time.Now()
 }

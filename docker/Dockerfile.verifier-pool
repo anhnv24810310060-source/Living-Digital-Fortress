@@ -1,14 +1,16 @@
 # syntax=docker/dockerfile:1
 
-FROM golang:1.24 AS builder
+FROM golang:1.25 AS builder
 WORKDIR /src
 ARG GO_TAGS=""
 ENV CGO_ENABLED=0
+COPY go.mod go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
 COPY . .
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    cd services/verifier-pool && go mod tidy || true && \
-    go build -tags="$GO_TAGS" -o /out/verifier-pool .
+    go build -tags="$GO_TAGS" -o /out/verifier-pool ./services/verifier-pool
 
 FROM gcr.io/distroless/static-debian12:nonroot
 WORKDIR /app
