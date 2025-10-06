@@ -3,23 +3,25 @@
     "passed": 13,
     "failed": 0,
     "total": 13,
-    "suite_duration_ms": 4572,
-    "generated_at": "2025-10-06T04:16:19Z"
+    "suite_duration_ms": 4465,
+    "generated_at": "2025-10-06T04:22:24Z"
   },
   "tests": [
-    {"name": help\ option\ prints\ usage, "status": pass, "duration_ms": 10},
-    {"name": missing\ docker\ binary\ aborts, "status": pass, "duration_ms": 31},
-    {"name": missing\ compose\ file\ aborts, "status": pass, "duration_ms": 31},
-    {"name": full\ deployment\ flow\ succeeds, "status": pass, "duration_ms": 180},
-    {"name": skip\ flags\ suppress\ actions, "status": pass, "duration_ms": 140},
-    {"name": parallel\ build\ retry\ works, "status": pass, "duration_ms": 148},
-    {"name": smoke\ test\ issues\ admin\ request, "status": pass, "duration_ms": 138},
-    {"name": health\ check\ failure\ propagates, "status": pass, "duration_ms": 1435},
-    {"name": setup\ failure\ aborts\ deployment, "status": pass, "duration_ms": 156},
-    {"name": health\ retries\ counted\ \(locator\ delayed\), "status": pass, "duration_ms": 216},
-    {"name": smoke\ test\ failure\ propagates, "status": pass, "duration_ms": 1562},
-    {"name": idempotent\ second\ run\ without\ down, "status": pass, "duration_ms": 315},
-    {"name": quick\ runtime\ with\ skips, "status": pass, "duration_ms": 174}
+    {"name": "help option prints usage", "status": "pass", "duration_ms": 10},
+    {"name": "missing docker binary aborts", "status": "pass", "duration_ms": 32},
+    {"name": "missing compose file aborts", "status": "pass", "duration_ms": 30},
+    {"name": "full deployment flow succeeds", "status": "pass", "duration_ms": 151},
+    {"name": "skip flags suppress actions", "status": "pass", "duration_ms": 136},
+    {"name": "parallel build retry works", "status": "pass", "duration_ms": 152},
+    {"name": "smoke test issues admin request", "status": "pass", "duration_ms": 139},
+    {"name": "health check failure propagates", "status": "pass", "duration_ms": 1516},
+    {"name": "setup failure aborts deployment", "status": "pass", "duration_ms": 149},
+    {"name": "health retries counted (locator delayed)", "status": "pass", "duration_ms": 174},
+    {"name": "smoke test failure propagates", "status": "pass", "duration_ms": 1550},
+    {"name": "idempotent second run without down", "status": "pass", "duration_ms": 249},
+    {"name": "quick runtime with skips", "status": "pass", "duration_ms": 148}
+  ],
+  "api_stats": [
   ],
   "api_calls": [
   ]

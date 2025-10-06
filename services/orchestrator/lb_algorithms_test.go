@@ -360,6 +360,35 @@ func TestCircuitBreaker_Recovery(t *testing.T) {
 	}
 }
 
+// TestCircuitBreaker_HalfOpenFailureBackoff verifies that a failure during HALF_OPEN
+// transitions the circuit back to OPEN and doubles the probe backoff interval.
+func TestCircuitBreaker_HalfOpenFailureBackoff(t *testing.T) {
+	backend := &Backend{URL: "http://test", Weight: 1.0}
+	backend.Healthy.Store(true)
+	// Enter HALF_OPEN state ready for a probe
+	backend.cbState.Store(2) // HALF_OPEN
+	// Configure small base backoff to make test fast
+	t.Setenv("ORCH_CB_BACKOFF_MS", "100")
+
+	before := time.Now()
+	recordBackendFailure(backend, fmt.Errorf("probe failure"))
+
+	// Should transition to OPEN
+	if st := backend.cbState.Load(); st != 1 {
+		t.Fatalf("expected circuit OPEN (1) after half-open failure, got %d", st)
+	}
+
+	// Backoff should be roughly base*2 = 200ms in the future
+	np := backend.cbNextProbe.Load()
+	if np == 0 {
+		t.Fatalf("expected next probe timestamp to be set")
+	}
+	dur := time.Until(time.Unix(0, np))
+	if dur < 150*time.Millisecond || dur > 400*time.Millisecond {
+		t.Fatalf("expected next probe ~200ms ahead, got %v (now=%v target=%v)", dur, before, time.Unix(0, np))
+	}
+}
+
 func TestSelectBackend_AlgorithmSelection(t *testing.T) {
 	pool := &Pool{
 		name: "test-pool",

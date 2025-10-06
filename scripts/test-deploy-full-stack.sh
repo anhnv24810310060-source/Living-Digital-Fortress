@@ -130,6 +130,16 @@ fi
 end_ns=$(date +%s%N)
 duration_ms=$(( (end_ns - start_ns)/1000000 ))
 printf 'curl %s duration_ms=%s exit_code=%s%s\n' "$*" "$duration_ms" "$exit_code" "$curl_extra" >>"$log_dir/curl.log"
+# Also emit structured JSON line for robust parsing
+json_extra=""
+if [[ -n "$curl_extra" ]]; then
+  # extract numeric time_total if present
+  tt=$(grep -oE 'time_total=[0-9.]+' <<<"$curl_extra" | cut -d= -f2 || true)
+  if [[ -n "$tt" ]]; then
+    json_extra=",\"time_total_s\":$tt"
+  fi
+fi
+printf '{"url":"%s","duration_ms":%s,"exit_code":%s%s}\n' "${url:-UNKNOWN}" "$duration_ms" "$exit_code" "$json_extra" >>"$log_dir/curl.jsonl"
 exit "$exit_code"
 EOF
   chmod +x "$fixture/stubs/curl"
@@ -374,6 +384,50 @@ write_results_json() {
         fi
       done <"$p/.state/curl.log"
     fi
+    # Parse structured JSON lines if present
+    if [[ -f "$p/.state/curl.jsonl" ]]; then
+      while IFS= read -r jline; do
+        # Validate minimal JSON (contains url & duration_ms)
+        if [[ "$jline" == '{'*'url'* ]]; then
+          api_entries+=("$jline")
+        fi
+      done <"$p/.state/curl.jsonl"
+    fi
+  done
+
+  # Build aggregated stats per URL
+  declare -A URL_DURS URL_FAILS URL_COUNT
+  for entry in "${api_entries[@]}"; do
+    url=$(grep -oE '"url":"[^"]+"' <<<"$entry" | cut -d'"' -f4)
+    dur=$(grep -oE '"duration_ms":[0-9]+' <<<"$entry" | cut -d: -f2)
+    ec=$(grep -oE '"exit_code":[0-9]+' <<<"$entry" | cut -d: -f2)
+    [[ -z "$url" ]] && continue
+    URL_DURS[$url]="${URL_DURS[$url]} $dur"
+    URL_COUNT[$url]=$(( ${URL_COUNT[$url]:-0} + 1 ))
+    if (( ec != 0 )); then
+      URL_FAILS[$url]=$(( ${URL_FAILS[$url]:-0} + 1 ))
+    fi
+  done
+
+  api_stats_json=()
+  for u in "${!URL_COUNT[@]}"; do
+    # Compute avg, max, p95
+    dlist=( ${URL_DURS[$u]} )
+    sum=0; max=0
+    for d in "${dlist[@]}"; do
+      (( d > max )) && max=$d
+      sum=$((sum + d))
+    done
+    count=${URL_COUNT[$u]}
+    avg=$(( sum / count ))
+    # p95 (simple: sort and pick index ceil(0.95*n)-1)
+    sorted=($(printf '%s\n' "${dlist[@]}" | sort -n))
+    idx=$(( (95 * count + 99) / 100 - 1 ))
+    (( idx < 0 )) && idx=0
+    (( idx >= count )) && idx=$((count-1))
+    p95=${sorted[$idx]}
+    fails=${URL_FAILS[$u]:-0}
+    api_stats_json+=("{\"url\":\"$u\",\"count\":$count,\"failures\":$fails,\"avg_ms\":$avg,\"max_ms\":$max,\"p95_ms\":$p95}")
   done
 
   {
@@ -388,8 +442,24 @@ write_results_json() {
     echo '  "tests": ['
     local i last=$(( ${#TEST_NAMES[@]} - 1 ))
     for i in "${!TEST_NAMES[@]}"; do
-      printf '    {"name": %q, "status": %q, "duration_ms": %s}' "${TEST_NAMES[$i]}" "${TEST_STATUSES[$i]}" "${TEST_DURATIONS_MS[$i]}"
+      # Use printf %q then convert bash escaping to JSON-friendly (remove leading/trailing quotes if present)
+      tn=$(printf %q "${TEST_NAMES[$i]}")
+      ts=$(printf %q "${TEST_STATUSES[$i]}")
+      # Replace escaped spaces (\ ) with space, and escaped parentheses
+  # Clean bash-style escapes (\ ) (\() (\)) left by %q for readability
+  tn=${tn//\\ / }
+  tn=${tn//\\(/(}
+  tn=${tn//\\)/)}
+  ts=${ts//\\ / }
+  printf '    {"name": "%s", "status": "%s", "duration_ms": %s}' "$tn" "$ts" "${TEST_DURATIONS_MS[$i]}"
       if (( i < last )); then echo ','; else echo; fi
+    done
+    echo '  ],'
+    echo '  "api_stats": ['
+    local k last3=$(( ${#api_stats_json[@]} - 1 ))
+    for k in "${!api_stats_json[@]}"; do
+      printf '    %s' "${api_stats_json[$k]}"
+      if (( k < last3 )); then echo ','; else echo; fi
     done
     echo '  ],'
     echo '  "api_calls": ['
