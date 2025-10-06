@@ -43,6 +43,8 @@ services:
       ORCH_OPA_ENFORCE: "0"
       REDIS_ADDR: "redis:6379"
       LOG_LEVEL: "info"
+      # Dev mode HTTP (no TLS) fallback; remove in production when RA-TLS or certs are configured
+      ORCH_ALLOW_INSECURE: "1"
     ports:
       - "8080:8080"
     volumes:
@@ -54,6 +56,12 @@ services:
         condition: service_healthy
     networks:
       - shieldx-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
 
   locator:
     build:
@@ -87,6 +95,12 @@ services:
       - shared-data:/app/data
     networks:
       - shieldx-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9090/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
 
   ingress:
     build:

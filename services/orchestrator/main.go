@@ -118,16 +118,16 @@ var (
 	issuer      *ratls.AutoIssuer
 	gCertExpiry = metrics.NewGauge("ratls_cert_expiry_seconds", "Seconds until current RA-TLS cert expiry")
 	// metrics
-	mRoute       = metrics.NewCounter("orchestrator_route_total", "Total route decisions")
-	mRouteDenied = metrics.NewCounter("orchestrator_route_denied_total", "Route denied by policy")
-	mRouteErr    = metrics.NewCounter("orchestrator_route_error_total", "Route errors")
-	mHealthOK    = metrics.NewCounter("orchestrator_health_ok_total", "Health probes OK")
-	mHealthBad   = metrics.NewCounter("orchestrator_health_bad_total", "Health probes failures")
-	mCBOpen      = metrics.NewCounter("orchestrator_cb_open_total", "Circuit breaker opened")
-	mCBHalfOpen  = metrics.NewCounter("orchestrator_cb_halfopen_total", "Circuit breaker half-open probes")
-	mCBClose     = metrics.NewCounter("orchestrator_cb_close_total", "Circuit breaker closed")
-	mLBPick      = metrics.NewLabeledCounter("orchestrator_lb_pick_total", "LB selections by pool and algo", []string{"pool", "algo", "healthy"})
-	mProbeDur    = metrics.NewHistogram("orchestrator_health_probe_seconds", "Duration of health probes (seconds)", nil)
+	mRoute         = metrics.NewCounter("orchestrator_route_total", "Total route decisions")
+	mRouteDenied   = metrics.NewCounter("orchestrator_route_denied_total", "Route denied by policy")
+	mRouteErr      = metrics.NewCounter("orchestrator_route_error_total", "Route errors")
+	mHealthOK      = metrics.NewCounter("orchestrator_health_ok_total", "Health probes OK")
+	mHealthBad     = metrics.NewCounter("orchestrator_health_bad_total", "Health probes failures")
+	mCBOpen        = metrics.NewCounter("orchestrator_cb_open_total", "Circuit breaker opened")
+	mCBHalfOpen    = metrics.NewCounter("orchestrator_cb_halfopen_total", "Circuit breaker half-open probes")
+	mCBClose       = metrics.NewCounter("orchestrator_cb_close_total", "Circuit breaker closed")
+	mLBPick        = metrics.NewLabeledCounter("orchestrator_lb_pick_total", "LB selections by pool and algo", []string{"pool", "algo", "healthy"})
+	mProbeDur      = metrics.NewHistogram("orchestrator_health_probe_seconds", "Duration of health probes (seconds)", nil)
 	mPolicyReloads = metrics.NewCounter("orchestrator_policy_reload_total", "Number of policy reload events")
 	gPolicyVersion = metrics.NewGauge("orchestrator_policy_version", "Current loaded policy version")
 	gHealthRatio   = metrics.NewGauge("orchestrator_health_ratio_x10000", "Overall backend health ratio * 10000")
@@ -155,10 +155,10 @@ var (
 
 // dynamic policy version & atomic storage
 var (
-	policyVersion   atomic.Uint64
-	basePolicyVal   atomic.Value // stores policy.Config
-	opaPolicyPath   string
-	basePolicyPath  string
+	policyVersion  atomic.Uint64
+	basePolicyVal  atomic.Value // stores policy.Config
+	opaPolicyPath  string
+	basePolicyPath string
 )
 
 // adaptive global IP burst (auto tuned by healthProber)
@@ -450,7 +450,7 @@ func main() {
 			log.Printf("[orchestrator] WARNING: starting without TLS (ORCH_ALLOW_INSECURE=1)")
 			// Use a minimal TLS config placeholder to avoid nil deref later; but we will
 			// actually start an HTTP (non-TLS) server below.
-							// Set a dummy config so later code does not panic
+			// Set a dummy config so later code does not panic
 			// Provide a non-nil placeholder TLS config (not used in insecure mode)
 			tlsCfg = &tls.Config{MinVersion: tls.VersionTLS12}
 		} else {
@@ -500,7 +500,9 @@ func loadBasePolicy() policy.Config {
 
 // watchBasePolicy polls for changes to the JSON policy file and hot-reloads it
 func watchBasePolicy() {
-	if basePolicyPath == "" { return }
+	if basePolicyPath == "" {
+		return
+	}
 	interval := envDur("ORCH_POLICY_WATCH_EVERY", 3*time.Second)
 	var lastMod int64
 	for {
@@ -527,7 +529,9 @@ func watchBasePolicy() {
 
 // watchOPAPolicy reloads the OPA policy bundle/regos on file change if a path is provided
 func watchOPAPolicy() {
-	if opaPolicyPath == "" { return }
+	if opaPolicyPath == "" {
+		return
+	}
 	interval := envDur("ORCH_OPA_WATCH_EVERY", 5*time.Second)
 	var lastMod int64
 	for {
