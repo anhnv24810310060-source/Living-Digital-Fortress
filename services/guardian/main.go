@@ -627,8 +627,13 @@ func main() {
 
 	// HTTP metrics middleware
 	httpMetrics := metrics.NewHTTPMetrics(reg, "guardian")
-	addr := fmt.Sprintf("127.0.0.1:%d", port)
-	log.Printf("[guardian] listening on http://%s", addr)
+	// NOTE: Previously bound only to 127.0.0.1 which made the guardian service
+	// unreachable from other containers (and host mapped port) because Docker's
+	// port publishing/NAT directs traffic to the container's eth0 interface, not
+	// its loopback. Binding to 0.0.0.0 ensures health checks and dependent
+	// services (ingress, gateway, etc.) can reach guardian on GUARDIAN_PORT.
+	addr := fmt.Sprintf(":%d", port) // listen on all interfaces inside container
+	log.Printf("[guardian] listening on http://0.0.0.0:%d", port)
 	log.Fatal(http.ListenAndServe(addr, httpMetrics.Middleware(mux)))
 }
 

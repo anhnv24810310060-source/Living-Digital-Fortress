@@ -357,6 +357,9 @@ func main() {
 	h := otelobs.WrapHTTPHandler(serviceName, baseWithLog)
 
 	addr := fmt.Sprintf(":%d", port)
+	// Listen on all interfaces so other containers (ingress, gateway, etc.) and
+	// host port publishing can reach the orchestrator. (Explicit note added after
+	// guardian fix which was previously loopback-bound.)
 	log.Printf("[orchestrator] listening on %s (algo=%s, policyVersion=%d)", addr, defaultAlgo, policyVersion.Load())
 	// Periodic DPoP replay-store GC
 	go func() {
@@ -439,7 +442,20 @@ func main() {
 		certFile, keyFile = os.Getenv("ORCH_TLS_CERT_FILE"), os.Getenv("ORCH_TLS_KEY_FILE")
 		useStatic = true
 	} else {
-		log.Fatalf("TLS required: set RATLS_ENABLE=true or provide ORCH_TLS_CERT_FILE/ORCH_TLS_KEY_FILE env vars")
+		// Development fallback: allow plain HTTP if explicitly enabled via ORCH_ALLOW_INSECURE=1.
+		// Previously this exited hard which prevented local compose / health tests when
+		// no RA-TLS or static certs configured. In production, set RATLS_ENABLE=true
+		// or configure ORCH_TLS_CERT_FILE / ORCH_TLS_KEY_FILE / ORCH_TLS_CLIENT_CA_FILE.
+		if os.Getenv("ORCH_ALLOW_INSECURE") == "1" {
+			log.Printf("[orchestrator] WARNING: starting without TLS (ORCH_ALLOW_INSECURE=1)")
+			// Use a minimal TLS config placeholder to avoid nil deref later; but we will
+			// actually start an HTTP (non-TLS) server below.
+							// Set a dummy config so later code does not panic
+			// Provide a non-nil placeholder TLS config (not used in insecure mode)
+			tlsCfg = &tls.Config{MinVersion: tls.VersionTLS12}
+		} else {
+			log.Fatalf("TLS required: set RATLS_ENABLE=true or provide ORCH_TLS_CERT_FILE/ORCH_TLS_KEY_FILE env vars (or ORCH_ALLOW_INSECURE=1 for dev)")
+		}
 	}
 	if tlsCfg.MinVersion == 0 {
 		tlsCfg.MinVersion = tls.VersionTLS13
@@ -459,7 +475,10 @@ func main() {
 		}
 	}()
 	var errSrv error
-	if useStatic {
+	if os.Getenv("ORCH_ALLOW_INSECURE") == "1" && issuer == nil && !useStatic {
+		// Plain HTTP dev mode
+		errSrv = srv.ListenAndServe()
+	} else if useStatic {
 		errSrv = srv.ListenAndServeTLS(certFile, keyFile)
 	} else {
 		errSrv = srv.ListenAndServeTLS("", "")
