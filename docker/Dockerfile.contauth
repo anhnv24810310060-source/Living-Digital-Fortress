@@ -9,7 +9,7 @@ COPY services/contauth/go.mod services/contauth/go.mod
 COPY services/contauth/go.sum services/contauth/go.sum
 COPY . .
 RUN --mount=type=cache,target=/go/pkg/mod \
-    cd services/contauth && go mod tidy
+    cd services/contauth && go mod tidy && go mod download
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     cd services/contauth && go build -tags="$GO_TAGS" -o /out/contauth .

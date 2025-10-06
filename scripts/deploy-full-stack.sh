@@ -99,8 +99,11 @@ if [[ "$NO_DOWN" == false ]]; then
 fi
 
 if [[ "$SKIP_BUILD" == false ]]; then
-  log INFO "Building container images (parallel)"
-  docker compose -p "$PROJECT_NAME" -f "$STACK_FILE" build --pull --parallel
+  log INFO "Building container images"
+  if ! docker compose -p "$PROJECT_NAME" -f "$STACK_FILE" build --pull --parallel; then
+    log WARN "Parallel build failed, retrying sequential build"
+    docker compose -p "$PROJECT_NAME" -f "$STACK_FILE" build --pull
+  fi
 else
   log INFO "Skipping image build per flag"
 fi

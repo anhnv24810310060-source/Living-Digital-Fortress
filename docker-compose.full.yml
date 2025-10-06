@@ -48,7 +48,7 @@ services:
     volumes:
       - ./policy.example.json:/etc/shieldx/policy.json:ro
       - ./policies/opa:/etc/shieldx/opa:ro
-      - shared-data:/data
+      - shared-data:/app/data
     depends_on:
       redis:
         condition: service_healthy
@@ -66,7 +66,7 @@ services:
     ports:
       - "8083:8080"
     volumes:
-      - shared-data:/data
+      - shared-data:/app/data
     depends_on:
       redis:
         condition: service_healthy
@@ -84,7 +84,7 @@ services:
     ports:
       - "9090:9090"
     volumes:
-      - shared-data:/data
+      - shared-data:/app/data
     networks:
       - shieldx-net
 
@@ -122,7 +122,7 @@ services:
       - ./policy.example.json:/etc/shieldx/policy.json:ro
       - ./policies/opa:/etc/shieldx/opa:ro
       - ./certs:/certs:ro
-      - shared-data:/data
+      - shared-data:/app/data
     networks:
       - shieldx-net
 

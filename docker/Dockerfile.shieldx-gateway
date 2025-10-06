@@ -9,7 +9,7 @@ COPY services/shieldx-gateway/go.mod services/shieldx-gateway/go.mod
 COPY services/shieldx-gateway/go.sum services/shieldx-gateway/go.sum
 COPY . .
 RUN --mount=type=cache,target=/go/pkg/mod \
-    cd services/shieldx-gateway && go mod tidy
+    cd services/shieldx-gateway && go mod tidy && go mod download
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     cd services/shieldx-gateway && go build -tags="$GO_TAGS" -o /out/shieldx-gateway .
