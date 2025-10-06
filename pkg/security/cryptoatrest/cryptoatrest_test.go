@@ -33,44 +33,49 @@ func TestEncryptorRoundtrip(t *testing.T) {
 func TestNewFromEnvFormats(t *testing.T) {
 	raw := make([]byte, 32)
 	raw[0] = 1
-	// raw
-	// fallback to os.Setenv for environment (Go Setenv failing in this environment)
-	if err := os.Setenv("K1", string(raw)); err != nil {
-		t.Fatalf("setenv K1: %v", err)
-	}
+	// raw via _FILE fallback
+	rawPath := createTempKeyFile(t, raw)
+	t.Setenv("K1_FILE", rawPath)
 	if _, err := NewFromEnv("K1"); err != nil {
-		t.Fatalf("raw: %v", err)
+		t.Fatalf("raw file: %v", err)
 	}
+
 	// base64
-	if err := os.Setenv("K2", base64.StdEncoding.EncodeToString(raw)); err != nil {
-		t.Fatalf("setenv K2: %v", err)
-	}
+	b64 := base64.StdEncoding.EncodeToString(raw)
+	t.Setenv("K2", b64)
 	if _, err := NewFromEnv("K2"); err != nil {
 		t.Fatalf("b64: %v", err)
 	}
-	// hex via _FILE fallback if normal setenv fails
-	if err := os.Setenv("K3", hex.EncodeToString(raw)); err != nil {
-		// try file fallback
-		path := createTempKeyFile(t, hex.EncodeToString(raw))
-		if err2 := os.Setenv("K3_FILE", path); err2 != nil {
-			t.Fatalf("setenv K3_FILE: %v", err2)
-		}
-	}
+
+	// hex string
+	hexVal := hex.EncodeToString(raw)
+	t.Setenv("K3", hexVal)
 	if _, err := NewFromEnv("K3"); err != nil {
 		t.Fatalf("hex: %v", err)
 	}
+
+	// hex via _FILE fallback
+	hexPath := createTempKeyFile(t, []byte(hexVal))
+	t.Setenv("K4_FILE", hexPath)
+	if _, err := NewFromEnv("K4"); err != nil {
+		t.Fatalf("hex file fallback: %v", err)
+	}
 }
 
-func createTempKeyFile(t *testing.T, data string) string {
+func createTempKeyFile(t *testing.T, data []byte) string {
 	f, err := os.CreateTemp("", "key-*.txt")
 	if err != nil {
 		t.Fatalf("tempfile: %v", err)
 	}
-	if _, err := f.Write([]byte(data)); err != nil {
+	if _, err := f.Write(data); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	if err := f.Close(); err != nil {
 		t.Fatalf("close: %v", err)
 	}
-	return f.Name()
+	path := f.Name()
+	t.Cleanup(func() {
+		_ = os.Remove(path)
+	})
+	return path
 }

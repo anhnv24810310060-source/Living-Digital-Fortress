@@ -1,6 +1,7 @@
 package sandbox
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"shieldx/pkg/ebpf"
@@ -312,33 +314,54 @@ func (fr *FirecrackerRunner) executeInVM(ctx context.Context, vm *microVMInstanc
 		return "", "", -1, err
 	}
 
-	// Execute via Firecracker (simulated for PoC - production uses actual Firecracker API)
-	cmd := exec.CommandContext(ctx, "/bin/sh", scriptPath)
-
-	// Enforce resource limits via cgroups
+	cmd := exec.Command("/bin/sh", scriptPath)
 	cmd.Env = []string{
 		"PATH=/usr/bin:/bin",
 		fmt.Sprintf("RLIMIT_AS=%d", fr.limits.MemSizeMib*1024*1024),
 		fmt.Sprintf("RLIMIT_NPROC=%d", fr.limits.MaxProcesses),
 	}
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
-	var stdoutBuf, stderrBuf strings.Builder
+	var stdoutBuf, stderrBuf bytes.Buffer
 	cmd.Stdout = &stdoutBuf
 	cmd.Stderr = &stderrBuf
 
-	execErr := cmd.Run()
-	stdout = stdoutBuf.String()
-	stderr = stderrBuf.String()
+	if err := cmd.Start(); err != nil {
+		return "", "", -1, err
+	}
 
-	if execErr != nil {
-		if exitErr, ok := execErr.(*exec.ExitError); ok {
-			exitCode = exitErr.ExitCode()
-		} else {
-			exitCode = -1
+	done := make(chan error, 1)
+	go func() {
+		done <- cmd.Wait()
+	}()
+
+	var runErr error
+	select {
+	case runErr = <-done:
+	case <-ctx.Done():
+		// Kill entire process group to ensure child processes are terminated.
+		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		runErr = <-done
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			runErr = ctxErr
 		}
 	}
 
-	return stdout, stderr, exitCode, execErr
+	stdout = stdoutBuf.String()
+	stderr = stderrBuf.String()
+
+	if runErr != nil {
+		exitCode = -1
+		return stdout, stderr, exitCode, runErr
+	}
+
+	if state := cmd.ProcessState; state != nil {
+		exitCode = state.ExitCode()
+	} else {
+		exitCode = 0
+	}
+
+	return stdout, stderr, exitCode, nil
 }
 
 // acquireVM gets a VM instance from pool or creates new one
