@@ -70,22 +70,29 @@ var (
 
 // NewLogger creates a new structured logger
 func NewLogger(service, accessLogPath, securityLogPath string) (*Logger, error) {
+	// Allow disabling file logging (force stdout) via env for restricted FS
+	if os.Getenv("ACCESSLOG_STDOUT_ONLY") == "1" {
+		return &Logger{accessFile: os.Stdout, securityFile: os.Stdout, service: service}, nil
+	}
 	af, err := os.OpenFile(accessLogPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
+		// Fallback: if ACCESSLOG_FALLBACK_STDOUT=1 then continue with stdout instead of failing hard
+		if os.Getenv("ACCESSLOG_FALLBACK_STDOUT") == "1" {
+			fmt.Fprintf(os.Stderr, "[accesslog] WARN: %v - falling back to stdout\n", err)
+			return &Logger{accessFile: os.Stdout, securityFile: os.Stdout, service: service}, nil
+		}
 		return nil, fmt.Errorf("failed to open access log: %w", err)
 	}
-
 	sf, err := os.OpenFile(securityLogPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
 		af.Close()
+		if os.Getenv("ACCESSLOG_FALLBACK_STDOUT") == "1" {
+			fmt.Fprintf(os.Stderr, "[accesslog] WARN: %v - falling back to stdout\n", err)
+			return &Logger{accessFile: os.Stdout, securityFile: os.Stdout, service: service}, nil
+		}
 		return nil, fmt.Errorf("failed to open security log: %w", err)
 	}
-
-	return &Logger{
-		accessFile:   af,
-		securityFile: sf,
-		service:      service,
-	}, nil
+	return &Logger{accessFile: af, securityFile: sf, service: service}, nil
 }
 
 // Close closes log files
@@ -94,11 +101,16 @@ func (l *Logger) Close() error {
 	defer l.mu.Unlock()
 
 	var errs []error
-	if err := l.accessFile.Close(); err != nil {
-		errs = append(errs, err)
+	// If stdout fallback is used, files may both be os.Stdout; avoid closing stdout
+	if l.accessFile != nil && l.accessFile != os.Stdout && l.accessFile != os.Stderr {
+		if err := l.accessFile.Close(); err != nil {
+			errs = append(errs, err)
+		}
 	}
-	if err := l.securityFile.Close(); err != nil {
-		errs = append(errs, err)
+	if l.securityFile != nil && l.securityFile != os.Stdout && l.securityFile != os.Stderr && l.securityFile != l.accessFile {
+		if err := l.securityFile.Close(); err != nil {
+			errs = append(errs, err)
+		}
 	}
 
 	if len(errs) > 0 {

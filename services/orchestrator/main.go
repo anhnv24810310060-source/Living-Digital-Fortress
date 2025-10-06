@@ -233,9 +233,12 @@ func main() {
 	defer shutdown(context.Background())
 
 	// structured access/security logger setup
+	// Structured access/security logger. If filesystem permissions block file creation
+	// you can set ACCESSLOG_FALLBACK_STDOUT=1 (or ACCESSLOG_STDOUT_ONLY=1) to avoid
+	// crash loops in minimal container FS environments.
 	orchLogger, logErr := accesslog.NewLogger(serviceName, "data/orchestrator-access.log", "data/orchestrator-security.log")
 	if logErr != nil {
-		log.Fatalf("[orchestrator] accesslog init: %v", logErr)
+		log.Fatalf("[orchestrator] accesslog init: %v (set ACCESSLOG_FALLBACK_STDOUT=1 to fallback to stdout)", logErr)
 	}
 	defer orchLogger.Close()
 
