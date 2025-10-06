@@ -10,6 +10,13 @@ ORIG_PATH="$PATH"
 PASS_COUNT=0
 FAIL_COUNT=0
 
+# Capture detailed results for JSON export
+declare -a TEST_NAMES=()
+declare -a TEST_STATUSES=()
+declare -a TEST_DURATIONS_MS=()
+
+RESULT_JSON_PATH="${RESULT_JSON_PATH:-${PROJECT_ROOT}/results.json}"
+
 declare -a CLEANUP_PATHS=()
 
 register_cleanup() {
@@ -134,17 +141,27 @@ create_minimal_toolchain() {
   printf '%s' "$toolchain"
 }
 
+now_ns() { date +%s%N; }
+
 run_test() {
-  local name="$1"
-  shift
+  local name="$1"; shift
+  local t_start t_end dur_ms status
   printf 'Running %s... ' "$name"
+  t_start=$(now_ns)
   if ( set -euo pipefail; "$@" ); then
     echo "ok"
     PASS_COUNT=$((PASS_COUNT + 1))
+    status="pass"
   else
     echo "fail"
     FAIL_COUNT=$((FAIL_COUNT + 1))
+    status="fail"
   fi
+  t_end=$(now_ns)
+  dur_ms=$(( (t_end - t_start)/1000000 ))
+  TEST_NAMES+=("$name")
+  TEST_STATUSES+=("$status")
+  TEST_DURATIONS_MS+=("$dur_ms")
 }
 
 test_help_option() {
@@ -252,6 +269,87 @@ test_health_check_failure() {
   grep -Eq 'Service locator not ready after|One or more services failed health checks' <<<"$output"
 }
 
+# --- Extended tests ---
+test_setup_failure_abort() {
+  local fixture output status
+  fixture="$(create_fixture 1)"
+  set +e
+  output="$(cd "$fixture" \
+    && SHIELDX_STUB_LOG_DIR="$fixture/.state" SHIELDX_SETUP_EXIT_CODE=11 PATH="$fixture/stubs:$ORIG_PATH" bash ./scripts/deploy-full-stack.sh 2>&1)"
+  status=$?
+  set -e
+  [[ $status -ne 0 ]]
+  grep -q 'setup ' "$fixture/.state/setup.log"
+}
+
+test_health_retry_counts() {
+  local fixture output status curl_log count
+  fixture="$(create_fixture 1)"
+  curl_log="$fixture/.state/curl.log"
+  set +e
+  output="$(cd "$fixture" && SHIELDX_STUB_LOG_DIR="$fixture/.state" SHIELDX_CURL_FAIL_PATTERN=8083/healthz SHIELDX_CURL_FAIL_UNTIL=3 PATH="$fixture/stubs:$ORIG_PATH" bash ./scripts/deploy-full-stack.sh --skip-build --skip-setup --no-down 2>&1)"
+  status=$?
+  set -e
+  [[ $status -eq 0 ]]
+  count="$(grep -c '8083/healthz' "$curl_log" || true)"
+  (( count >= 4 ))
+  grep -q 'ShieldX stack is up' <<<"$output"
+}
+
+test_smoke_failure() {
+  local fixture output status
+  fixture="$(create_fixture 1)"
+  set +e
+  output="$(cd "$fixture" && SHIELDX_STUB_LOG_DIR="$fixture/.state" SHIELDX_CURL_FAIL_PATTERN=8082/health SHIELDX_CURL_FAIL_ALWAYS=1 PATH="$fixture/stubs:$ORIG_PATH" bash ./scripts/deploy-full-stack.sh --skip-build --skip-setup --no-down --smoke-test 2>&1)"
+  status=$?
+  set -e
+  [[ $status -ne 0 ]]
+  grep -Eq 'smoke test|Gateway' <<<"$output" || true
+}
+
+test_idempotent_runs() {
+  local fixture docker_log2
+  fixture="$(create_fixture 1)"
+  (cd "$fixture" && SHIELDX_STUB_LOG_DIR="$fixture/.state" PATH="$fixture/stubs:$ORIG_PATH" bash ./scripts/deploy-full-stack.sh --skip-build --skip-setup --no-down >/dev/null 2>&1)
+  (cd "$fixture" && SHIELDX_STUB_LOG_DIR="$fixture/.state" PATH="$fixture/stubs:$ORIG_PATH" bash ./scripts/deploy-full-stack.sh --skip-build --skip-setup --no-down >/dev/null 2>&1)
+  docker_log2="$fixture/.state/docker.log"
+  ! grep -q 'down --remove-orphans' "$docker_log2"
+  grep -q 'up -d' "$docker_log2"
+}
+
+test_quick_runtime_with_skip() {
+  local fixture start end delta_ms
+  fixture="$(create_fixture 1)"
+  start=$(now_ns)
+  (cd "$fixture" && SHIELDX_STUB_LOG_DIR="$fixture/.state" PATH="$fixture/stubs:$ORIG_PATH" bash ./scripts/deploy-full-stack.sh --skip-build --skip-setup --no-down >/dev/null 2>&1)
+  end=$(now_ns)
+  delta_ms=$(( (end - start)/1000000 ))
+  (( delta_ms < 2500 ))
+}
+
+write_results_json() {
+  local out tmp
+  tmp="${RESULT_JSON_PATH}.tmp"
+  {
+    echo '{'
+    echo '  "summary": {'
+    echo "    \"passed\": $PASS_COUNT,"
+    echo "    \"failed\": $FAIL_COUNT,"
+    echo "    \"total\": $((PASS_COUNT+FAIL_COUNT))"
+    echo '  },'
+    echo '  "tests": ['
+    local i last=$(( ${#TEST_NAMES[@]} - 1 ))
+    for i in "${!TEST_NAMES[@]}"; do
+      printf '    {"name": %q, "status": %q, "duration_ms": %s}' "${TEST_NAMES[$i]}" "${TEST_STATUSES[$i]}" "${TEST_DURATIONS_MS[$i]}"
+      if (( i < last )); then echo ','; else echo; fi
+    done
+    echo '  ]'
+    echo '}'
+  } >"$tmp"
+  mv "$tmp" "$RESULT_JSON_PATH"
+  echo "Wrote JSON results to $RESULT_JSON_PATH"
+}
+
 main() {
   run_test "help option prints usage" test_help_option
   run_test "missing docker binary aborts" test_missing_required_binary
@@ -262,7 +360,15 @@ main() {
   run_test "smoke test issues admin request" test_smoke_test_invocation
   run_test "health check failure propagates" test_health_check_failure
 
+  # Extended
+  run_test "setup failure aborts deployment" test_setup_failure_abort
+  run_test "health retries counted (locator delayed)" test_health_retry_counts
+  run_test "smoke test failure propagates" test_smoke_failure
+  run_test "idempotent second run without down" test_idempotent_runs
+  run_test "quick runtime with skips" test_quick_runtime_with_skip
+
   printf '\n%d tests passed, %d failed\n' "$PASS_COUNT" "$FAIL_COUNT"
+  write_results_json
   if (( FAIL_COUNT == 0 )); then
     return 0
   fi

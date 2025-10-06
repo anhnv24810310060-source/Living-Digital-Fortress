@@ -1,0 +1,22 @@
+{
+  "summary": {
+    "passed": 13,
+    "failed": 0,
+    "total": 13
+  },
+  "tests": [
+    {"name": help\ option\ prints\ usage, "status": pass, "duration_ms": 14},
+    {"name": missing\ docker\ binary\ aborts, "status": pass, "duration_ms": 36},
+    {"name": missing\ compose\ file\ aborts, "status": pass, "duration_ms": 39},
+    {"name": full\ deployment\ flow\ succeeds, "status": pass, "duration_ms": 121},
+    {"name": skip\ flags\ suppress\ actions, "status": pass, "duration_ms": 97},
+    {"name": parallel\ build\ retry\ works, "status": pass, "duration_ms": 128},
+    {"name": smoke\ test\ issues\ admin\ request, "status": pass, "duration_ms": 100},
+    {"name": health\ check\ failure\ propagates, "status": pass, "duration_ms": 1067},
+    {"name": setup\ failure\ aborts\ deployment, "status": pass, "duration_ms": 113},
+    {"name": health\ retries\ counted\ \(locator\ delayed\), "status": pass, "duration_ms": 123},
+    {"name": smoke\ test\ failure\ propagates, "status": pass, "duration_ms": 1063},
+    {"name": idempotent\ second\ run\ without\ down, "status": pass, "duration_ms": 219},
+    {"name": quick\ runtime\ with\ skips, "status": pass, "duration_ms": 132}
+  ]
+}
