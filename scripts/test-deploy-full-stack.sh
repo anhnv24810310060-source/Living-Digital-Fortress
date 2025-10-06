@@ -10,6 +10,9 @@ ORIG_PATH="$PATH"
 PASS_COUNT=0
 FAIL_COUNT=0
 
+# Start time of whole suite for total duration measurement
+SUITE_START_NS=$(date +%s%N)
+
 # Capture detailed results for JSON export
 declare -a TEST_NAMES=()
 declare -a TEST_STATUSES=()
@@ -86,30 +89,48 @@ EOF
 set -euo pipefail
 log_dir="${SHIELDX_STUB_LOG_DIR:?}"
 mkdir -p "$log_dir"
-printf '%s\n' "curl $*" >>"$log_dir/curl.log"
+start_ns=$(date +%s%N)
 url=""
-for arg in "$@"; do
-  if [[ "$arg" == http://* || "$arg" == https://* ]]; then
-    url="$arg"
+for a in "$@"; do
+  if [[ "$a" == http://* || "$a" == https://* ]]; then
+    url="$a"
   fi
 done
 pattern="${SHIELDX_CURL_FAIL_PATTERN:-}"
+should_fail=0
 if [[ -n "$pattern" && -n "$url" && "$url" == *"$pattern"* ]]; then
-  if [[ "${SHIELDX_CURL_FAIL_ALWAYS:-0}" != "0" ]]; then
-    exit "${SHIELDX_CURL_EXIT_CODE:-56}"
-  fi
-  limit="${SHIELDX_CURL_FAIL_UNTIL:-0}"
-  state_file="$log_dir/curl-fail-count"
-  count=0
-  if [[ -f "$state_file" ]]; then
-    read -r count <"$state_file"
-  fi
-  if (( count < limit )); then
-    echo $((count + 1)) >"$state_file"
-    exit "${SHIELDX_CURL_EXIT_CODE:-56}"
+  if [[ "${SHIELDX_CURL_FAIL_ALWAYS:-0}" == "1" ]]; then
+    should_fail=1
+  else
+    limit="${SHIELDX_CURL_FAIL_UNTIL:-0}"
+    state_file="$log_dir/curl-fail-count"
+    count=0
+    [[ -f "$state_file" ]] && read -r count <"$state_file"
+    if (( count < limit )); then
+      echo $((count+1)) >"$state_file"
+      should_fail=1
+    fi
   fi
 fi
-exit 0
+exit_code=0
+curl_extra=""
+if [[ "${SHIELDX_REAL_CURL:-0}" == "1" ]]; then
+  if (( should_fail )); then
+    exit_code="${SHIELDX_CURL_EXIT_CODE:-56}"
+  else
+    # Use real curl for timing; ignore body
+    if command -v /usr/bin/curl >/dev/null 2>&1; then
+      curl_extra=$(/usr/bin/curl -o /dev/null -s -w ' time_total=%{time_total}' "$@" 2>/dev/null || true)
+      test ${PIPESTATUS[0]} -ne 0 && exit_code=${SHIELDX_CURL_EXIT_CODE:-56}
+    fi
+  fi
+else
+  (( should_fail )) && exit_code="${SHIELDX_CURL_EXIT_CODE:-56}" || true
+fi
+end_ns=$(date +%s%N)
+duration_ms=$(( (end_ns - start_ns)/1000000 ))
+printf 'curl %s duration_ms=%s exit_code=%s%s\n' "$*" "$duration_ms" "$exit_code" "$curl_extra" >>"$log_dir/curl.log"
+exit "$exit_code"
 EOF
   chmod +x "$fixture/stubs/curl"
 
@@ -328,20 +349,54 @@ test_quick_runtime_with_skip() {
 }
 
 write_results_json() {
-  local out tmp
-  tmp="${RESULT_JSON_PATH}.tmp"
+  local tmp="${RESULT_JSON_PATH}.tmp"
+  local suite_end_ns suite_ms
+  suite_end_ns=$(date +%s%N)
+  suite_ms=$(( (suite_end_ns - SUITE_START_NS)/1000000 ))
+
+  # Collect API call logs from fixtures
+  local api_entries=()
+  for p in "${CLEANUP_PATHS[@]}"; do
+    if [[ -f "$p/.state/curl.log" ]]; then
+      while IFS= read -r line; do
+        local dur ec url time_total
+        dur=$(grep -oE 'duration_ms=[0-9]+' <<<"$line" | cut -d= -f2 || echo 0)
+        ec=$(grep -oE 'exit_code=[0-9]+' <<<"$line" | cut -d= -f2 || echo 0)
+        url=$(grep -oE '(http|https)://[^ ]+' <<<"$line" | tail -1 || echo '')
+        time_total=$(grep -oE 'time_total=[0-9. ]+' <<<"$line" | cut -d= -f2 | xargs || true)
+        if [[ -n "$url" ]]; then
+          local obj="{\"url\":\"$url\", \"duration_ms\":$dur, \"exit_code\":$ec"
+          if [[ -n "$time_total" ]]; then
+            obj+=" ,\"time_total_s\":$time_total"
+          fi
+          obj+="}"
+          api_entries+=("$obj")
+        fi
+      done <"$p/.state/curl.log"
+    fi
+  done
+
   {
     echo '{'
     echo '  "summary": {'
     echo "    \"passed\": $PASS_COUNT,"
     echo "    \"failed\": $FAIL_COUNT,"
-    echo "    \"total\": $((PASS_COUNT+FAIL_COUNT))"
+    echo "    \"total\": $((PASS_COUNT+FAIL_COUNT)),"
+    echo "    \"suite_duration_ms\": $suite_ms,"
+    echo "    \"generated_at\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\""
     echo '  },'
     echo '  "tests": ['
     local i last=$(( ${#TEST_NAMES[@]} - 1 ))
     for i in "${!TEST_NAMES[@]}"; do
       printf '    {"name": %q, "status": %q, "duration_ms": %s}' "${TEST_NAMES[$i]}" "${TEST_STATUSES[$i]}" "${TEST_DURATIONS_MS[$i]}"
       if (( i < last )); then echo ','; else echo; fi
+    done
+    echo '  ],'
+    echo '  "api_calls": ['
+    local j last2=$(( ${#api_entries[@]} - 1 ))
+    for j in "${!api_entries[@]}"; do
+      printf '    %s' "${api_entries[$j]}"
+      if (( j < last2 )); then echo ','; else echo; fi
     done
     echo '  ]'
     echo '}'
