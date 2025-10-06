@@ -8,8 +8,8 @@ We take the security of ShieldX seriously. If you discover a security vulnerabil
 
 ### Contact Information
 
-- **Email**: security@shieldx-project.org (create this email or replace with actual contact)
-- **GitHub Security Advisory**: Use GitHub's [private security advisory feature](https://github.com/anhnv24810310060-source/Living-Digital-Fortress/security/advisories/new)
+- **Email**: security@shieldx.dev (create this email or replace with actual contact)
+- **GitHub Security Advisory**: Use GitHub's [private security advisory feature](https://github.com/shieldx-bot/shieldx/security/advisories/new)
 
 ### What to Include
 

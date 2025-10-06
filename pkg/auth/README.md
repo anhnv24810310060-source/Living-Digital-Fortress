@@ -55,7 +55,7 @@ import (
     "log"
     "time"
     
-    "github.com/anhnv24810310060-source/Living-Digital-Fortress/pkg/auth"
+    "github.com/shieldx-bot/shieldx/pkg/auth"
 )
 
 func main() {

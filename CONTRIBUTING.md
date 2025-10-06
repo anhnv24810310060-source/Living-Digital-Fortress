@@ -31,8 +31,8 @@ This project adheres to the Contributor Covenant Code of Conduct (see [CODE_OF_C
 
 1. **Fork and Clone**
    ```bash
-   git clone https://github.com/YOUR_USERNAME/Living-Digital-Fortress.git
-   cd Living-Digital-Fortress
+   git clone https://github.com/YOUR_USERNAME/shieldx.git
+   cd shieldx
    ```
 
 2. **Install Dependencies**
