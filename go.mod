@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	github.com/cilium/ebpf v0.12.3
+	github.com/cloudflare/circl v1.3.7
 	github.com/docker/docker v28.3.3+incompatible
 	github.com/docker/go-connections v0.5.0
 	github.com/firecracker-microvm/firecracker-go-sdk v1.0.0
@@ -17,7 +18,7 @@ require (
 	github.com/quic-go/quic-go v0.44.0
 	github.com/redis/go-redis/v9 v9.5.2
 	github.com/tetratelabs/wazero v1.6.0
-	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.54.0
+	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.63.0
 	go.opentelemetry.io/otel v1.38.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v1.38.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.38.0
@@ -39,7 +40,6 @@ require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/cloudflare/circl v1.3.7 // indirect
 	github.com/containerd/errdefs v1.0.0 // indirect
 	github.com/containerd/errdefs/pkg v0.3.0 // indirect
 	github.com/containerd/fifo v1.0.0 // indirect
