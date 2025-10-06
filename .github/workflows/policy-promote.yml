@@ -35,7 +35,7 @@ jobs:
             ./bin/policyctl bundle -dir policies/demo -out dist/policy-bundle.zip | grep '^digest:' | awk '{print $2}' > dist/digest.txt
           fi
       - name: Install Cosign
-        uses: sigstore/cosign-installer@v3.7.0
+        uses: sigstore/cosign-installer@v3.10.0
         with:
           cosign-release: 'v2.4.1'
       - name: Sign (keyless) and verify

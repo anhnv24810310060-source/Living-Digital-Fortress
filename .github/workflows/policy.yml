@@ -36,7 +36,7 @@ jobs:
           echo "$DIGEST_LINE" | awk '{print $2}' > dist/digest.txt
           echo "Digest=$(cat dist/digest.txt)"
       - name: Install Cosign
-        uses: sigstore/cosign-installer@v3.7.0
+        uses: sigstore/cosign-installer@v3.10.0
         with:
           cosign-release: 'v2.4.1'
       - name: Cosign sign-blob (keyless)
