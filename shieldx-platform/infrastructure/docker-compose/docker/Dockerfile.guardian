@@ -1,0 +1,22 @@
+# syntax=docker/dockerfile:1
+
+FROM golang:1.25 AS builder
+WORKDIR /src
+ARG GO_TAGS=""
+ENV CGO_ENABLED=0
+COPY go.mod go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
+COPY . .
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    go build -tags="$GO_TAGS" -o /out/guardian ./services/guardian
+
+FROM gcr.io/distroless/static-debian12:nonroot
+WORKDIR /app
+ENV GUARDIAN_PORT=9090
+ENV OTEL_EXPORTER_OTLP_ENDPOINT=
+COPY --from=builder /out/guardian /app/guardian
+EXPOSE 9090
+USER nonroot:nonroot
+ENTRYPOINT ["/app/guardian"]

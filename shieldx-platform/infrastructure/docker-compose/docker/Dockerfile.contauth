@@ -1,0 +1,24 @@
+# syntax=docker/dockerfile:1
+
+FROM golang:1.25 AS builder
+WORKDIR /src
+ARG GO_TAGS=""
+ENV CGO_ENABLED=0
+COPY go.mod go.sum ./
+COPY services/contauth/go.mod services/contauth/go.mod
+COPY services/contauth/go.sum services/contauth/go.sum
+COPY . .
+RUN --mount=type=cache,target=/go/pkg/mod \
+    cd services/contauth && go mod tidy && go mod download
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    cd services/contauth && go build -tags="$GO_TAGS" -o /out/contauth .
+
+FROM gcr.io/distroless/static-debian12:nonroot
+WORKDIR /app
+ENV OTEL_EXPORTER_OTLP_ENDPOINT=
+ENV PORT=5002
+COPY --from=builder /out/contauth /app/contauth
+EXPOSE 5002
+USER nonroot:nonroot
+ENTRYPOINT ["/app/contauth"]

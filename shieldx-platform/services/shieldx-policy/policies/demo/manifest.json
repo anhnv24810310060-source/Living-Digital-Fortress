@@ -1,0 +1,14 @@
+{
+  "name": "shieldx-demo-policy",
+  "version": "0.1.0",
+  "created_at": "2025-11-01T00:00:00Z",
+  "opa_version": "v0.60.0",
+  "policies": [
+    "rules/allow.rego",
+    "rules/deny.rego"
+  ],
+  "annotations": {
+    "env": "demo",
+    "owner": "platform"
+  }
+}

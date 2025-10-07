@@ -1,0 +1,17 @@
+version: '3.8'
+services:
+  # Secondary Prometheus instance configured for HTTPS scrape with client certs
+  prometheus-mtls:
+    image: prom/prometheus:latest
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --web.enable-admin-api
+      - --web.listen-address=0.0.0.0:9091
+    ports:
+      - "9091:9091"
+    volumes:
+      - ./prometheus-scrape-mtls.yml:/etc/prometheus/prometheus.yml:ro
+      - ./alert-rules.yml:/etc/prometheus/alert-rules.yml:ro
+      # Mount a directory that contains client.crt, client.key, and ca.crt for mutual TLS
+      - ./tls-prom/:/etc/prometheus/tls/:ro
+    # Note: The provided certs must be issued by the same RA-TLS CA or be trusted by the services under test.

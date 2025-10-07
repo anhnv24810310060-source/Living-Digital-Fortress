@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  postgres-credits:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: credits
+      POSTGRES_USER: credits_user
+      POSTGRES_PASSWORD: credits_pass2024
+    ports:
+      - "5437:5432"
+    volumes:
+      - credits_db_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+
+  credits-service:
+    build: .
+    environment:
+      DATABASE_URL: postgresql://credits_user:credits_pass2024@postgres-credits:5432/credits
+      PORT: 5004
+    ports:
+      - "5004:5004"
+    depends_on:
+      - postgres-credits
+
+volumes:
+  credits_db_data:

@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  postgres-contauth:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: contauth
+      POSTGRES_USER: contauth_user
+      POSTGRES_PASSWORD: contauth_pass2024
+    ports:
+      - "5436:5432"
+    volumes:
+      - contauth_db_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+
+  contauth-collector:
+    build:
+      context: .
+      dockerfile: Dockerfile.go
+    environment:
+      DATABASE_URL: postgresql://contauth_user:contauth_pass2024@postgres-contauth:5432/contauth
+      PORT: 5002
+    ports:
+      - "5002:5002"
+    depends_on:
+      - postgres-contauth
+
+  behavioral-scorer:
+    build:
+      context: .
+      dockerfile: Dockerfile.python
+    environment:
+      DATABASE_URL: postgresql://contauth_user:contauth_pass2024@postgres-contauth:5432/contauth
+      PORT: 5003
+    ports:
+      - "5003:5003"
+    depends_on:
+      - postgres-contauth
+    volumes:
+      - ./models:/app/models
+
+volumes:
+  contauth_db_data:

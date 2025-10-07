@@ -1,0 +1,14 @@
+{
+  "allowAll": false,
+  "allowed": [
+    {
+      "tenant": "*",
+      "scope": "read:*",
+      "path": "/api/*"
+    }
+  ],
+  "advanced": {
+    "rateLimitPerTenant": 1000,
+    "maxRequestSize": 16384
+  }
+}

@@ -1,0 +1,401 @@
+# Living Digital Fortress - PERSON 3 Production Makefile
+# Business Logic & Infrastructure
+# Version: 1.0.0
+
+.PHONY: help build test deploy clean monitoring migrations docker k8s
+
+# Variables
+NAMESPACE := living-fortress
+SERVICE := credits-service
+VERSION := $(shell git describe --tags --always --dirty)
+DOCKER_REGISTRY := livingfortress
+IMAGE_NAME := $(DOCKER_REGISTRY)/$(SERVICE)
+KUBECONFIG := ~/.kube/config
+
+# Colors for output
+RED := \033[0;31m
+GREEN := \033[0;32m
+YELLOW := \033[1;33m
+BLUE := \033[0;34m
+NC := \033[0m # No Color
+
+##@ General
+
+help: ## Display this help
+	@awk 'BEGIN {FS = ":.*##"; printf "\n$(BLUE)Living Digital Fortress - PERSON 3$(NC)\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  $(GREEN)%-20s$(NC) %s\n", $$1, $$2 } /^##@/ { printf "\n$(YELLOW)%s$(NC)\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
+
+info: ## Show build information
+	@echo "$(BLUE)═══════════════════════════════════════$(NC)"
+	@echo "$(BLUE)Living Digital Fortress - Build Info$(NC)"
+	@echo "$(BLUE)═══════════════════════════════════════$(NC)"
+	@echo "  Service:    $(SERVICE)"
+	@echo "  Version:    $(VERSION)"
+	@echo "  Namespace:  $(NAMESPACE)"
+	@echo "  Registry:   $(DOCKER_REGISTRY)"
+	@echo "$(BLUE)═══════════════════════════════════════$(NC)"
+
+##@ Development
+
+install: ## Install dependencies
+	@echo "$(BLUE)[Installing dependencies...]$(NC)"
+	go mod download
+	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	@echo "$(GREEN)✓ Dependencies installed$(NC)"
+
+fmt: ## Format code
+	@echo "$(BLUE)[Formatting code...]$(NC)"
+	go fmt ./...
+	@echo "$(GREEN)✓ Code formatted$(NC)"
+
+lint: ## Run linters
+	@echo "$(BLUE)[Running linters...]$(NC)"
+	golangci-lint run --timeout 5m
+	@echo "$(GREEN)✓ Linting complete$(NC)"
+
+vet: ## Run go vet
+	@echo "$(BLUE)[Running go vet...]$(NC)"
+	go vet ./...
+	@echo "$(GREEN)✓ Vet complete$(NC)"
+
+##@ Testing
+
+test: ## Run all tests
+	@echo "$(BLUE)[Running tests...]$(NC)"
+	go test -v -race -coverprofile=coverage.out ./services/credits/...
+	@echo "$(GREEN)✓ Tests complete$(NC)"
+
+test-unit: ## Run unit tests only
+	@echo "$(BLUE)[Running unit tests...]$(NC)"
+	go test -v -short ./services/credits/...
+	@echo "$(GREEN)✓ Unit tests complete$(NC)"
+
+test-integration: ## Run integration tests
+	@echo "$(BLUE)[Running integration tests...]$(NC)"
+	go test -v -run Integration ./services/credits/...
+	@echo "$(GREEN)✓ Integration tests complete$(NC)"
+
+test-coverage: ## Generate coverage report
+	@echo "$(BLUE)[Generating coverage report...]$(NC)"
+	go test -coverprofile=coverage.out ./services/credits/...
+	go tool cover -html=coverage.out -o coverage.html
+	@echo "$(GREEN)✓ Coverage report: coverage.html$(NC)"
+
+benchmark: ## Run benchmarks
+	@echo "$(BLUE)[Running benchmarks...]$(NC)"
+	go test -bench=. -benchmem ./services/credits/...
+	@echo "$(GREEN)✓ Benchmarks complete$(NC)"
+
+##@ Building
+
+build: ## Build all services
+	@echo "$(BLUE)[Building services...]$(NC)"
+	@mkdir -p bin
+	go build -o bin/credits-service ./services/credits/main.go
+	go build -o bin/camouflage-api ./services/camouflage-api/main.go
+	@echo "$(GREEN)✓ Build complete$(NC)"
+
+build-linux: ## Build for Linux (production)
+	@echo "$(BLUE)[Building for Linux...]$(NC)"
+	@mkdir -p bin
+	GOOS=linux GOARCH=amd64 go build -o bin/credits-service-linux ./services/credits/main.go
+	GOOS=linux GOARCH=amd64 go build -o bin/camouflage-api-linux ./services/camouflage-api/main.go
+	@echo "$(GREEN)✓ Linux build complete$(NC)"
+
+clean: ## Clean build artifacts
+	@echo "$(BLUE)[Cleaning...]$(NC)"
+	rm -rf bin/
+	rm -f coverage.out coverage.html
+	go clean -cache
+	@echo "$(GREEN)✓ Clean complete$(NC)"
+
+##@ Docker
+
+docker-build: ## Build Docker image
+	@echo "$(BLUE)[Building Docker image...]$(NC)"
+	docker build -t $(IMAGE_NAME):$(VERSION) -f docker/Dockerfile.credits .
+	docker tag $(IMAGE_NAME):$(VERSION) $(IMAGE_NAME):latest
+	@echo "$(GREEN)✓ Docker image built: $(IMAGE_NAME):$(VERSION)$(NC)"
+
+docker-build-blue: ## Build Docker image for blue environment
+	@echo "$(BLUE)[Building Docker image (blue)...]$(NC)"
+	docker build -t $(IMAGE_NAME):latest-blue -f docker/Dockerfile.credits .
+	@echo "$(GREEN)✓ Blue image built$(NC)"
+
+docker-build-green: ## Build Docker image for green environment
+	@echo "$(BLUE)[Building Docker image (green)...]$(NC)"
+	docker build -t $(IMAGE_NAME):latest-green -f docker/Dockerfile.credits .
+	@echo "$(GREEN)✓ Green image built$(NC)"
+
+docker-push: ## Push Docker image to registry
+	@echo "$(BLUE)[Pushing Docker image...]$(NC)"
+	docker push $(IMAGE_NAME):$(VERSION)
+	docker push $(IMAGE_NAME):latest
+	@echo "$(GREEN)✓ Docker image pushed$(NC)"
+
+docker-run: ## Run Docker container locally
+	@echo "$(BLUE)[Running Docker container...]$(NC)"
+	docker run -d -p 5004:5004 --name credits-service $(IMAGE_NAME):latest
+	@echo "$(GREEN)✓ Container running on port 5004$(NC)"
+
+docker-stop: ## Stop Docker container
+	@echo "$(BLUE)[Stopping Docker container...]$(NC)"
+	docker stop credits-service || true
+	docker rm credits-service || true
+	@echo "$(GREEN)✓ Container stopped$(NC)"
+
+##@ Database
+
+db-migrate-up: ## Run database migrations
+	@echo "$(BLUE)[Running database migrations...]$(NC)"
+	@if [ -z "$(DB_URL)" ]; then \
+		echo "$(RED)Error: DB_URL not set$(NC)"; \
+		exit 1; \
+	fi
+	psql $(DB_URL) -f migrations/credits/000006_production_enhancements.up.sql
+	@echo "$(GREEN)✓ Migrations applied$(NC)"
+
+db-migrate-down: ## Rollback database migrations
+	@echo "$(YELLOW)[Rolling back database migrations...]$(NC)"
+	@if [ -z "$(DB_URL)" ]; then \
+		echo "$(RED)Error: DB_URL not set$(NC)"; \
+		exit 1; \
+	fi
+	psql $(DB_URL) -f migrations/credits/000006_production_enhancements.down.sql
+	@echo "$(GREEN)✓ Migrations rolled back$(NC)"
+
+db-seed: ## Seed database with test data
+	@echo "$(BLUE)[Seeding database...]$(NC)"
+	go run scripts/seed-database.go
+	@echo "$(GREEN)✓ Database seeded$(NC)"
+
+db-backup: ## Backup database
+	@echo "$(BLUE)[Backing up database...]$(NC)"
+	@mkdir -p backups
+	pg_dump $(DB_URL) | gzip > backups/backup-$(shell date +%Y%m%d_%H%M%S).sql.gz
+	@echo "$(GREEN)✓ Database backed up$(NC)"
+
+##@ Kubernetes
+
+k8s-create-namespace: ## Create Kubernetes namespace
+	@echo "$(BLUE)[Creating namespace...]$(NC)"
+	kubectl create namespace $(NAMESPACE) --dry-run=client -o yaml | kubectl apply -f -
+	@echo "$(GREEN)✓ Namespace created: $(NAMESPACE)$(NC)"
+
+k8s-deploy: k8s-create-namespace ## Deploy to Kubernetes
+	@echo "$(BLUE)[Deploying to Kubernetes...]$(NC)"
+	kubectl apply -f infra/k8s/k8s-production-deployment.yaml
+	@echo "$(GREEN)✓ Deployment applied$(NC)"
+
+k8s-status: ## Check Kubernetes deployment status
+	@echo "$(BLUE)[Checking deployment status...]$(NC)"
+	@kubectl get all -n $(NAMESPACE)
+
+k8s-logs: ## View logs from Kubernetes pods
+	@echo "$(BLUE)[Viewing logs...]$(NC)"
+	kubectl logs -f deployment/$(SERVICE)-blue -n $(NAMESPACE)
+
+k8s-logs-green: ## View logs from green environment
+	@echo "$(BLUE)[Viewing green logs...]$(NC)"
+	kubectl logs -f deployment/$(SERVICE)-green -n $(NAMESPACE)
+
+k8s-describe: ## Describe Kubernetes deployment
+	@echo "$(BLUE)[Describing deployment...]$(NC)"
+	kubectl describe deployment $(SERVICE)-blue -n $(NAMESPACE)
+
+k8s-scale: ## Scale deployment (usage: make k8s-scale REPLICAS=5)
+	@echo "$(BLUE)[Scaling deployment to $(REPLICAS) replicas...]$(NC)"
+	kubectl scale deployment $(SERVICE)-blue -n $(NAMESPACE) --replicas=$(REPLICAS)
+	@echo "$(GREEN)✓ Scaled to $(REPLICAS) replicas$(NC)"
+
+k8s-rollout-status: ## Check rollout status
+	@echo "$(BLUE)[Checking rollout status...]$(NC)"
+	kubectl rollout status deployment/$(SERVICE)-blue -n $(NAMESPACE)
+
+k8s-switch-green: ## Switch traffic to green environment
+	@echo "$(YELLOW)[Switching traffic to GREEN...]$(NC)"
+	kubectl patch service $(SERVICE) -n $(NAMESPACE) -p '{"spec":{"selector":{"version":"green"}}}'
+	@echo "$(GREEN)✓ Traffic switched to GREEN$(NC)"
+
+k8s-switch-blue: ## Switch traffic to blue environment
+	@echo "$(YELLOW)[Switching traffic to BLUE...]$(NC)"
+	kubectl patch service $(SERVICE) -n $(NAMESPACE) -p '{"spec":{"selector":{"version":"blue"}}}'
+	@echo "$(GREEN)✓ Traffic switched to BLUE$(NC)"
+
+k8s-delete: ## Delete Kubernetes deployment
+	@echo "$(RED)[Deleting deployment...]$(NC)"
+	kubectl delete -f infra/k8s/k8s-production-deployment.yaml || true
+	@echo "$(GREEN)✓ Deployment deleted$(NC)"
+
+##@ Deployment
+
+deploy-blue-green: ## Deploy with blue-green strategy
+	@echo "$(BLUE)═══════════════════════════════════════$(NC)"
+	@echo "$(BLUE)Blue-Green Deployment$(NC)"
+	@echo "$(BLUE)═══════════════════════════════════════$(NC)"
+	@chmod +x scripts/deploy-production.sh
+	@./scripts/deploy-production.sh deploy $(IMAGE_NAME):$(VERSION)
+
+deploy-rollback: ## Rollback deployment
+	@echo "$(YELLOW)═══════════════════════════════════════$(NC)"
+	@echo "$(YELLOW)Rolling Back Deployment$(NC)"
+	@echo "$(YELLOW)═══════════════════════════════════════$(NC)"
+	@chmod +x scripts/deploy-production.sh
+	@./scripts/deploy-production.sh rollback
+
+deploy-status: ## Check deployment status
+	@chmod +x scripts/deploy-production.sh
+	@./scripts/deploy-production.sh status
+
+deploy-test: ## Run smoke tests
+	@chmod +x scripts/deploy-production.sh
+	@./scripts/deploy-production.sh test
+
+##@ Monitoring
+
+monitoring-setup: ## Setup monitoring stack (Prometheus + Grafana)
+	@echo "$(BLUE)[Setting up monitoring...]$(NC)"
+	kubectl create namespace monitoring || true
+	# Prometheus
+	kubectl apply -f infra/monitoring/prometheus.yml -n monitoring
+	# Grafana
+	kubectl apply -f infra/monitoring/grafana-dashboard.json -n monitoring
+	@echo "$(GREEN)✓ Monitoring setup complete$(NC)"
+
+monitoring-port-forward: ## Port-forward Grafana (localhost:3000)
+	@echo "$(BLUE)[Port-forwarding Grafana to localhost:3000...]$(NC)"
+	kubectl port-forward svc/grafana 3000:3000 -n monitoring
+
+prometheus-port-forward: ## Port-forward Prometheus (localhost:9090)
+	@echo "$(BLUE)[Port-forwarding Prometheus to localhost:9090...]$(NC)"
+	kubectl port-forward svc/prometheus 9090:9090 -n monitoring
+
+alerts-check: ## Check Prometheus alerts
+	@echo "$(BLUE)[Checking active alerts...]$(NC)"
+	@curl -s http://localhost:9090/api/v1/alerts | jq '.data.alerts[] | select(.state=="firing")'
+
+##@ Compliance
+
+compliance-check: ## Run compliance checks
+	@echo "$(BLUE)[Running compliance checks...]$(NC)"
+	@kubectl exec -it deployment/$(SERVICE)-blue -n $(NAMESPACE) -- curl -X POST http://localhost:5004/admin/compliance/check
+	@echo "$(GREEN)✓ Compliance check complete$(NC)"
+
+compliance-report: ## Generate compliance report
+	@echo "$(BLUE)[Generating compliance report...]$(NC)"
+	@kubectl exec -it deployment/$(SERVICE)-blue -n $(NAMESPACE) -- curl -X POST http://localhost:5004/admin/compliance/report
+	@echo "$(GREEN)✓ Report generated$(NC)"
+
+compliance-remediate: ## Run auto-remediation
+	@echo "$(BLUE)[Running auto-remediation...]$(NC)"
+	@kubectl exec -it deployment/$(SERVICE)-blue -n $(NAMESPACE) -- curl -X POST http://localhost:5004/admin/compliance/remediate
+	@echo "$(GREEN)✓ Remediation complete$(NC)"
+
+##@ DR (Disaster Recovery)
+
+dr-status: ## Check DR status
+	@echo "$(BLUE)[Checking DR status...]$(NC)"
+	@kubectl exec -it deployment/$(SERVICE)-blue -n $(NAMESPACE) -- curl http://localhost:5004/admin/dr/status
+	@echo ""
+
+dr-failover: ## Trigger DR failover (usage: make dr-failover REGION=azure-eastus)
+	@echo "$(RED)[Triggering failover to $(REGION)...]$(NC)"
+	@kubectl exec -it deployment/$(SERVICE)-blue -n $(NAMESPACE) -- curl -X POST http://localhost:5004/admin/dr/failover -d '{"region":"$(REGION)"}'
+	@echo "$(GREEN)✓ Failover triggered$(NC)"
+
+dr-test: ## Test DR failover
+	@echo "$(BLUE)[Testing DR failover...]$(NC)"
+	@kubectl exec -it deployment/$(SERVICE)-blue -n $(NAMESPACE) -- curl -X POST http://localhost:5004/admin/dr/test
+	@echo "$(GREEN)✓ DR test complete$(NC)"
+
+##@ Performance
+
+perf-test: ## Run performance tests
+	@echo "$(BLUE)[Running performance tests...]$(NC)"
+	@echo "Event Sourcing..."
+	@go test -bench=BenchmarkEventSourcing -benchmem ./services/credits/...
+	@echo "Sharding..."
+	@go test -bench=BenchmarkSharding -benchmem ./services/credits/...
+	@echo "$(GREEN)✓ Performance tests complete$(NC)"
+
+load-test: ## Run load tests (requires k6)
+	@echo "$(BLUE)[Running load tests...]$(NC)"
+	@if ! command -v k6 &> /dev/null; then \
+		echo "$(RED)Error: k6 not installed$(NC)"; \
+		exit 1; \
+	fi
+	k6 run scripts/load-test.js
+	@echo "$(GREEN)✓ Load tests complete$(NC)"
+
+stress-test: ## Run stress tests
+	@echo "$(BLUE)[Running stress tests...]$(NC)"
+	go test -v -run TestEventSourcingEngine_Concurrency ./services/credits/...
+	go test -v -run TestShardingEngine_HighConcurrency ./services/credits/...
+	@echo "$(GREEN)✓ Stress tests complete$(NC)"
+
+##@ Complete Workflows
+
+all: clean install fmt lint vet test build ## Run all checks and build
+	@echo "$(GREEN)✓ All tasks complete$(NC)"
+
+ci: lint vet test-coverage ## CI pipeline
+	@echo "$(GREEN)✓ CI pipeline complete$(NC)"
+
+cd: build docker-build docker-push k8s-deploy ## CD pipeline
+	@echo "$(GREEN)✓ CD pipeline complete$(NC)"
+
+production-deploy: all docker-build docker-push deploy-blue-green ## Full production deployment
+	@echo "$(GREEN)✓ Production deployment complete$(NC)"
+
+local-setup: install build db-migrate-up ## Setup local development environment
+	@echo "$(GREEN)✓ Local setup complete$(NC)"
+
+##@ Documentation
+
+docs-generate: ## Generate documentation
+	@echo "$(BLUE)[Generating documentation...]$(NC)"
+	godoc -http=:6060 &
+	@echo "$(GREEN)✓ Documentation server running on http://localhost:6060$(NC)"
+
+docs-api: ## Generate API documentation
+	@echo "$(BLUE)[Generating API docs...]$(NC)"
+	@if ! command -v swagger &> /dev/null; then \
+		go install github.com/go-swagger/go-swagger/cmd/swagger@latest; \
+	fi
+	swagger generate spec -o api/openapi.yaml
+	@echo "$(GREEN)✓ API documentation: api/openapi.yaml$(NC)"
+
+##@ Utilities
+
+shell-blue: ## Shell into blue pod
+	@kubectl exec -it deployment/$(SERVICE)-blue -n $(NAMESPACE) -- /bin/sh
+
+shell-green: ## Shell into green pod
+	@kubectl exec -it deployment/$(SERVICE)-green -n $(NAMESPACE) -- /bin/sh
+
+logs-tail: ## Tail logs from both environments
+	@kubectl logs -f deployment/$(SERVICE)-blue -n $(NAMESPACE) & \
+	kubectl logs -f deployment/$(SERVICE)-green -n $(NAMESPACE)
+
+metrics: ## Show current metrics
+	@echo "$(BLUE)[Current Metrics]$(NC)"
+	@kubectl exec -it deployment/$(SERVICE)-blue -n $(NAMESPACE) -- curl -s http://localhost:5004/metrics | grep -E "^credits_"
+
+version: ## Show version information
+	@echo "Version: $(VERSION)"
+	@go version
+	@kubectl version --client
+	@docker version --format '{{.Client.Version}}'
+
+##@ Quick Commands
+
+quick-deploy: docker-build docker-push ## Quick deploy (build + push only)
+	@echo "$(GREEN)✓ Quick deploy complete (remember to run deploy-blue-green)$(NC)"
+
+quick-test: test-unit ## Quick test (unit tests only)
+	@echo "$(GREEN)✓ Quick tests complete$(NC)"
+
+quick-check: fmt lint vet ## Quick code check
+	@echo "$(GREEN)✓ Quick check complete$(NC)"
+
+# Default target
+.DEFAULT_GOAL := help

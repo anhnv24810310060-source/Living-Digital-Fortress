@@ -1,0 +1,121 @@
+version: '3.8'
+services:
+  ingress:
+    image: shieldx/ingress:dev
+    build:
+      context: ../../
+      dockerfile: docker/Dockerfile.ingress
+      args:
+        GO_TAGS: otelotlp
+    environment:
+      - INGRESS_PORT=8081
+      - OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4318
+      # Metrics path cardinality controls
+      - INGRESS_HTTP_PATH_ALLOWLIST=/healthz,/metrics
+      - INGRESS_HTTP_PATH_MODE=strict
+    ports:
+      - "8081:8081"
+    depends_on:
+      - otel-collector
+  locator:
+    image: shieldx/locator:dev
+    build:
+      context: ../../
+      dockerfile: docker/Dockerfile.locator
+      args:
+        GO_TAGS: otelotlp
+    environment:
+      - LOCATOR_PORT=8080
+      - OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4318
+      # Metrics path cardinality controls
+      - LOCATOR_HTTP_PATH_ALLOWLIST=/healthz,/metrics
+      - LOCATOR_HTTP_PATH_MODE=strict
+    ports:
+      - "8080:8080"
+    depends_on:
+      - otel-collector
+
+  shieldx-gateway:
+    image: shieldx/shieldx-gateway:dev
+    build:
+      context: ../../
+      dockerfile: docker/Dockerfile.shieldx-gateway
+      args:
+        GO_TAGS: otelotlp
+    environment:
+      - GATEWAY_PORT=8082
+      - OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4318
+      # Metrics path cardinality controls
+      - SHIELDX_GATEWAY_HTTP_PATH_ALLOWLIST=/health,/metrics
+      - SHIELDX_GATEWAY_HTTP_PATH_MODE=strict
+    ports:
+      - "8082:8082"
+    depends_on:
+      - otel-collector
+
+  contauth:
+    image: shieldx/contauth:dev
+    build:
+      context: ../../
+      dockerfile: docker/Dockerfile.contauth
+      args:
+        GO_TAGS: otelotlp
+    environment:
+      - PORT=5002
+      - OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4318
+      - DISABLE_DB=true
+      # Metrics path cardinality controls
+      - CONTAUTH_HTTP_PATH_ALLOWLIST=/health,/metrics
+      - CONTAUTH_HTTP_PATH_MODE=strict
+    ports:
+      - "5002:5002"
+    depends_on:
+      - otel-collector
+
+  verifier-pool:
+    image: shieldx/verifier-pool:dev
+    build:
+      context: ../../
+      dockerfile: docker/Dockerfile.verifier-pool
+      args:
+        GO_TAGS: otelotlp
+    environment:
+      - VERIFIER_POOL_PORT=8087
+      - OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4318
+      # Metrics path cardinality controls
+      - VERIFIER_POOL_HTTP_PATH_ALLOWLIST=/health,/metrics
+      - VERIFIER_POOL_HTTP_PATH_MODE=strict
+    ports:
+      - "8087:8087"
+    depends_on:
+      - otel-collector
+
+  ml-orchestrator:
+    image: shieldx/ml-orchestrator:dev
+    build:
+      context: ../../
+      dockerfile: docker/Dockerfile.ml-orchestrator
+      args:
+        GO_TAGS: otelotlp
+    environment:
+      - ML_ORCHESTRATOR_PORT=8087
+      - OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4318
+      # Metrics path cardinality controls
+      - ML_ORCHESTRATOR_HTTP_PATH_ALLOWLIST=/health,/metrics
+      - ML_ORCHESTRATOR_HTTP_PATH_MODE=strict
+    ports:
+      - "8086:8087"
+    depends_on:
+      - otel-collector
+
+  policy-rollout:
+    image: shieldx/policy-rollout:dev
+    build:
+      context: ../../
+      dockerfile: docker/Dockerfile.policy-rollout
+    environment:
+      - POLICY_ROLLOUT_PORT=8099
+    ports:
+      - "8099:8099"
+    depends_on:
+      - otel-collector

@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  postgres-twin:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: digital_twin
+      POSTGRES_USER: twin_user
+      POSTGRES_PASSWORD: twin_pass2024
+    ports:
+      - "5435:5432"
+    volumes:
+      - twin_db_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+
+  digital-twin-api:
+    build: .
+    environment:
+      DATABASE_URL: postgresql://twin_user:twin_pass2024@postgres-twin:5432/digital_twin
+      DOCKER_HOST: unix:///var/run/docker.sock
+    ports:
+      - "5001:5001"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./scenarios:/app/scenarios
+      - ./snapshots:/app/snapshots
+      - ./reports:/app/reports
+    depends_on:
+      - postgres-twin
+
+volumes:
+  twin_db_data:

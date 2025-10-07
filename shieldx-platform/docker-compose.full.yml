@@ -1,0 +1,307 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: shieldx-postgres
+    environment:
+      POSTGRES_USER: shieldx
+      POSTGRES_PASSWORD: shieldx123
+      POSTGRES_DB: shieldx
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - shieldx-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shieldx"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    container_name: shieldx-redis
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    networks:
+      - shieldx-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  orchestrator:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.orchestrator
+    image: shieldx/orchestrator:dev
+    container_name: shieldx-orchestrator
+    environment:
+      ORCH_PORT: "8080"
+      ORCH_POLICY_PATH: "/etc/shieldx/policy.json"
+      ORCH_OPA_POLICY_PATH: "/etc/shieldx/opa/routing.rego"
+      ORCH_OPA_ENFORCE: "0"
+      REDIS_ADDR: "redis:6379"
+      LOG_LEVEL: "info"
+      # Dev mode HTTP (no TLS) fallback; remove in production when RA-TLS or certs are configured
+      ORCH_ALLOW_INSECURE: "1"
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./policy.example.json:/etc/shieldx/policy.json:ro
+      - ./policies/opa:/etc/shieldx/opa:ro
+      - shared-data:/app/data
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - shieldx-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  locator:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.locator
+    image: shieldx/locator:dev
+    container_name: shieldx-locator
+    environment:
+      LOCATOR_PORT: "8080"
+    ports:
+      - "8083:8080"
+    volumes:
+      - shared-data:/app/data
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - shieldx-net
+
+  guardian:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.guardian
+    image: shieldx/guardian:dev
+    container_name: shieldx-guardian
+    environment:
+      GUARDIAN_PORT: "9090"
+    ports:
+      - "9090:9090"
+    volumes:
+      - shared-data:/app/data
+    networks:
+      - shieldx-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9090/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  ingress:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.ingress
+    image: shieldx/ingress:dev
+    container_name: shieldx-ingress
+    environment:
+      INGRESS_PORT: "8081"
+      INGRESS_HTTPS_PORT: "8443"
+      POLICY_PATH: "/etc/shieldx/policy.json"
+      LOCATOR_URL: "http://locator:8080"
+      GUARDIAN_URL: "http://guardian:9090"
+      ORCHESTRATOR_URL: "http://orchestrator:8080"
+      REDIS_ADDR: "redis:6379"
+      RATLS_ENABLE: "false"
+      ADMISSION_SECRET: "dev-secret-12345"
+      ADMISSION_HEADER: "X-ShieldX-Admission"
+      LOG_LEVEL: "info"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4318"
+    ports:
+      - "8081:8081"
+    depends_on:
+      orchestrator:
+        condition: service_started
+      locator:
+        condition: service_started
+      guardian:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./policy.example.json:/etc/shieldx/policy.json:ro
+      - ./policies/opa:/etc/shieldx/opa:ro
+      - ./certs:/certs:ro
+      - shared-data:/app/data
+    networks:
+      - shieldx-net
+
+  ml-orchestrator:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.ml-orchestrator
+    image: shieldx/ml-orchestrator:dev
+    container_name: shieldx-ml-orchestrator
+    environment:
+      ML_ORCHESTRATOR_PORT: "8087"
+      ML_API_ADMIN_TOKEN: ""
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4318"
+    ports:
+      - "8087:8087"
+    volumes:
+      - shared-data:/app/data
+    networks:
+      - shieldx-net
+
+  verifier-pool:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.verifier-pool
+    image: shieldx/verifier-pool:dev
+    container_name: shieldx-verifier-pool
+    environment:
+      VERIFIER_POOL_PORT: "8090"
+    ports:
+      - "8090:8090"
+    networks:
+      - shieldx-net
+
+  shieldx-gateway:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.shieldx-gateway
+    image: shieldx/gateway:dev
+    container_name: shieldx-gateway
+    environment:
+      GATEWAY_PORT: "8082"
+      AI_ANALYZER_URLS: "http://ml-orchestrator:8087"
+      VERIFIER_POOL_URLS: "http://verifier-pool:8090"
+      AUTH_SERVICE_URL: "http://auth-service:8080"
+      CONTAUTH_URL: "http://contauth:5002"
+      ORCHESTRATOR_URL: "http://orchestrator:8080"
+      LOCATOR_URL: "http://locator:8080"
+      GUARDIAN_URL: "http://guardian:9090"
+      POLICY_ROLLOUT_URL: "http://policy-rollout:8099"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4318"
+    ports:
+      - "8082:8082"
+    depends_on:
+      orchestrator:
+        condition: service_started
+      ml-orchestrator:
+        condition: service_started
+      verifier-pool:
+        condition: service_started
+      auth-service:
+        condition: service_started
+      contauth:
+        condition: service_started
+      policy-rollout:
+        condition: service_started
+    networks:
+      - shieldx-net
+
+  auth-service:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.auth-service
+    image: shieldx/auth-service:dev
+    container_name: shieldx-auth-service
+    environment:
+      PORT: "8080"
+      JWT_SECRET: "dev-jwt-secret"
+    ports:
+      - "8084:8080"
+    networks:
+      - shieldx-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  contauth:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.contauth
+    image: shieldx/contauth:dev
+    container_name: shieldx-contauth
+    environment:
+      PORT: "5002"
+      DISABLE_DB: "true"
+    ports:
+      - "5002:5002"
+    networks:
+      - shieldx-net
+
+  policy-rollout:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.policy-rollout
+    image: shieldx/policy-rollout:dev
+    container_name: shieldx-policy-rollout
+    environment:
+      POLICY_ROLLOUT_PORT: "8099"
+    ports:
+      - "8099:8099"
+    networks:
+      - shieldx-net
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.103.1
+    container_name: shieldx-otel-collector
+    command: ["--config=/etc/otel-config.yaml"]
+    volumes:
+      - ./pilot/observability/otel-collector-config.yaml:/etc/otel-config.yaml:ro
+    ports:
+      - "4318:4318"
+      - "4317:4317"
+    networks:
+      - shieldx-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:13133/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 20
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: shieldx-prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --web.enable-admin-api
+    volumes:
+      - ./pilot/observability/prometheus-scrape.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "19090:9090"
+    networks:
+      - shieldx-net
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: shieldx-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: fortress123
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./pilot/observability/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./pilot/observability/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+    depends_on:
+      prometheus:
+        condition: service_started
+    networks:
+      - shieldx-net
+
+networks:
+  shieldx-net:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  shared-data:

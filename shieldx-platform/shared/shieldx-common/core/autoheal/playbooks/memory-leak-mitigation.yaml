@@ -1,0 +1,191 @@
+apiVersion: autoheal.shieldx.io/v1
+kind: Playbook
+metadata:
+  name: memory-leak-mitigation
+  version: 1.0.0
+  author: ShieldX Platform Team
+  created: 2025-10-01T12:00:00Z
+  tags: [memory, leak, performance, diagnostic]
+  
+spec:
+  trigger:
+    type: memory_leak
+    severity: high
+    conditions:
+      - metric: container_memory_usage_percent
+        operator: gt
+        threshold: 85
+        duration: 10m
+      - metric: memory_growth_rate_mb_per_min
+        operator: gt
+        threshold: 50
+        duration: 5m
+        
+  precheck:
+    - name: verify_not_legitimate_growth
+      type: metric_check
+      command: "curl -s http://localhost:{{ .service_port }}/metrics | grep 'active_connections' | awk '{print $2}'"
+      expected: "<1000"
+      timeout: 10s
+      critical: true
+      
+    - name: check_heap_dump_space
+      type: metric_check
+      command: "df -h /var/log/shieldx/heapdumps | tail -1 | awk '{print $5}' | sed 's/%//'"
+      expected: "<80"
+      timeout: 5s
+      critical: true
+      
+    - name: verify_service_responding
+      type: health_check
+      command: "curl -f -m 5 http://localhost:{{ .service_port }}/health"
+      expected: "200"
+      timeout: 10s
+      critical: false
+      
+  actions:
+    - name: capture_heap_dump
+      type: script
+      target: "{{ .service }}"
+      params:
+        script: |
+          timestamp=$(date +%Y%m%d_%H%M%S)
+          docker exec {{ .service }} sh -c "jmap -dump:format=b,file=/tmp/heap_${timestamp}.hprof \$(pgrep -f {{ .service }})" || \
+          kill -USR1 \$(pgrep -f {{ .service }}) # for Go services with SIGUSR1 handler
+          docker cp {{ .service }}:/tmp/heap_${timestamp}.hprof /var/log/shieldx/heapdumps/
+      timeout: 60s
+      retries: 1
+      retry_delay: 10s
+      on_failure: continue
+      
+    - name: capture_goroutine_dump
+      type: script
+      target: "{{ .service }}"
+      params:
+        script: "curl -s http://localhost:{{ .service_port }}/debug/pprof/goroutine?debug=2 > /var/log/shieldx/goroutines-$(date +%s).txt"
+      timeout: 30s
+      retries: 0
+      on_failure: continue
+      
+    - name: log_top_memory_consumers
+      type: script
+      target: "{{ .service }}"
+      params:
+        script: "docker exec {{ .service }} sh -c 'ps aux --sort=-%mem | head -20' > /var/log/shieldx/top-mem-$(date +%s).txt"
+      timeout: 15s
+      retries: 0
+      on_failure: continue
+      
+    - name: trigger_garbage_collection
+      type: api_call
+      target: "{{ .service }}"
+      params:
+        endpoint: "/debug/gc"
+        method: POST
+      timeout: 30s
+      retries: 1
+      retry_delay: 5s
+      on_failure: continue
+      
+    - name: wait_and_assess
+      type: script
+      command: "sleep 60"
+      timeout: 70s
+      on_failure: continue
+      
+    - name: check_if_resolved
+      type: metric_check
+      command: "curl -s http://localhost:{{ .service_port }}/metrics | grep 'go_memstats_alloc_bytes' | awk '{print $2}'"
+      expected: "<{{ .memory_threshold }}"
+      timeout: 10s
+      critical: false
+      
+    - name: restart_if_not_resolved
+      type: restart
+      target: "{{ .service }}"
+      params:
+        graceful: true
+        wait_for_ready: true
+      timeout: 90s
+      retries: 2
+      retry_delay: 15s
+      on_failure: rollback
+      
+  rollback:
+    enabled: true
+    actions:
+      - name: scale_up_replicas
+        type: scale
+        target: "{{ .service }}"
+        params:
+          replicas: "{{ .current_replicas + 1 }}"
+          wait_healthy: true
+        timeout: 120s
+        
+      - name: enable_circuit_breaker
+        type: api_call
+        target: "gateway"
+        params:
+          endpoint: "/api/v1/circuit-breaker/{{ .service }}/enable"
+          method: POST
+        timeout: 10s
+        
+  postcheck:
+    - name: verify_memory_stable
+      type: metric_check
+      command: "for i in {1..6}; do mem=$(curl -s http://localhost:{{ .service_port }}/metrics | grep 'go_memstats_alloc_bytes' | awk '{print $2}'); echo $mem; sleep 10; done | awk '{sum+=$1} END {print sum/NR}'"
+      expected: "<{{ .memory_threshold }}"
+      timeout: 90s
+      critical: true
+      
+    - name: verify_no_memory_growth
+      type: metric_check
+      command: |
+        mem1=$(curl -s http://localhost:{{ .service_port }}/metrics | grep 'go_memstats_alloc_bytes' | awk '{print $2}')
+        sleep 30
+        mem2=$(curl -s http://localhost:{{ .service_port }}/metrics | grep 'go_memstats_alloc_bytes' | awk '{print $2}')
+        echo $(( ($mem2 - $mem1) / 30 ))
+      expected: "<1048576"
+      timeout: 45s
+      critical: false
+      
+    - name: verify_service_healthy
+      type: health_check
+      command: "curl -f http://localhost:{{ .service_port }}/health"
+      expected: "200"
+      timeout: 15s
+      critical: true
+      
+    - name: verify_response_times_normal
+      type: metric_check
+      command: "curl -s http://localhost:{{ .service_port }}/metrics | grep 'http_request_duration_seconds' | grep 'quantile=\"0.95\"' | awk '{print $2}'"
+      expected: "<1.0"
+      timeout: 10s
+      critical: false
+      
+  audit:
+    enabled: true
+    hashchain: true
+    anchor: true
+    metadata:
+      category: "performance_incident"
+      diagnostic_artifacts:
+        - heap_dumps
+        - goroutine_dumps
+        - memory_profiles
+      retention_days: 180
+    
+  notifications:
+    on_start: 
+      - slack
+      - pagerduty
+    on_success: 
+      - slack
+    on_failure: 
+      - slack
+      - pagerduty
+      - email
+    channels:
+      slack: "#shieldx-incidents"
+      pagerduty: "platform_oncall"
+      email: "platform-team@shieldx.io"

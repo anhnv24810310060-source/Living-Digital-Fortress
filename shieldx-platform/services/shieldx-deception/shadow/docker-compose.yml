@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  postgres-shadow:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: shadow
+      POSTGRES_USER: shadow_user
+      POSTGRES_PASSWORD: shadow_pass2024
+    ports:
+      - "5438:5432"
+    volumes:
+      - shadow_db_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+
+  shadow-service:
+    build: .
+    environment:
+      DATABASE_URL: postgresql://shadow_user:shadow_pass2024@postgres-shadow:5432/shadow
+      PORT: 5005
+    ports:
+      - "5005:5005"
+    depends_on:
+      - postgres-shadow
+
+  webapi-service:
+    build:
+      context: ../webapi
+    environment:
+      SHADOW_URL: http://shadow-service:5005
+      PORT: 5006
+    ports:
+      - "5006:5006"
+    depends_on:
+      - shadow-service
+
+volumes:
+  shadow_db_data:

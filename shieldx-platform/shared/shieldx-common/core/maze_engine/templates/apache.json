@@ -1,0 +1,111 @@
+{
+  "name": "apache",
+  "version": "2.4.54",
+  "fingerprint_id": "apache_2454_ubuntu",
+  "headers": {
+    "Server": "Apache/2.4.54 (Ubuntu)",
+    "X-Powered-By": "PHP/8.1.2",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN",
+    "Vary": "Accept-Encoding",
+    "Keep-Alive": "timeout=5, max=100",
+    "Connection": "Keep-Alive"
+  },
+  "error_pages": {
+    "404": {
+      "title": "404 Not Found",
+      "body": "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\n<html><head>\n<title>404 Not Found</title>\n</head><body>\n<h1>Not Found</h1>\n<p>The requested URL {{path}} was not found on this server.</p>\n<hr>\n<address>Apache/2.4.54 (Ubuntu) Server at {{host}} Port {{port}}</address>\n</body></html>",
+      "content_type": "text/html; charset=iso-8859-1"
+    },
+    "403": {
+      "title": "403 Forbidden",
+      "body": "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\n<html><head>\n<title>403 Forbidden</title>\n</head><body>\n<h1>Forbidden</h1>\n<p>You don't have permission to access {{path}} on this server.</p>\n<hr>\n<address>Apache/2.4.54 (Ubuntu) Server at {{host}} Port {{port}}</address>\n</body></html>",
+      "content_type": "text/html; charset=iso-8859-1"
+    },
+    "500": {
+      "title": "500 Internal Server Error",
+      "body": "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\n<html><head>\n<title>500 Internal Server Error</title>\n</head><body>\n<h1>Internal Server Error</h1>\n<p>The server encountered an internal error or misconfiguration and was unable to complete your request.</p>\n<hr>\n<address>Apache/2.4.54 (Ubuntu) Server at {{host}} Port {{port}}</address>\n</body></html>",
+      "content_type": "text/html; charset=iso-8859-1"
+    }
+  },
+  "behavioral_patterns": {
+    "response_timing": {
+      "min_ms": 45,
+      "max_ms": 180,
+      "distribution": "normal",
+      "jitter_factor": 0.15
+    },
+    "keep_alive": {
+      "timeout": 5,
+      "max_requests": 100
+    },
+    "compression": {
+      "gzip": true,
+      "deflate": true,
+      "br": false,
+      "min_size": 1024
+    },
+    "etag_generation": {
+      "enabled": true,
+      "format": "weak",
+      "algorithm": "md5"
+    }
+  },
+  "vulnerability_simulation": {
+    "cve_2021_41773": {
+      "enabled": false,
+      "paths": ["/cgi-bin/.%2e/.%2e/.%2e/.%2e/etc/passwd"],
+      "response": "403 Forbidden",
+      "log_pattern": "[error] [client {{client_ip}}] client denied by server configuration"
+    },
+    "mod_status": {
+      "enabled": true,
+      "path": "/server-status",
+      "response_template": "apache_status_template"
+    },
+    "directory_traversal": {
+      "enabled": true,
+      "detection_patterns": ["../", "..\\", "%2e%2e%2f"],
+      "response": "400 Bad Request"
+    }
+  },
+  "ssl_config": {
+    "protocols": ["TLSv1.2", "TLSv1.3"],
+    "ciphers": "ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-SHA384",
+    "certificate_info": {
+      "issuer": "Let's Encrypt Authority X3",
+      "subject": "CN={{host}}",
+      "san": ["{{host}}", "www.{{host}}"],
+      "valid_from": "{{cert_start}}",
+      "valid_to": "{{cert_end}}",
+      "signature_algorithm": "sha256WithRSAEncryption"
+    },
+    "hsts": {
+      "enabled": true,
+      "max_age": 31536000,
+      "include_subdomains": true
+    }
+  },
+  "modules": [
+    "mod_rewrite",
+    "mod_ssl",
+    "mod_headers",
+    "mod_deflate",
+    "mod_status",
+    "mod_php",
+    "mod_dir",
+    "mod_mime"
+  ],
+  "log_format": "[{{timestamp}}] [{{level}}] [pid {{pid}}:tid {{tid}}] [client {{client_ip}}:{{client_port}}] {{message}}",
+  "reconnaissance_responses": {
+    "nmap_scan": {
+      "tcp_window_size": 65535,
+      "tcp_options": "mss 1460,sackOK,timestamp,nop,wscale 7",
+      "service_banner": "Apache httpd 2.4.54"
+    },
+    "nikto_scan": {
+      "robots_txt": "User-agent: *\nDisallow: /admin/\nDisallow: /private/",
+      "server_info": "Apache/2.4.54 (Ubuntu) PHP/8.1.2"
+    }
+  }
+}

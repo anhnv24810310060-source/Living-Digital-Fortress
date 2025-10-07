@@ -1,0 +1,18 @@
+# Default eBPF/XDP guard profile
+version: 1
+allow_syscalls:
+  - read
+  - write
+  - openat
+  - close
+  - futex
+thresholds:
+  conn_rate_per_ip_per_min: 600
+  bytes_per_conn_kb: 10240
+  syn_flood_pps: 2000
+responses:
+  on_syn_flood: drop
+  on_bruteforce: tarpitting
+  on_ddos: drop
+notes: |
+  This is a conservative baseline profile. Tune per tenant and attach via pkg/xdpguard.

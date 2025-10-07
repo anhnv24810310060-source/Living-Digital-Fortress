@@ -1,0 +1,56 @@
+version: '3.8'
+services:
+  ingress:
+    environment:
+      - RATLS_ENABLE=true
+      - RATLS_TRUST_DOMAIN=shieldx.local
+      - RATLS_NAMESPACE=default
+      - RATLS_SERVICE=ingress
+      - RATLS_ROTATE_EVERY=45m
+      - RATLS_VALIDITY=60m
+      - RATLS_REQUIRE_CLIENT_CERT=true
+  locator:
+    environment:
+      - RATLS_ENABLE=true
+      - RATLS_TRUST_DOMAIN=shieldx.local
+      - RATLS_NAMESPACE=default
+      - RATLS_SERVICE=locator
+      - RATLS_ROTATE_EVERY=45m
+      - RATLS_VALIDITY=60m
+      - RATLS_REQUIRE_CLIENT_CERT=true
+  shieldx-gateway:
+    environment:
+      - RATLS_ENABLE=true
+      - RATLS_TRUST_DOMAIN=shieldx.local
+      - RATLS_NAMESPACE=default
+      - RATLS_SERVICE=shieldx-gateway
+      - RATLS_ROTATE_EVERY=45m
+      - RATLS_VALIDITY=60m
+      - RATLS_REQUIRE_CLIENT_CERT=true
+      # Make gateway call downstream over HTTPS
+      - AI_ANALYZER_URL=https://ml-orchestrator:8087
+      - VERIFIER_POOL_URL=https://verifier-pool:8087
+  verifier-pool:
+    environment:
+      - RATLS_ENABLE=true
+      - RATLS_TRUST_DOMAIN=shieldx.local
+      - RATLS_NAMESPACE=default
+      - RATLS_SERVICE=verifier-pool
+      - RATLS_ROTATE_EVERY=45m
+      - RATLS_VALIDITY=60m
+      - RATLS_REQUIRE_CLIENT_CERT=true
+  ml-orchestrator:
+    environment:
+      - RATLS_ENABLE=true
+      - RATLS_TRUST_DOMAIN=shieldx.local
+      - RATLS_NAMESPACE=default
+      - RATLS_SERVICE=ml-orchestrator
+      - RATLS_ROTATE_EVERY=45m
+      - RATLS_VALIDITY=60m
+      - RATLS_REQUIRE_CLIENT_CERT=true
+  prometheus:
+    # Note: Prometheus official image does not support mutual TLS with client certs in scrape config out of the box without adding cert files.
+    # For RA-TLS demo, either:
+    #  1) run a second Prometheus inside the same trust domain with client cert wiring, or
+    #  2) keep scraping non-mTLS endpoints only. This file keeps defaults; see k8s/production setup for TLS scrape.
+  environment: []

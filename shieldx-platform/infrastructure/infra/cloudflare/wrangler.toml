@@ -1,0 +1,49 @@
+name = "shieldx-camouflage-worker"
+main = "worker_camouflage.js"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+[env.production]
+name = "shieldx-camouflage-worker-prod"
+vars = { ENVIRONMENT = "production" }
+
+[env.staging]
+name = "shieldx-camouflage-worker-staging"
+vars = { ENVIRONMENT = "staging" }
+
+[env.development]
+name = "shieldx-camouflage-worker-dev"
+vars = { ENVIRONMENT = "development" }
+
+# Environment variables (set via wrangler secret)
+# CAMOUFLAGE_API_KEY - API key for orchestrator communication
+# ORCHESTRATOR_ENDPOINT - Orchestrator API endpoint
+
+# KV Namespaces for caching templates
+[[kv_namespaces]]
+binding = "TEMPLATE_CACHE"
+id = "template_cache_namespace_id"
+preview_id = "template_cache_preview_id"
+
+# Durable Objects for rate limiting
+[[durable_objects.bindings]]
+name = "RATE_LIMITER"
+class_name = "RateLimiter"
+
+# Analytics Engine for logging
+[[analytics_engine_datasets]]
+binding = "RECON_ANALYTICS"
+
+# Routes for production deployment
+[[routes]]
+pattern = "*.shieldx.com/*"
+zone_name = "shieldx.com"
+
+[[routes]]
+pattern = "api.shieldx.com/camouflage/*"
+zone_name = "shieldx.com"
+
+# Custom domains
+[[routes]]
+pattern = "camouflage.shieldx.internal/*"
+zone_name = "shieldx.internal"

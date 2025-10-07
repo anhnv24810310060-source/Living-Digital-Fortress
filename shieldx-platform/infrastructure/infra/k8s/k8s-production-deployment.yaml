@@ -1,0 +1,755 @@
+---
+# Kubernetes Deployment Manifests for PERSON 3 Production Enhancements
+# Blue-Green Deployment Strategy with Multi-Cloud DR Support
+# Version: 1.0.0
+
+# =============================================================================
+# NAMESPACE & CONFIGURATION
+# =============================================================================
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: living-fortress
+  labels:
+    name: living-fortress
+    environment: production
+    managed-by: person3
+
+---
+# ConfigMap for shared configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fortress-config
+  namespace: living-fortress
+data:
+  # Event Sourcing Configuration
+  EVENT_SOURCING_ENABLED: "true"
+  SNAPSHOT_INTERVAL: "100"
+  EVENT_BATCH_SIZE: "1000"
+  
+  # Sharding Configuration
+  SHARDING_ENABLED: "true"
+  SHARD_COUNT: "8"
+  VIRTUAL_NODES: "256"
+  
+  # Multi-Cloud DR Configuration
+  MULTI_CLOUD_DR_ENABLED: "true"
+  PRIMARY_REGION: "aws-us-east-1"
+  SECONDARY_REGION: "azure-eastus"
+  TERTIARY_REGION: "gcp-us-central1"
+  HEALTH_CHECK_INTERVAL_SEC: "30"
+  RTO_TARGET_SEC: "300"
+  RPO_TARGET_SEC: "60"
+  
+  # Deployment Configuration
+  DEPLOYMENT_STRATEGY: "blue-green"
+  CANARY_ENABLED: "true"
+  CANARY_STAGES: "1,5,25,50,100"
+  ROLLBACK_TIMEOUT_SEC: "60"
+  
+  # Compliance Configuration
+  COMPLIANCE_MONITORING_ENABLED: "true"
+  COMPLIANCE_CHECK_INTERVAL_MIN: "5"
+  FRAMEWORKS: "SOC2,ISO27001,GDPR,PCI_DSS"
+  
+  # Redis Configuration
+  REDIS_HOST: "redis-service"
+  REDIS_PORT: "6379"
+  REDIS_MAX_MEMORY: "256mb"
+  REDIS_EVICTION_POLICY: "allkeys-lru"
+
+---
+# Secrets for sensitive data
+apiVersion: v1
+kind: Secret
+metadata:
+  name: fortress-secrets
+  namespace: living-fortress
+type: Opaque
+stringData:
+  # Database credentials (use actual secrets in production)
+  DB_PRIMARY_URL: "postgresql://credits_user:SecurePass123!@postgres-primary:5432/credits_db?sslmode=require"
+  DB_SECONDARY_URL: "postgresql://credits_user:SecurePass123!@postgres-secondary:5432/credits_db?sslmode=require"
+  DB_TERTIARY_URL: "postgresql://credits_user:SecurePass123!@postgres-tertiary:5432/credits_db?sslmode=require"
+  
+  # Redis password
+  REDIS_PASSWORD: "SecureRedisPass456!"
+  
+  # Encryption keys
+  ENCRYPTION_KEY: "base64-encoded-32-byte-key-here"
+  JWT_SECRET: "jwt-secret-key-here"
+
+---
+# =============================================================================
+# CREDITS SERVICE - BLUE ENVIRONMENT
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: credits-service-blue
+  namespace: living-fortress
+  labels:
+    app: credits-service
+    version: blue
+    tier: backend
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: credits-service
+      version: blue
+  template:
+    metadata:
+      labels:
+        app: credits-service
+        version: blue
+        tier: backend
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "5004"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      - name: credits-service
+        image: livingfortress/credits-service:latest-blue
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 5004
+          name: http
+          protocol: TCP
+        - containerPort: 9090
+          name: metrics
+          protocol: TCP
+        env:
+        - name: ENVIRONMENT
+          value: "blue"
+        - name: PORT
+          value: "5004"
+        - name: DB_URL
+          valueFrom:
+            secretKeyRef:
+              name: fortress-secrets
+              key: DB_PRIMARY_URL
+        - name: REDIS_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: fortress-config
+              key: REDIS_HOST
+        - name: EVENT_SOURCING_ENABLED
+          valueFrom:
+            configMapKeyRef:
+              name: fortress-config
+              key: EVENT_SOURCING_ENABLED
+        - name: SHARDING_ENABLED
+          valueFrom:
+            configMapKeyRef:
+              name: fortress-config
+              key: SHARDING_ENABLED
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "512Mi"
+          limits:
+            cpu: "2000m"
+            memory: "2Gi"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 5004
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 5004
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 2
+        volumeMounts:
+        - name: config
+          mountPath: /etc/config
+          readOnly: true
+      volumes:
+      - name: config
+        configMap:
+          name: fortress-config
+
+---
+# CREDITS SERVICE - GREEN ENVIRONMENT
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: credits-service-green
+  namespace: living-fortress
+  labels:
+    app: credits-service
+    version: green
+    tier: backend
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: credits-service
+      version: green
+  template:
+    metadata:
+      labels:
+        app: credits-service
+        version: green
+        tier: backend
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "5004"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      - name: credits-service
+        image: livingfortress/credits-service:latest-green
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 5004
+          name: http
+          protocol: TCP
+        - containerPort: 9090
+          name: metrics
+          protocol: TCP
+        env:
+        - name: ENVIRONMENT
+          value: "green"
+        - name: PORT
+          value: "5004"
+        - name: DB_URL
+          valueFrom:
+            secretKeyRef:
+              name: fortress-secrets
+              key: DB_PRIMARY_URL
+        - name: REDIS_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: fortress-config
+              key: REDIS_HOST
+        - name: EVENT_SOURCING_ENABLED
+          valueFrom:
+            configMapKeyRef:
+              name: fortress-config
+              key: EVENT_SOURCING_ENABLED
+        - name: SHARDING_ENABLED
+          valueFrom:
+            configMapKeyRef:
+              name: fortress-config
+              key: SHARDING_ENABLED
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "512Mi"
+          limits:
+            cpu: "2000m"
+            memory: "2Gi"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 5004
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 5004
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 2
+        volumeMounts:
+        - name: config
+          mountPath: /etc/config
+          readOnly: true
+      volumes:
+      - name: config
+        configMap:
+          name: fortress-config
+
+---
+# =============================================================================
+# SERVICES
+# =============================================================================
+
+# Credits Service - Blue
+apiVersion: v1
+kind: Service
+metadata:
+  name: credits-service-blue
+  namespace: living-fortress
+  labels:
+    app: credits-service
+    version: blue
+spec:
+  type: ClusterIP
+  ports:
+  - port: 5004
+    targetPort: 5004
+    protocol: TCP
+    name: http
+  - port: 9090
+    targetPort: 9090
+    protocol: TCP
+    name: metrics
+  selector:
+    app: credits-service
+    version: blue
+
+---
+# Credits Service - Green
+apiVersion: v1
+kind: Service
+metadata:
+  name: credits-service-green
+  namespace: living-fortress
+  labels:
+    app: credits-service
+    version: green
+spec:
+  type: ClusterIP
+  ports:
+  - port: 5004
+    targetPort: 5004
+    protocol: TCP
+    name: http
+  - port: 9090
+    targetPort: 9090
+    protocol: TCP
+    name: metrics
+  selector:
+    app: credits-service
+    version: green
+
+---
+# Credits Service - Active (Traffic Router)
+apiVersion: v1
+kind: Service
+metadata:
+  name: credits-service
+  namespace: living-fortress
+  labels:
+    app: credits-service
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 80
+    targetPort: 5004
+    protocol: TCP
+    name: http
+  selector:
+    app: credits-service
+    version: blue  # This will be switched to 'green' during deployment
+
+---
+# =============================================================================
+# REDIS DEPLOYMENT
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: living-fortress
+  labels:
+    app: redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+      - name: redis
+        image: redis:7-alpine
+        ports:
+        - containerPort: 6379
+        args:
+        - --maxmemory
+        - 256mb
+        - --maxmemory-policy
+        - allkeys-lru
+        - --requirepass
+        - $(REDIS_PASSWORD)
+        env:
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: fortress-secrets
+              key: REDIS_PASSWORD
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "256Mi"
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+        volumeMounts:
+        - name: redis-data
+          mountPath: /data
+      volumes:
+      - name: redis-data
+        emptyDir: {}
+
+---
+# Redis Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-service
+  namespace: living-fortress
+spec:
+  type: ClusterIP
+  ports:
+  - port: 6379
+    targetPort: 6379
+  selector:
+    app: redis
+
+---
+# =============================================================================
+# POSTGRESQL STATEFULSET (Primary)
+# =============================================================================
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres-primary
+  namespace: living-fortress
+spec:
+  serviceName: postgres-primary
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+      role: primary
+  template:
+    metadata:
+      labels:
+        app: postgres
+        role: primary
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:15-alpine
+        ports:
+        - containerPort: 5432
+          name: postgres
+        env:
+        - name: POSTGRES_DB
+          value: "credits_db"
+        - name: POSTGRES_USER
+          value: "credits_user"
+        - name: POSTGRES_PASSWORD
+          value: "SecurePass123!"
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+        resources:
+          requests:
+            cpu: "1000m"
+            memory: "2Gi"
+          limits:
+            cpu: "4000m"
+            memory: "8Gi"
+        volumeMounts:
+        - name: postgres-storage
+          mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+  - metadata:
+      name: postgres-storage
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 50Gi
+
+---
+# PostgreSQL Service (Primary)
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-primary
+  namespace: living-fortress
+spec:
+  type: ClusterIP
+  ports:
+  - port: 5432
+    targetPort: 5432
+  selector:
+    app: postgres
+    role: primary
+
+---
+# =============================================================================
+# HORIZONTAL POD AUTOSCALER
+# =============================================================================
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: credits-service-blue-hpa
+  namespace: living-fortress
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: credits-service-blue
+  minReplicas: 3
+  maxReplicas: 20
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: credits-service-green-hpa
+  namespace: living-fortress
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: credits-service-green
+  minReplicas: 3
+  maxReplicas: 20
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+
+---
+# =============================================================================
+# POD DISRUPTION BUDGET
+# =============================================================================
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: credits-service-pdb
+  namespace: living-fortress
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: credits-service
+
+---
+# =============================================================================
+# NETWORK POLICY
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: credits-service-network-policy
+  namespace: living-fortress
+spec:
+  podSelector:
+    matchLabels:
+      app: credits-service
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: ingress
+    ports:
+    - protocol: TCP
+      port: 5004
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: postgres
+    ports:
+    - protocol: TCP
+      port: 5432
+  - to:
+    - podSelector:
+        matchLabels:
+          app: redis
+    ports:
+    - protocol: TCP
+      port: 6379
+  - to:
+    - namespaceSelector: {}
+    ports:
+    - protocol: TCP
+      port: 53
+    - protocol: UDP
+      port: 53
+
+---
+# =============================================================================
+# SERVICE MONITOR (Prometheus)
+# =============================================================================
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: credits-service-monitor
+  namespace: living-fortress
+  labels:
+    app: credits-service
+spec:
+  selector:
+    matchLabels:
+      app: credits-service
+  endpoints:
+  - port: metrics
+    interval: 30s
+    path: /metrics
+
+---
+# =============================================================================
+# INGRESS
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: credits-service-ingress
+  namespace: living-fortress
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+spec:
+  tls:
+  - hosts:
+    - credits.livingfortress.com
+    secretName: credits-tls
+  rules:
+  - host: credits.livingfortress.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: credits-service
+            port:
+              number: 80
+
+---
+# =============================================================================
+# CRONJOB - Compliance Monitoring
+# =============================================================================
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: compliance-check
+  namespace: living-fortress
+spec:
+  schedule: "0 */6 * * *"  # Every 6 hours
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: compliance-checker
+            image: livingfortress/compliance-checker:latest
+            env:
+            - name: DB_URL
+              valueFrom:
+                secretKeyRef:
+                  name: fortress-secrets
+                  key: DB_PRIMARY_URL
+            - name: FRAMEWORKS
+              valueFrom:
+                configMapKeyRef:
+                  name: fortress-config
+                  key: FRAMEWORKS
+          restartPolicy: OnFailure
+
+---
+# =============================================================================
+# CRONJOB - DR Health Check
+# =============================================================================
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: dr-health-check
+  namespace: living-fortress
+spec:
+  schedule: "*/5 * * * *"  # Every 5 minutes
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: dr-checker
+            image: livingfortress/dr-checker:latest
+            env:
+            - name: PRIMARY_REGION
+              valueFrom:
+                configMapKeyRef:
+                  name: fortress-config
+                  key: PRIMARY_REGION
+            - name: SECONDARY_REGION
+              valueFrom:
+                configMapKeyRef:
+                  name: fortress-config
+                  key: SECONDARY_REGION
+          restartPolicy: OnFailure
+
+---
+# =============================================================================
+# DEPLOYMENT NOTES
+# =============================================================================
+# To deploy:
+#   kubectl apply -f k8s-production-deployment.yaml
+#
+# To switch traffic from blue to green:
+#   kubectl patch service credits-service -n living-fortress -p '{"spec":{"selector":{"version":"green"}}}'
+#
+# To switch back to blue:
+#   kubectl patch service credits-service -n living-fortress -p '{"spec":{"selector":{"version":"blue"}}}'
+#
+# To scale manually:
+#   kubectl scale deployment credits-service-blue --replicas=5 -n living-fortress
+#
+# To view logs:
+#   kubectl logs -f deployment/credits-service-blue -n living-fortress
+#
+# To check status:
+#   kubectl get all -n living-fortress

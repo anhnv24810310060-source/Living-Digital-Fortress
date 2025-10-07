@@ -1,0 +1,446 @@
+---
+# Production-ready Kubernetes deployment for ShieldX Shadow Evaluation Service
+# Person 3: Business Logic & Infrastructure
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: shadow-config
+  namespace: shieldx-production
+data:
+  PORT: "5005"
+  LOG_LEVEL: "info"
+  MIGRATE_ON_START: "false"
+  BACKUP_BEFORE_MIGRATE: "true"
+  
+  # Worker pool configuration
+  MAX_WORKERS: "10"
+  BATCH_SIZE: "1000"
+  SAMPLE_SIZE_DEFAULT: "10000"
+  
+  # Statistical thresholds
+  CONFIDENCE_LEVEL: "0.95"
+  SIGNIFICANCE_LEVEL: "0.05"
+  MIN_PRECISION: "0.95"
+  MIN_RECALL: "0.90"
+  MAX_FALSE_POSITIVE: "0.01"
+  
+  # Canary deployment
+  CANARY_PERCENTAGE: "5"
+  CANARY_DURATION_MINS: "60"
+  AUTO_ROLLBACK: "true"
+  MAX_ERROR_RATE: "0.05"
+  
+  # Security
+  SHADOW_API_KEY_REQUIRED: "true"
+  TLS_MIN_VERSION: "1.3"
+  
+  # Monitoring
+  METRICS_ENABLED: "true"
+  TRACING_ENABLED: "true"
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: shadow-secrets
+  namespace: shieldx-production
+type: Opaque
+stringData:
+  DATABASE_URL: "postgres://shadow_user:CHANGEME_SHADOW_PASSWORD@postgres-cluster:5432/shadow?sslmode=require"
+  SHADOW_API_KEY: "CHANGEME_SHADOW_API_KEY"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shadow-evaluation
+  namespace: shieldx-production
+  labels:
+    app: shadow-evaluation
+    component: security-testing
+    owner: person3
+spec:
+  replicas: 2  # Moderate HA for evaluation workloads
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: shadow-evaluation
+  template:
+    metadata:
+      labels:
+        app: shadow-evaluation
+        component: security-testing
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: shadow-evaluation-sa
+      
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        fsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - shadow-evaluation
+              topologyKey: kubernetes.io/hostname
+      
+      initContainers:
+      - name: wait-for-postgres
+        image: postgres:15-alpine
+        command:
+        - sh
+        - -c
+        - |
+          until pg_isready -h postgres-cluster -p 5432 -U shadow_user; do
+            echo "Waiting for PostgreSQL..."
+            sleep 2
+          done
+      
+      containers:
+      - name: shadow
+        image: registry.shieldx.io/shieldx/shadow:v2.0.0-production
+        imagePullPolicy: Always
+        
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 65534
+          capabilities:
+            drop:
+            - ALL
+        
+        ports:
+        - name: http
+          containerPort: 5005
+          protocol: TCP
+        - name: metrics
+          containerPort: 9090
+          protocol: TCP
+        
+        env:
+        - name: PORT
+          valueFrom:
+            configMapKeyRef:
+              name: shadow-config
+              key: PORT
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: shadow-secrets
+              key: DATABASE_URL
+        - name: SHADOW_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: shadow-secrets
+              key: SHADOW_API_KEY
+        - name: MAX_WORKERS
+          valueFrom:
+            configMapKeyRef:
+              name: shadow-config
+              key: MAX_WORKERS
+        
+        # Resource limits tuned for evaluation workloads
+        resources:
+          requests:
+            cpu: 1000m      # CPU-intensive evaluations
+            memory: 1Gi
+          limits:
+            cpu: 4000m      # Allow burst for parallel processing
+            memory: 4Gi
+        
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 5005
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 5005
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 2
+        
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 5005
+          initialDelaySeconds: 0
+          periodSeconds: 10
+          failureThreshold: 30
+        
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        - name: work
+          mountPath: /app/work
+      
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      - name: work
+        emptyDir:
+          sizeLimit: 10Gi  # Space for evaluation data
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: shadow-evaluation
+  namespace: shieldx-production
+  labels:
+    app: shadow-evaluation
+spec:
+  type: ClusterIP
+  selector:
+    app: shadow-evaluation
+  ports:
+  - name: http
+    port: 5005
+    targetPort: 5005
+  - name: metrics
+    port: 9090
+    targetPort: 9090
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: shadow-evaluation-hpa
+  namespace: shieldx-production
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: shadow-evaluation
+  minReplicas: 2
+  maxReplicas: 8  # Scale up for heavy evaluation workloads
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 75
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 85
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 120
+      policies:
+      - type: Pods
+        value: 2
+        periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 600  # Longer cooldown for evaluations
+      policies:
+      - type: Pods
+        value: 1
+        periodSeconds: 120
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: shadow-evaluation-pdb
+  namespace: shieldx-production
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: shadow-evaluation
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: shadow-evaluation-sa
+  namespace: shieldx-production
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: shadow-evaluation-netpol
+  namespace: shieldx-production
+spec:
+  podSelector:
+    matchLabels:
+      app: shadow-evaluation
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: orchestrator
+    - podSelector:
+        matchLabels:
+          app: webapi
+    ports:
+    - protocol: TCP
+      port: 5005
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    ports:
+    - protocol: TCP
+      port: 9090
+  egress:
+  - to:
+    - namespaceSelector: {}
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+    ports:
+    - protocol: UDP
+      port: 53
+  - to:
+    - podSelector:
+        matchLabels:
+          app: postgres
+    ports:
+    - protocol: TCP
+      port: 5432
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: shadow-evaluation-monitor
+  namespace: shieldx-production
+spec:
+  selector:
+    matchLabels:
+      app: shadow-evaluation
+  endpoints:
+  - port: metrics
+    interval: 30s
+    path: /metrics
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: shadow-evaluation-alerts
+  namespace: shieldx-production
+spec:
+  groups:
+  - name: shadow_evaluation
+    interval: 30s
+    rules:
+    - alert: ShadowEvaluationServiceDown
+      expr: up{job="shadow-evaluation"} == 0
+      for: 5m
+      labels:
+        severity: warning
+        component: shadow
+      annotations:
+        summary: "Shadow evaluation service is down"
+    
+    - alert: ShadowEvaluationHighFailureRate
+      expr: rate(shadow_evaluations_total{status="failed"}[10m]) / rate(shadow_evaluations_total[10m]) > 0.1
+      for: 15m
+      labels:
+        severity: warning
+        component: shadow
+      annotations:
+        summary: "High failure rate in shadow evaluations"
+        description: "Failure rate is {{ $value | humanizePercentage }}"
+    
+    - alert: CanaryRollbackTriggered
+      expr: increase(canary_rollbacks_total[5m]) > 0
+      for: 1m
+      labels:
+        severity: warning
+        component: shadow
+      annotations:
+        summary: "Canary deployment rolled back"
+        description: "Rule {{ $labels.rule_id }} was rolled back"
+    
+    - alert: ShadowEvaluationLongRunning
+      expr: shadow_evaluation_duration_seconds > 600
+      for: 5m
+      labels:
+        severity: info
+        component: shadow
+      annotations:
+        summary: "Long-running shadow evaluation"
+        description: "Evaluation {{ $labels.eval_id }} running for {{ $value }}s"
+
+---
+# CronJob for cleanup old evaluations
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: shadow-cleanup
+  namespace: shieldx-production
+spec:
+  schedule: "0 2 * * *"  # 2 AM daily
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+          containers:
+          - name: cleanup
+            image: postgres:15-alpine
+            env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: shadow-secrets
+                  key: DATABASE_URL
+            command:
+            - sh
+            - -c
+            - |
+              psql "$DATABASE_URL" <<EOF
+              -- Archive old traffic samples
+              SELECT archive_old_traffic_samples();
+              
+              -- Delete old evaluations (keep 90 days)
+              DELETE FROM shadow_evaluations_advanced 
+              WHERE completed_at < NOW() - INTERVAL '90 days';
+              
+              -- Delete orphaned canary deployments
+              DELETE FROM canary_deployments 
+              WHERE end_time < NOW() - INTERVAL '30 days';
+              
+              VACUUM ANALYZE;
+              EOF

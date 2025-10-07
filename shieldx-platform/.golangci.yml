@@ -1,0 +1,35 @@
+run:
+  timeout: 5m
+  tests: true
+  skip-dirs:
+    - dist
+
+linters:
+  enable:
+    - govet
+    - gosec
+    - staticcheck
+    - gosimple
+    - unused
+    - errcheck
+    - ineffassign
+    - misspell
+    - revive
+  disable:
+    - depguard
+
+linters-settings:
+  misspell:
+    locale: US
+  revive:
+    confidence: 0.8
+    severity: warning
+
+issues:
+  exclude-use-default: false
+  max-per-linter: 0
+  max-same-issues: 0
+  exclude-rules:
+    - path: _test.go
+      linters: [gosec]
+      reason: Security checks often noisy in tests
