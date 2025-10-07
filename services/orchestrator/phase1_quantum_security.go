@@ -19,7 +19,7 @@ import (
 
 	"shieldx/pkg/certtransparency"
 	"shieldx/pkg/graphql"
-	"shieldx/pkg/ledger"
+	"shieldx/shared/ledger"
 	pqc "shieldx/pkg/pqc"
 )
 

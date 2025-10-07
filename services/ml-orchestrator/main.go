@@ -20,9 +20,9 @@ import (
 	"sync"
 	"time"
 
-	"shieldx/pkg/metrics"
-	logcorr "shieldx/pkg/observability/logcorr"
-	otelobs "shieldx/pkg/observability/otel"
+	"shieldx/shared/metrics"
+	logcorr "shieldx/shared/observability/logcorr"
+	otelobs "shieldx/shared/observability/otel"
 	"shieldx/pkg/ratls"
 )
 

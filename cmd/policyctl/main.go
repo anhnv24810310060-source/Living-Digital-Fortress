@@ -7,7 +7,7 @@ import (
     "os"
     "path/filepath"
 
-    "shieldx/pkg/policy"
+    "shieldx/shared/policy"
 )
 
 func main() {

@@ -20,8 +20,8 @@ import (
 	"time"
 
 	gauth "shieldx/pkg/gateway"
-	"shieldx/pkg/metrics"
-	otelobs "shieldx/pkg/observability/otel"
+	"shieldx/shared/metrics"
+	otelobs "shieldx/shared/observability/otel"
 	"shieldx/pkg/ratls"
 
 	"golang.org/x/time/rate"

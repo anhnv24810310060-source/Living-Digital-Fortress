@@ -49,8 +49,8 @@ cd ../..
 
 # Run unit tests
 echo -e "${YELLOW}[5/10] Running unit tests...${NC}"
-go test ./pkg/guardian/... -v -cover || { echo -e "${RED}Guardian tests failed${NC}"; exit 1; }
-go test ./pkg/ml/... -v -cover || { echo -e "${RED}ML tests failed${NC}"; exit 1; }
+go test ./services/honeypot-service/internal/guardian/... -v -cover || { echo -e "${RED}Guardian tests failed${NC}"; exit 1; }
+go test ./services/ai-service/internal/ml/... -v -cover || { echo -e "${RED}ML tests failed${NC}"; exit 1; }
 go test ./services/contauth-service/... -v -cover || { echo -e "${RED}ContAuth tests failed${NC}"; exit 1; }
 echo -e "${GREEN}✓ All tests passed${NC}"
 

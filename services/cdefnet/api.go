@@ -10,7 +10,7 @@ import (
 
 	"shieldx/services/cdefnet/store"
 	"shieldx/services/cdefnet/privacy"
-	"shieldx/pkg/ledger"
+	"shieldx/shared/ledger"
 )
 
 type SubmitIOCRequest struct {

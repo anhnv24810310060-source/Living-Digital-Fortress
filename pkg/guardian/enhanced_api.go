@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"shieldx/pkg/metrics"
+	"shieldx/shared/metrics"
 	"shieldx/pkg/sandbox"
 )
 

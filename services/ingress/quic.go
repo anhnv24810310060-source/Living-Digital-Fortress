@@ -17,7 +17,7 @@ import (
     "time"
 
     quic "github.com/quic-go/quic-go"
-    "shieldx/pkg/metrics"
+    "shieldx/shared/metrics"
 )
 
 // startQUICServer launches a minimal QUIC server that accepts streams carrying wch.Envelope JSON

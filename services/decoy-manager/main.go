@@ -20,8 +20,8 @@ import (
     "github.com/docker/docker/api/types/container"
     "github.com/docker/docker/client"
     "github.com/docker/go-connections/nat"
-    "shieldx/pkg/ledger"
-    "shieldx/pkg/metrics"
+    "shieldx/shared/ledger"
+    "shieldx/shared/metrics"
     "shieldx/pkg/sandbox"
 )
 

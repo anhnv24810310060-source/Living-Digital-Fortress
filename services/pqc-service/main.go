@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"shieldx/core/crypto"
-	"shieldx/pkg/ledger"
-	"shieldx/pkg/metrics"
+	"shieldx/shared/ledger"
+	"shieldx/shared/metrics"
 )
 
 type PQCService struct {

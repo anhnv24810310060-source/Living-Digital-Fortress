@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"shieldx/pkg/metrics"
-	otelobs "shieldx/pkg/observability/otel"
+	"shieldx/shared/metrics"
+	otelobs "shieldx/shared/observability/otel"
 )
 
 // ThreatGraphService manages threat intelligence graph and scoring

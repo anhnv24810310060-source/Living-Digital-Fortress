@@ -2,7 +2,7 @@ package main
 
 import (
 	"shieldx/pkg/ebpf"
-	gts "shieldx/pkg/guardian"
+	gts "shieldx/services/honeypot-service/internal/guardian"
 	"testing"
 )
 

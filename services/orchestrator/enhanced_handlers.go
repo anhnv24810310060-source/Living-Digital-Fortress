@@ -16,7 +16,7 @@ import (
 
 	"shieldx/pkg/accesslog"
 	"shieldx/pkg/dpop"
-	"shieldx/pkg/policy"
+	"shieldx/shared/policy"
 	"shieldx/pkg/validation"
 )
 

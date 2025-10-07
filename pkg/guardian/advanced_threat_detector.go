@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"shieldx/pkg/ebpf"
-	"shieldx/pkg/ml"
+	"shieldx/services/ai-service/internal/ml"
 	"shieldx/pkg/sandbox"
 )
 

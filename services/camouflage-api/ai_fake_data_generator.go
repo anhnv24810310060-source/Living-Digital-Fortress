@@ -1,5 +1,7 @@
-package camouflageapi
-package camouflage
+//go:build expdata
+// +build expdata
+
+package main
 
 import (
 	"context"

@@ -14,8 +14,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"shieldx/pkg/ledger"
-	"shieldx/pkg/policy"
+	"shieldx/shared/ledger"
+	"shieldx/shared/policy"
 )
 
 // PolicyEngineV2 manages versioned policies with rollback capability

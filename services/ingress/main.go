@@ -26,9 +26,9 @@ import (
 	"shieldx/pkg/dpop"
 	"shieldx/pkg/forensics"
 	"shieldx/pkg/guard"
-	"shieldx/pkg/ledger"
-	"shieldx/pkg/metrics"
-	"shieldx/pkg/policy"
+	"shieldx/shared/ledger"
+	"shieldx/shared/metrics"
+	"shieldx/shared/policy"
 	"shieldx/pkg/wch"
 	"shieldx/pkg/wgcfg"
 	"shieldx/pkg/wgctrlmgr"
@@ -39,7 +39,7 @@ import (
 	redis "github.com/redis/go-redis/v9"
 
 	// optional tracing
-	otelobs "shieldx/pkg/observability/otel"
+	otelobs "shieldx/shared/observability/otel"
 	"shieldx/pkg/ratls"
 	secTLS "shieldx/pkg/security/tls"
 )

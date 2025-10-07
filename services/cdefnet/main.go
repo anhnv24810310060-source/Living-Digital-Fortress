@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"shieldx/services/cdefnet/store"
-	"shieldx/pkg/metrics"
+	"shieldx/shared/metrics"
 )
 
 func main() {

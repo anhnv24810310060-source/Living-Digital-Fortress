@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	"shieldx/pkg/metrics"
+	"shieldx/shared/metrics"
 )
 
 // Phase 1 global instance and metrics (only PQC specific metrics retained here to avoid duplication)

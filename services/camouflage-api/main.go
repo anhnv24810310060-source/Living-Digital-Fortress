@@ -11,31 +11,31 @@ import (
 	"time"
 
 	"shieldx/core/maze_engine"
-	"shieldx/pkg/deception"
-	"shieldx/pkg/ledger"
-	"shieldx/pkg/metrics"
+	"shieldx/shared/honeypotdeception"
+	"shieldx/shared/ledger"
+	"shieldx/shared/metrics"
 
 	"github.com/google/uuid"
 )
 
 type CamouflageService struct {
-	dg   *deception.DeceptionGraph
+	dg   *honeypotdeception.DeceptionGraph
 	mu   sync.RWMutex
 	mOps *metrics.LabeledCounter // labels: op,result
 }
 
 func NewCamouflageService() *CamouflageService {
-	dg := deception.NewDeceptionGraph()
+	dg := honeypotdeception.NewDeceptionGraph()
 	// Seed with a few decoys
-	dg.AddNode(deception.CreateWebServerDecoy())
-	dg.AddNode(deception.CreateSSHHoneypot())
-	dg.AddNode(deception.CreateDatabaseDecoy())
+	dg.AddNode(honeypotdeception.CreateWebServerDecoy())
+	dg.AddNode(honeypotdeception.CreateSSHHoneypot())
+	dg.AddNode(honeypotdeception.CreateDatabaseDecoy())
 	return &CamouflageService{dg: dg}
 }
 
 type SelectResponse struct {
-	Decoy deception.DeceptionNode `json:"decoy"`
-	Token string                  `json:"token"`
+	Decoy honeypotdeception.DeceptionNode `json:"decoy"`
+	Token string                         `json:"token"`
 }
 
 type FeedbackRequest struct {

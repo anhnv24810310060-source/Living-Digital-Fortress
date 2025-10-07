@@ -4,7 +4,7 @@ package sandbox
 
 import (
 	"time"
-	"shieldx/pkg/metrics"
+	"shieldx/shared/metrics"
 )
 
 // MonitorWithMetrics wraps eBPFMonitor with metrics instrumentation

@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"shieldx/pkg/metrics"
+	"shieldx/shared/metrics"
 )
 
 func main() {

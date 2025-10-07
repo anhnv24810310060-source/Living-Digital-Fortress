@@ -18,7 +18,7 @@ import (
 	crand "crypto/rand"
 	"crypto/sha256"
 	"crypto/tls"
-	"shieldx/pkg/metrics"
+	"shieldx/shared/metrics"
 	"shieldx/pkg/sandbox"
 	"shieldx/pkg/wch"
 	"strings"

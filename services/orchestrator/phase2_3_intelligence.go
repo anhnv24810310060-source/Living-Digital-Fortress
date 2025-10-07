@@ -12,7 +12,7 @@ import (
 
 	"shieldx/pkg/analytics"
 	"shieldx/pkg/graphql"
-	"shieldx/pkg/policy"
+	"shieldx/shared/policy"
 	"shieldx/pkg/ratelimit"
 )
 

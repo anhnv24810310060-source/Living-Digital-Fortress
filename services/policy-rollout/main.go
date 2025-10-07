@@ -14,8 +14,8 @@ import (
     "sync/atomic"
     "time"
 
-    "shieldx/pkg/policy"
-    otelobs "shieldx/pkg/observability/otel"
+    "shieldx/shared/policy"
+        otelobs "shieldx/shared/observability/otel"
 )
 
 type state struct {

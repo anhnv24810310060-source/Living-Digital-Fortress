@@ -9,7 +9,7 @@ import (
     "strconv"
     "time"
 
-    "shieldx/pkg/metrics"
+    "shieldx/shared/metrics"
     "encoding/json"
     "io"
 )

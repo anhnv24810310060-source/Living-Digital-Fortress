@@ -20,7 +20,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 
-	"shieldx/pkg/ledger"
+	"shieldx/shared/ledger"
 
 	"context"
 

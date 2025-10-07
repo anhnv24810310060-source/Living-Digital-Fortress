@@ -13,11 +13,11 @@ import (
     "sync"
     "time"
 
-    "shieldx/pkg/ledger"
+    "shieldx/shared/ledger"
     "shieldx/pkg/tokens"
-    "shieldx/pkg/metrics"
+    "shieldx/shared/metrics"
     "github.com/golang-jwt/jwt/v5"
-    otelobs "shieldx/pkg/observability/otel"
+        otelobs "shieldx/shared/observability/otel"
     "context"
     "shieldx/pkg/ratls"
 )

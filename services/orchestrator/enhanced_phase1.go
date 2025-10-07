@@ -9,7 +9,7 @@ import (
 	
 	"shieldx/pkg/certtransparency"
 	"shieldx/pkg/pqcrypto"
-	"shieldx/pkg/policy"
+	"shieldx/shared/policy"
 	"shieldx/pkg/ratelimit"
 )
 

@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"shieldx/pkg/verifier"
-	"shieldx/pkg/metrics"
-	otelobs "shieldx/pkg/observability/otel"
-	logcorr "shieldx/pkg/observability/logcorr"
+	"shieldx/shared/metrics"
+	otelobs "shieldx/shared/observability/otel"
+	logcorr "shieldx/shared/observability/logcorr"
 	"shieldx/pkg/ratls"
 )
 

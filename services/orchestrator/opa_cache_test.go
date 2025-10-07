@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
-	"shieldx/pkg/policy"
+	"shieldx/shared/policy"
 	"testing"
 )
 

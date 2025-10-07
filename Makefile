@@ -64,12 +64,18 @@ build-services:
 	go build -o bin/locator ./services/locator
 	go build -o bin/ingress ./services/ingress
 	go build -o bin/guardian ./services/guardian
-	go build -o bin/decoy-manager ./services/decoy-manager
+	go build -o bin/decoy-manager ./services/decoy-manager # TODO: evaluate deprecation after honeypot-service consolidation
 	go build -o bin/ml-orchestrator ./services/ml-orchestrator
 	go build -o bin/anchor ./services/anchor
 	go build -o bin/shapeshifter ./services/shapeshifter
 	go build -o bin/sinkhole ./services/sinkhole
 	go build -o bin/camouflage-api ./services/camouflage-api
+	# New modularized services
+	go build -o bin/ai-service ./services/ai-service/cmd/ai-service
+	go build -o bin/honeypot-service ./services/honeypot-service/cmd/honeypot-service
+	go build -o bin/monitoring-service ./services/monitoring-service/cmd/monitoring-service
+	# Legacy decoy protocol binaries (will be merged into honeypot-service):
+	@echo "[info] decoy-http/decoy-ssh/decoy-redis are pending consolidation; build skipped by default"
 
 # Build eBPF programs
 build-ebpf:
@@ -96,7 +102,7 @@ test-sandbox:
 
 # Test ML components  
 test-ml:
-	go test -v ./pkg/ml/...
+	go test -v ./services/ai-service/internal/ml/...
 
 # Test orchestrator
 test-orchestrator:
@@ -153,7 +159,7 @@ security-scan:
 # Performance benchmarks
 benchmark:
 	go test -bench=. ./pkg/sandbox/
-	go test -bench=. ./pkg/ml/
+	go test -bench=. ./services/ai-service/internal/ml/
 
 # Docker builds for production
 docker-build:
