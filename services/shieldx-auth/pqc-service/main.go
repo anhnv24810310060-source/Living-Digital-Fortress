@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"shieldx/core/crypto"
-	"shieldx/pkg/ledger"
-	"shieldx/pkg/metrics"
+	"shieldx/shared/shieldx-common/pkg/ledger"
+	"shieldx/shared/shieldx-common/pkg/metrics"
 )
 
 type PQCService struct {
@@ -32,11 +32,11 @@ type KeyGenRequest struct {
 }
 
 type KeyGenResponse struct {
-	SessionID     string `json:"session_id"`
-	PublicKey     []byte `json:"public_key"`
-	Algorithm     string `json:"algorithm"`
-	Version       int    `json:"version"`
-	ExpiresAt     string `json:"expires_at"`
+	SessionID string `json:"session_id"`
+	PublicKey []byte `json:"public_key"`
+	Algorithm string `json:"algorithm"`
+	Version   int    `json:"version"`
+	ExpiresAt string `json:"expires_at"`
 }
 
 type HandshakeRequest struct {

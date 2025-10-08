@@ -16,28 +16,28 @@ import (
 // Benefits: Learn from multiple customers without sharing data, faster adaptation to threats
 type FederatedLearningEngine struct {
 	// Central model parameters (aggregated from clients)
-	globalModel      *GlobalBehavioralModel
-	modelMu          sync.RWMutex
-	
+	globalModel *GlobalBehavioralModel
+	modelMu     sync.RWMutex
+
 	// Client model registry (ephemeral - never persist raw updates)
-	clientUpdates    map[string]*ClientModelUpdate
-	clientMu         sync.RWMutex
-	
+	clientUpdates map[string]*ClientModelUpdate
+	clientMu      sync.RWMutex
+
 	// Differential privacy parameters (P0 requirement: epsilon=1.0)
-	epsilon          float64 // Privacy budget
-	delta            float64 // Privacy failure probability
-	
+	epsilon float64 // Privacy budget
+	delta   float64 // Privacy failure probability
+
 	// Byzantine detection (robust aggregation)
 	byzantineDetector *ByzantineDetector
-	
+
 	// Secure aggregation protocol
-	secureAgg        *SecureAggregator
-	
+	secureAgg *SecureAggregator
+
 	// Federated round management
-	currentRound     int
-	roundDeadline    time.Time
+	currentRound       int
+	roundDeadline      time.Time
 	minClientsPerRound int
-	
+
 	// Performance metrics
 	totalRounds      uint64
 	successfulRounds uint64
@@ -47,49 +47,49 @@ type FederatedLearningEngine struct {
 // GlobalBehavioralModel represents the aggregated model from all clients
 type GlobalBehavioralModel struct {
 	// Keystroke dynamics model (mean/stddev for each feature)
-	KeystrokeWeights    []float64 `json:"keystroke_weights"`
-	MouseWeights        []float64 `json:"mouse_weights"`
-	DeviceWeights       []float64 `json:"device_weights"`
-	
+	KeystrokeWeights []float64 `json:"keystroke_weights"`
+	MouseWeights     []float64 `json:"mouse_weights"`
+	DeviceWeights    []float64 `json:"device_weights"`
+
 	// Model metadata
-	Version          int       `json:"version"`
-	LastUpdated      time.Time `json:"last_updated"`
-	ContributingClients int    `json:"contributing_clients"`
-	TotalSamples     int       `json:"total_samples"`
+	Version             int       `json:"version"`
+	LastUpdated         time.Time `json:"last_updated"`
+	ContributingClients int       `json:"contributing_clients"`
+	TotalSamples        int       `json:"total_samples"`
 }
 
 // ClientModelUpdate represents a single client's gradient/parameter update
 // P0 Constraint: MUST NOT contain raw biometric data (only gradients/statistics)
 type ClientModelUpdate struct {
-	ClientIDHash     string    `json:"client_id_hash"` // SHA256 of client ID
-	UpdateTimestamp  time.Time `json:"timestamp"`
-	
+	ClientIDHash    string    `json:"client_id_hash"` // SHA256 of client ID
+	UpdateTimestamp time.Time `json:"timestamp"`
+
 	// Gradient updates (differentially private)
-	KeystrokeDelta   []float64 `json:"keystroke_delta"`
-	MouseDelta       []float64 `json:"mouse_delta"`
-	DeviceDelta      []float64 `json:"device_delta"`
-	
+	KeystrokeDelta []float64 `json:"keystroke_delta"`
+	MouseDelta     []float64 `json:"mouse_delta"`
+	DeviceDelta    []float64 `json:"device_delta"`
+
 	// Sample count for weighted averaging
-	SampleCount      int       `json:"sample_count"`
-	
+	SampleCount int `json:"sample_count"`
+
 	// Validation metrics
-	LocalAccuracy    float64   `json:"local_accuracy"`
-	LocalLoss        float64   `json:"local_loss"`
-	
+	LocalAccuracy float64 `json:"local_accuracy"`
+	LocalLoss     float64 `json:"local_loss"`
+
 	// Byzantine detection features
-	UpdateNorm       float64   `json:"update_norm"`
-	UpdateMagnitude  float64   `json:"update_magnitude"`
+	UpdateNorm      float64 `json:"update_norm"`
+	UpdateMagnitude float64 `json:"update_magnitude"`
 }
 
 // ByzantineDetector identifies and filters malicious client updates
 type ByzantineDetector struct {
 	// Historical update statistics for anomaly detection
-	updateHistory    []float64
-	historyMu        sync.RWMutex
-	
+	updateHistory []float64
+	historyMu     sync.RWMutex
+
 	// Outlier detection threshold (MAD - Median Absolute Deviation)
-	madMultiplier    float64
-	
+	madMultiplier float64
+
 	// Reputation scores
 	clientReputation map[string]float64
 	repMu            sync.RWMutex
@@ -99,9 +99,9 @@ type ByzantineDetector struct {
 type SecureAggregator struct {
 	// Paillier homomorphic encryption would go here in production
 	// For PoC: use additive secret sharing simulation
-	
-	threshold        int // Minimum honest clients required
-	noiseScale       float64
+
+	threshold  int // Minimum honest clients required
+	noiseScale float64
 }
 
 // NewFederatedLearningEngine creates FL engine with differential privacy
@@ -113,7 +113,7 @@ func NewFederatedLearningEngine(epsilon, delta float64, minClients int) *Federat
 	if delta <= 0 {
 		delta = 1e-5
 	}
-	
+
 	globalModel := &GlobalBehavioralModel{
 		KeystrokeWeights: make([]float64, 10),
 		MouseWeights:     make([]float64, 8),
@@ -121,7 +121,7 @@ func NewFederatedLearningEngine(epsilon, delta float64, minClients int) *Federat
 		Version:          1,
 		LastUpdated:      time.Now(),
 	}
-	
+
 	return &FederatedLearningEngine{
 		globalModel:        globalModel,
 		clientUpdates:      make(map[string]*ClientModelUpdate),
@@ -146,30 +146,30 @@ func (fle *FederatedLearningEngine) SubmitClientUpdate(ctx context.Context, upda
 		fle.rejectedUpdates++
 		return fmt.Errorf("invalid update: %w", err)
 	}
-	
+
 	// 2. Check for Byzantine behavior
 	if fle.byzantineDetector.IsSuspicious(update) {
 		fle.rejectedUpdates++
 		fle.byzantineDetector.penalizeClient(update.ClientIDHash)
 		return fmt.Errorf("Byzantine update rejected: suspicious gradient magnitude")
 	}
-	
+
 	// 3. Apply differential privacy noise (Laplace mechanism)
 	noisyUpdate := fle.addDifferentialPrivacyNoise(update)
-	
+
 	// 4. Store update for aggregation
 	fle.clientMu.Lock()
 	fle.clientUpdates[update.ClientIDHash] = noisyUpdate
 	fle.clientMu.Unlock()
-	
+
 	// 5. Update client reputation (successful submission)
 	fle.byzantineDetector.rewardClient(update.ClientIDHash)
-	
+
 	// 6. Check if we have enough updates to trigger aggregation
 	if len(fle.clientUpdates) >= fle.minClientsPerRound || time.Now().After(fle.roundDeadline) {
 		go fle.runAggregationRound()
 	}
-	
+
 	return nil
 }
 
@@ -183,24 +183,24 @@ func (fle *FederatedLearningEngine) runAggregationRound() {
 	// Clear for next round
 	fle.clientUpdates = make(map[string]*ClientModelUpdate)
 	fle.clientMu.Unlock()
-	
+
 	if len(updates) < fle.minClientsPerRound {
 		return // Not enough clients
 	}
-	
+
 	fle.totalRounds++
-	
+
 	// 1. Byzantine-robust aggregation (Krum/Median/TrimmedMean)
 	robustUpdates := fle.byzantineDetector.FilterByzantine(updates)
-	
+
 	if len(robustUpdates) < fle.minClientsPerRound/2 {
 		// Too many Byzantine clients detected
 		return
 	}
-	
+
 	// 2. Secure aggregation (weighted average with DP)
 	aggregated := fle.secureAgg.Aggregate(robustUpdates)
-	
+
 	// 3. Update global model
 	fle.modelMu.Lock()
 	fle.updateGlobalModel(aggregated)
@@ -208,11 +208,11 @@ func (fle *FederatedLearningEngine) runAggregationRound() {
 	fle.globalModel.LastUpdated = time.Now()
 	fle.globalModel.ContributingClients = len(robustUpdates)
 	fle.modelMu.Unlock()
-	
+
 	fle.successfulRounds++
 	fle.currentRound++
 	fle.roundDeadline = time.Now().Add(1 * time.Hour)
-	
+
 	// 4. Log metrics (would go to monitoring system)
 	fmt.Printf("[FL] Round %d complete: %d clients, accuracy improvement, DP-epsilon=%.2f\n",
 		fle.currentRound-1, len(robustUpdates), fle.epsilon)
@@ -222,28 +222,28 @@ func (fle *FederatedLearningEngine) runAggregationRound() {
 func (fle *FederatedLearningEngine) updateGlobalModel(aggregated *AggregatedUpdate) {
 	// Apply gradients with learning rate decay
 	learningRate := 0.01 / math.Sqrt(float64(fle.currentRound))
-	
+
 	// Update keystroke weights
 	for i := range fle.globalModel.KeystrokeWeights {
 		if i < len(aggregated.KeystrokeDelta) {
 			fle.globalModel.KeystrokeWeights[i] += learningRate * aggregated.KeystrokeDelta[i]
 		}
 	}
-	
+
 	// Update mouse weights
 	for i := range fle.globalModel.MouseWeights {
 		if i < len(aggregated.MouseDelta) {
 			fle.globalModel.MouseWeights[i] += learningRate * aggregated.MouseDelta[i]
 		}
 	}
-	
+
 	// Update device weights
 	for i := range fle.globalModel.DeviceWeights {
 		if i < len(aggregated.DeviceDelta) {
 			fle.globalModel.DeviceWeights[i] += learningRate * aggregated.DeviceDelta[i]
 		}
 	}
-	
+
 	fle.globalModel.TotalSamples += aggregated.TotalSamples
 }
 
@@ -251,7 +251,7 @@ func (fle *FederatedLearningEngine) updateGlobalModel(aggregated *AggregatedUpda
 func (fle *FederatedLearningEngine) GetGlobalModel() *GlobalBehavioralModel {
 	fle.modelMu.RLock()
 	defer fle.modelMu.RUnlock()
-	
+
 	// Deep copy to prevent external mutations
 	model := &GlobalBehavioralModel{
 		KeystrokeWeights:    append([]float64(nil), fle.globalModel.KeystrokeWeights...),
@@ -262,7 +262,7 @@ func (fle *FederatedLearningEngine) GetGlobalModel() *GlobalBehavioralModel {
 		ContributingClients: fle.globalModel.ContributingClients,
 		TotalSamples:        fle.globalModel.TotalSamples,
 	}
-	
+
 	return model
 }
 
@@ -272,7 +272,7 @@ func (fle *FederatedLearningEngine) addDifferentialPrivacyNoise(update *ClientMo
 	// Laplace noise scale: sensitivity / epsilon
 	// Sensitivity for gradients typically bounded to [0,1] range
 	scale := 1.0 / fle.epsilon
-	
+
 	noisy := &ClientModelUpdate{
 		ClientIDHash:    update.ClientIDHash,
 		UpdateTimestamp: update.UpdateTimestamp,
@@ -283,11 +283,11 @@ func (fle *FederatedLearningEngine) addDifferentialPrivacyNoise(update *ClientMo
 		MouseDelta:      addLaplaceNoise(update.MouseDelta, scale),
 		DeviceDelta:     addLaplaceNoise(update.DeviceDelta, scale),
 	}
-	
+
 	// Recompute norms after noise addition
 	noisy.UpdateNorm = computeL2Norm(noisy.KeystrokeDelta, noisy.MouseDelta, noisy.DeviceDelta)
 	noisy.UpdateMagnitude = update.UpdateMagnitude
-	
+
 	return noisy
 }
 
@@ -326,32 +326,32 @@ func validateClientUpdate(update *ClientModelUpdate) error {
 	if update == nil {
 		return fmt.Errorf("nil update")
 	}
-	
+
 	if update.ClientIDHash == "" {
 		return fmt.Errorf("missing client ID hash")
 	}
-	
+
 	// Verify hash format (SHA256 = 64 hex chars)
 	if len(update.ClientIDHash) != 64 {
 		return fmt.Errorf("invalid client ID hash format")
 	}
-	
+
 	if update.SampleCount <= 0 || update.SampleCount > 100000 {
 		return fmt.Errorf("invalid sample count: %d", update.SampleCount)
 	}
-	
+
 	// Check gradient dimensions
 	if len(update.KeystrokeDelta) == 0 || len(update.MouseDelta) == 0 {
 		return fmt.Errorf("empty gradients")
 	}
-	
+
 	// Verify no NaN/Inf values
 	for _, v := range update.KeystrokeDelta {
 		if math.IsNaN(v) || math.IsInf(v, 0) {
 			return fmt.Errorf("invalid gradient value")
 		}
 	}
-	
+
 	return nil
 }
 
@@ -367,11 +367,11 @@ func NewByzantineDetector(madMultiplier float64) *ByzantineDetector {
 // IsSuspicious checks if update exhibits Byzantine behavior
 func (bd *ByzantineDetector) IsSuspicious(update *ClientModelUpdate) bool {
 	norm := update.UpdateNorm
-	
+
 	bd.historyMu.RLock()
 	history := append([]float64(nil), bd.updateHistory...)
 	bd.historyMu.RUnlock()
-	
+
 	if len(history) < 10 {
 		// Not enough history yet, accept
 		bd.historyMu.Lock()
@@ -382,16 +382,16 @@ func (bd *ByzantineDetector) IsSuspicious(update *ClientModelUpdate) bool {
 		bd.historyMu.Unlock()
 		return false
 	}
-	
+
 	// Compute median and MAD
 	median := computeMedian(history)
 	mad := computeMAD(history, median)
-	
+
 	// Outlier if |x - median| > k * MAD
 	threshold := bd.madMultiplier * mad
-	
+
 	isSuspicious := math.Abs(norm-median) > threshold
-	
+
 	if !isSuspicious {
 		// Update history with good update
 		bd.historyMu.Lock()
@@ -401,7 +401,7 @@ func (bd *ByzantineDetector) IsSuspicious(update *ClientModelUpdate) bool {
 		}
 		bd.historyMu.Unlock()
 	}
-	
+
 	return isSuspicious
 }
 
@@ -410,17 +410,17 @@ func (bd *ByzantineDetector) FilterByzantine(updates []*ClientModelUpdate) []*Cl
 	if len(updates) < 3 {
 		return updates
 	}
-	
+
 	// Extract norms
 	norms := make([]float64, len(updates))
 	for i, u := range updates {
 		norms[i] = u.UpdateNorm
 	}
-	
+
 	median := computeMedian(norms)
 	mad := computeMAD(norms, median)
 	threshold := bd.madMultiplier * mad
-	
+
 	// Filter outliers
 	filtered := make([]*ClientModelUpdate, 0, len(updates))
 	for _, update := range updates {
@@ -428,14 +428,14 @@ func (bd *ByzantineDetector) FilterByzantine(updates []*ClientModelUpdate) []*Cl
 			filtered = append(filtered, update)
 		}
 	}
-	
+
 	return filtered
 }
 
 func (bd *ByzantineDetector) penalizeClient(clientID string) {
 	bd.repMu.Lock()
 	defer bd.repMu.Unlock()
-	
+
 	if rep, ok := bd.clientReputation[clientID]; ok {
 		bd.clientReputation[clientID] = rep * 0.5 // Decay reputation
 	} else {
@@ -446,7 +446,7 @@ func (bd *ByzantineDetector) penalizeClient(clientID string) {
 func (bd *ByzantineDetector) rewardClient(clientID string) {
 	bd.repMu.Lock()
 	defer bd.repMu.Unlock()
-	
+
 	rep, ok := bd.clientReputation[clientID]
 	if !ok {
 		rep = 1.0
@@ -463,7 +463,7 @@ func computeMedian(values []float64) float64 {
 			}
 		}
 	}
-	
+
 	n := len(sorted)
 	if n%2 == 0 {
 		return (sorted[n/2-1] + sorted[n/2]) / 2.0
@@ -500,37 +500,37 @@ func (sa *SecureAggregator) Aggregate(updates []*ClientModelUpdate) *AggregatedU
 	if len(updates) == 0 {
 		return &AggregatedUpdate{}
 	}
-	
+
 	// Weighted average by sample count
 	totalWeight := 0
 	for _, u := range updates {
 		totalWeight += u.SampleCount
 	}
-	
+
 	keystrokeDim := len(updates[0].KeystrokeDelta)
 	mouseDim := len(updates[0].MouseDelta)
 	deviceDim := len(updates[0].DeviceDelta)
-	
+
 	keystrokeSum := make([]float64, keystrokeDim)
 	mouseSum := make([]float64, mouseDim)
 	deviceSum := make([]float64, deviceDim)
-	
+
 	for _, update := range updates {
 		weight := float64(update.SampleCount) / float64(totalWeight)
-		
+
 		for i := 0; i < keystrokeDim && i < len(update.KeystrokeDelta); i++ {
 			keystrokeSum[i] += update.KeystrokeDelta[i] * weight
 		}
-		
+
 		for i := 0; i < mouseDim && i < len(update.MouseDelta); i++ {
 			mouseSum[i] += update.MouseDelta[i] * weight
 		}
-		
+
 		for i := 0; i < deviceDim && i < len(update.DeviceDelta); i++ {
 			deviceSum[i] += update.DeviceDelta[i] * weight
 		}
 	}
-	
+
 	return &AggregatedUpdate{
 		KeystrokeDelta: keystrokeSum,
 		MouseDelta:     mouseSum,
@@ -552,11 +552,11 @@ func (fle *FederatedLearningEngine) ImportModel(data []byte) error {
 	if err := json.Unmarshal(data, &model); err != nil {
 		return err
 	}
-	
+
 	fle.modelMu.Lock()
 	fle.globalModel = &model
 	fle.modelMu.Unlock()
-	
+
 	return nil
 }
 
@@ -566,7 +566,7 @@ func (fle *FederatedLearningEngine) GetMetrics() map[string]interface{} {
 	version := fle.globalModel.Version
 	clients := fle.globalModel.ContributingClients
 	fle.modelMu.RUnlock()
-	
+
 	return map[string]interface{}{
 		"total_rounds":      fle.totalRounds,
 		"successful_rounds": fle.successfulRounds,

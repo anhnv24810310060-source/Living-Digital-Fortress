@@ -15,8 +15,8 @@ import (
 	"sync"
 	"time"
 
-	"shieldx/pkg/metrics"
-	"shieldx/pkg/sandbox"
+	"shieldx/shared/shieldx-common/pkg/metrics"
+	"shieldx/shared/shieldx-common/pkg/sandbox"
 )
 
 // EnhancedGuardianAPI provides Phase 2 P0 production-ready threat detection API

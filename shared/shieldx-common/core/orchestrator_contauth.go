@@ -15,12 +15,12 @@ type ContAuthClient struct {
 }
 
 type AuthDecision struct {
-	SessionID   string    `json:"session_id"`
-	Action      string    `json:"action"`
-	Confidence  float64   `json:"confidence"`
-	Reason      string    `json:"reason"`
-	Challenge   string    `json:"challenge,omitempty"`
-	ExpiresAt   time.Time `json:"expires_at"`
+	SessionID  string    `json:"session_id"`
+	Action     string    `json:"action"`
+	Confidence float64   `json:"confidence"`
+	Reason     string    `json:"reason"`
+	Challenge  string    `json:"challenge,omitempty"`
+	ExpiresAt  time.Time `json:"expires_at"`
 }
 
 type RiskScoreRequest struct {
@@ -28,17 +28,17 @@ type RiskScoreRequest struct {
 }
 
 type RiskScore struct {
-	SessionID        string    `json:"session_id"`
-	OverallScore     float64   `json:"overall_score"`
-	KeystrokeScore   float64   `json:"keystroke_score"`
-	MouseScore       float64   `json:"mouse_score"`
-	LocationScore    float64   `json:"location_score"`
-	DeviceScore      float64   `json:"device_score"`
-	BehaviorScore    float64   `json:"behavior_score"`
-	ReputationScore  float64   `json:"reputation_score"`
-	RiskFactors      []string  `json:"risk_factors"`
-	Recommendation   string    `json:"recommendation"`
-	CalculatedAt     time.Time `json:"calculated_at"`
+	SessionID       string    `json:"session_id"`
+	OverallScore    float64   `json:"overall_score"`
+	KeystrokeScore  float64   `json:"keystroke_score"`
+	MouseScore      float64   `json:"mouse_score"`
+	LocationScore   float64   `json:"location_score"`
+	DeviceScore     float64   `json:"device_score"`
+	BehaviorScore   float64   `json:"behavior_score"`
+	ReputationScore float64   `json:"reputation_score"`
+	RiskFactors     []string  `json:"risk_factors"`
+	Recommendation  string    `json:"recommendation"`
+	CalculatedAt    time.Time `json:"calculated_at"`
 }
 
 func NewContAuthClient(baseURL string) *ContAuthClient {
@@ -52,7 +52,7 @@ func NewContAuthClient(baseURL string) *ContAuthClient {
 
 func (c *ContAuthClient) GetAuthDecision(sessionID string) (*AuthDecision, error) {
 	url := fmt.Sprintf("%s/contauth/decision?session_id=%s", c.baseURL, sessionID)
-	
+
 	resp, err := c.httpClient.Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get auth decision: %w", err)
@@ -121,7 +121,7 @@ func (o *Orchestrator) RouteWithContAuth(sessionID string, request *http.Request
 		return nil
 	}
 
-	log.Printf("ContAuth decision for session %s: %s (confidence: %.2f)", 
+	log.Printf("ContAuth decision for session %s: %s (confidence: %.2f)",
 		sessionID, decision.Action, decision.Confidence)
 
 	switch decision.Action {
@@ -142,7 +142,7 @@ func (o *Orchestrator) RouteWithContAuth(sessionID string, request *http.Request
 
 func (o *Orchestrator) issueMFAChallenge(sessionID, challengeType string) error {
 	log.Printf("Issuing MFA challenge for session %s: %s", sessionID, challengeType)
-	
+
 	switch challengeType {
 	case "mfa_required":
 		return fmt.Errorf("multi-factor authentication required")
@@ -176,7 +176,7 @@ func (o *Orchestrator) ContAuthMiddleware(next http.HandlerFunc) http.HandlerFun
 
 		if err := o.RouteWithContAuth(sessionID, r); err != nil {
 			log.Printf("ContAuth blocked request for session %s: %v", sessionID, err)
-			
+
 			// Return appropriate HTTP status based on error
 			if err.Error() == "access blocked by continuous authentication" {
 				http.Error(w, "Access denied", http.StatusForbidden)
@@ -195,7 +195,7 @@ func (o *Orchestrator) ContAuthMiddleware(next http.HandlerFunc) http.HandlerFun
 
 func (o *Orchestrator) extractSessionID(r *http.Request) string {
 	// Try to get session ID from various sources
-	
+
 	// 1. Authorization header
 	if auth := r.Header.Get("Authorization"); auth != "" {
 		// Extract session ID from Bearer token or custom format
@@ -203,22 +203,22 @@ func (o *Orchestrator) extractSessionID(r *http.Request) string {
 			return auth[7:] // Return token as session ID
 		}
 	}
-	
+
 	// 2. Custom session header
 	if sessionID := r.Header.Get("X-Session-ID"); sessionID != "" {
 		return sessionID
 	}
-	
+
 	// 3. Cookie
 	if cookie, err := r.Cookie("session_id"); err == nil {
 		return cookie.Value
 	}
-	
+
 	// 4. Query parameter
 	if sessionID := r.URL.Query().Get("session_id"); sessionID != "" {
 		return sessionID
 	}
-	
+
 	return ""
 }
 
@@ -245,25 +245,25 @@ func (o *Orchestrator) CheckContAuthHealth() error {
 
 // Metrics collection
 type ContAuthMetrics struct {
-	TotalRequests     int64   `json:"total_requests"`
-	BlockedRequests   int64   `json:"blocked_requests"`
-	ChallengedRequests int64  `json:"challenged_requests"`
-	MonitoredRequests int64   `json:"monitored_requests"`
-	AllowedRequests   int64   `json:"allowed_requests"`
-	AverageRiskScore  float64 `json:"average_risk_score"`
-	ErrorRate         float64 `json:"error_rate"`
+	TotalRequests      int64   `json:"total_requests"`
+	BlockedRequests    int64   `json:"blocked_requests"`
+	ChallengedRequests int64   `json:"challenged_requests"`
+	MonitoredRequests  int64   `json:"monitored_requests"`
+	AllowedRequests    int64   `json:"allowed_requests"`
+	AverageRiskScore   float64 `json:"average_risk_score"`
+	ErrorRate          float64 `json:"error_rate"`
 }
 
 func (o *Orchestrator) GetContAuthMetrics() *ContAuthMetrics {
 	// Implementation would collect and return metrics
 	// This is a placeholder structure
 	return &ContAuthMetrics{
-		TotalRequests:     1000,
-		BlockedRequests:   50,
+		TotalRequests:      1000,
+		BlockedRequests:    50,
 		ChallengedRequests: 100,
-		MonitoredRequests: 200,
-		AllowedRequests:   650,
-		AverageRiskScore:  0.3,
-		ErrorRate:         0.02,
+		MonitoredRequests:  200,
+		AllowedRequests:    650,
+		AverageRiskScore:   0.3,
+		ErrorRate:          0.02,
 	}
 }

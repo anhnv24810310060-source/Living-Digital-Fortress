@@ -19,10 +19,10 @@ import (
 	"syscall"
 	"time"
 
-	gauth "shieldx/pkg/gateway"
-	"shieldx/pkg/metrics"
-	otelobs "shieldx/pkg/observability/otel"
-	"shieldx/pkg/ratls"
+	gauth "shieldx/shared/shieldx-common/pkg/gateway"
+	"shieldx/shared/shieldx-common/pkg/metrics"
+	otelobs "shieldx/shared/shieldx-common/pkg/observability/otel"
+	"shieldx/shared/shieldx-common/pkg/ratls"
 
 	"golang.org/x/time/rate"
 )

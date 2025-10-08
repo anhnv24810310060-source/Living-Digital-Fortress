@@ -305,11 +305,11 @@ func (mr *ModelRegistry) loadFromDisk() error {
 		}
 
 		name := entry.Name()
-		
+
 		// Load model binaries
 		if filepath.Ext(name) == ".bin" && len(name) > 10 {
 			version := name[6 : len(name)-4] // Extract from "model_VERSION.bin"
-			
+
 			modelPath := filepath.Join(mr.storagePath, name)
 			data, err := os.ReadFile(modelPath)
 			if err != nil {
@@ -356,8 +356,8 @@ func (mr *ModelRegistry) ExportModel(version string, w io.Writer) error {
 
 	// Create export package
 	export := struct {
-		Model    *ModelVersion    `json:"model"`
-		Metadata *ModelMetadata   `json:"metadata,omitempty"`
+		Model    *ModelVersion  `json:"model"`
+		Metadata *ModelMetadata `json:"metadata,omitempty"`
 	}{
 		Model:    model,
 		Metadata: meta,

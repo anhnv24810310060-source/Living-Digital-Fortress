@@ -15,7 +15,7 @@ import (
 	"crypto/ecdh"
 	"crypto/tls"
 	"encoding/hex"
-	"shieldx/pkg/wch"
+	"shieldx/shared/shieldx-common/pkg/wch"
 
 	quic "github.com/quic-go/quic-go"
 )

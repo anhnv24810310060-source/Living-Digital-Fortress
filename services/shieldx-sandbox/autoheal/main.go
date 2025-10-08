@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"os"
 
-	"shieldx/core/autoheal"
+	"shieldx/shared/shieldx-common/core/autoheal"
 )
 
 func main() {

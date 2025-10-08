@@ -114,23 +114,23 @@ func (api *WebAPI) ProxyShadowEval(w http.ResponseWriter, r *http.Request) {
 
 	evaluations := []map[string]interface{}{
 		{
-			"eval_id":             "eval_001",
-			"rule_name":           "IP Blacklist Test",
-			"rule_type":           "ip_blacklist",
-			"status":              "completed",
-			"sample_size":         1000,
-			"true_positives":      85,
-			"false_positives":     12,
-			"true_negatives":      890,
-			"false_negatives":     13,
-			"precision":           0.876,
-			"recall":              0.867,
-			"f1_score":            0.871,
-			"estimated_fp_rate":   0.012,
-			"estimated_tp_rate":   0.085,
-			"recommendations":     []string{"Rule performance looks good - ready for production"},
-			"execution_time_ms":   2340,
-			"created_at":          time.Now().Add(-time.Hour * 2).Format(time.RFC3339),
+			"eval_id":           "eval_001",
+			"rule_name":         "IP Blacklist Test",
+			"rule_type":         "ip_blacklist",
+			"status":            "completed",
+			"sample_size":       1000,
+			"true_positives":    85,
+			"false_positives":   12,
+			"true_negatives":    890,
+			"false_negatives":   13,
+			"precision":         0.876,
+			"recall":            0.867,
+			"f1_score":          0.871,
+			"estimated_fp_rate": 0.012,
+			"estimated_tp_rate": 0.085,
+			"recommendations":   []string{"Rule performance looks good - ready for production"},
+			"execution_time_ms": 2340,
+			"created_at":        time.Now().Add(-time.Hour * 2).Format(time.RFC3339),
 		},
 	}
 
@@ -141,24 +141,24 @@ func (api *WebAPI) ProxyShadowEval(w http.ResponseWriter, r *http.Request) {
 
 func (api *WebAPI) ProxyShadowResult(w http.ResponseWriter, r *http.Request) {
 	evalID := r.URL.Query().Get("eval_id")
-	
+
 	result := map[string]interface{}{
-		"eval_id":             evalID,
-		"status":              "completed",
-		"sample_size":         1000,
-		"true_positives":      85,
-		"false_positives":     12,
-		"true_negatives":      890,
-		"false_negatives":     13,
-		"precision":           0.876,
-		"recall":              0.867,
-		"f1_score":            0.871,
-		"estimated_fp_rate":   0.012,
-		"estimated_tp_rate":   0.085,
-		"recommendations":     []string{"Rule performance looks good - ready for production"},
-		"execution_time_ms":   2340,
-		"created_at":          time.Now().Add(-time.Hour * 2).Format(time.RFC3339),
-		"completed_at":        time.Now().Add(-time.Hour * 1).Format(time.RFC3339),
+		"eval_id":           evalID,
+		"status":            "completed",
+		"sample_size":       1000,
+		"true_positives":    85,
+		"false_positives":   12,
+		"true_negatives":    890,
+		"false_negatives":   13,
+		"precision":         0.876,
+		"recall":            0.867,
+		"f1_score":          0.871,
+		"estimated_fp_rate": 0.012,
+		"estimated_tp_rate": 0.085,
+		"recommendations":   []string{"Rule performance looks good - ready for production"},
+		"execution_time_ms": 2340,
+		"created_at":        time.Now().Add(-time.Hour * 2).Format(time.RFC3339),
+		"completed_at":      time.Now().Add(-time.Hour * 1).Format(time.RFC3339),
 	}
 
 	w.Header().Set("Content-Type", "application/json")

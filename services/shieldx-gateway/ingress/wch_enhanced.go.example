@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 	
-	"shieldx/pkg/wch"
-	"shieldx/pkg/ledger"
+	"shieldx/shared/shieldx-common/pkg/wch"
+	"shieldx/shared/shieldx-common/pkg/ledger"
 )
 
 // Enhanced Whisper Channel Protocol (WCH) handlers with production optimizations

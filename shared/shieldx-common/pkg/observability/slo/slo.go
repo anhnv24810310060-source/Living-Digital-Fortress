@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"shieldx/pkg/metrics"
+	"shieldx/shared/shieldx-common/pkg/metrics"
 )
 
 // SLO (Service Level Objective) defines service quality targets

@@ -16,7 +16,7 @@ import (
 
 	"math"
 
-	"shieldx/pkg/security/cryptoatrest"
+	"shieldx/shared/shieldx-common/pkg/security/cryptoatrest"
 
 	_ "github.com/lib/pq"
 )

@@ -43,7 +43,7 @@ package main
 import (
     "context"
     "log"
-    "shieldx/pkg/wch"
+    "shieldx/shared/shieldx-common/pkg/wch"
 )
 
 func main() {
@@ -72,7 +72,7 @@ import (
     "context"
     "crypto/tls"
     "log"
-    "shieldx/pkg/wch"
+    "shieldx/shared/shieldx-common/pkg/wch"
 )
 
 func main() {

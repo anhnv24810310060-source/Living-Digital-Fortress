@@ -1,3 +1,4 @@
+
 # ShieldX Cloud Build System
 
 .PHONY: all build test clean firecracker ebpf ml-orchestrator observability prom grafana
@@ -92,15 +93,15 @@ setup-firecracker-images:
 
 # Test sandbox components
 test-sandbox:
-	go test -v ./pkg/sandbox/...
-
+	go test -v ./shared/shieldx/shared/shieldx-common/pkg/sandbox/...
+ 
 # Test ML components  
 test-ml:
-	go test -v ./pkg/ml/...
+	go test -v  ./shared/shieldx/shared/shieldx-common/pkg//ml/...
 
 # Test orchestrator
 test-orchestrator:
-	go test -v ./pkg/orchestrator/...
+	go test -v  ./shared/shieldx/shared/shieldx-common/pkg/orchestrator/...
 
 # Run all tests
 test: test-sandbox test-ml test-orchestrator
@@ -108,7 +109,7 @@ test: test-sandbox test-ml test-orchestrator
 # Clean build artifacts
 clean:
 	rm -rf bin/
-	rm -f pkg/sandbox/bpf/*.o
+	rm -f ./shared/shieldx/shared/shieldx-common/pkg/sandbox/bpf/*.o
 	rm -rf firecracker-images/
 
 # Development setup
@@ -152,8 +153,8 @@ security-scan:
 	
 # Performance benchmarks
 benchmark:
-	go test -bench=. ./pkg/sandbox/
-	go test -bench=. ./pkg/ml/
+	go test -bench=. ./shared/shieldx/shared/shieldx-common/pkg/sandbox/
+	go test -bench=. ml/
 
 # Docker builds for production
 docker-build:

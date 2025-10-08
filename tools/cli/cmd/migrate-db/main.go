@@ -7,7 +7,7 @@ import (
 	"os"
 	"time"
 
-	"shieldx/pkg/database"
+	"shieldx/shared/shieldx-common/pkg/database"
 )
 
 func main() {

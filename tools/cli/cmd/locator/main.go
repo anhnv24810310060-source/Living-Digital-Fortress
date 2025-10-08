@@ -1,5 +1,7 @@
 package main
 
-import loc "shieldx/services/locator"
+import loc "shieldx/services/shieldx-gateway/locator"
 
-func main() { loc.Run() }
+func main() {
+	loc.Run()
+}

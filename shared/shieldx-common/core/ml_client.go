@@ -16,9 +16,9 @@ type MLClient struct {
 }
 
 type MLMetrics struct {
-	RequestsTotal   int64 `json:"requests_total"`
-	RequestsSuccess int64 `json:"requests_success"`
-	RequestsFailed  int64 `json:"requests_failed"`
+	RequestsTotal   int64   `json:"requests_total"`
+	RequestsSuccess int64   `json:"requests_success"`
+	RequestsFailed  int64   `json:"requests_failed"`
 	AvgLatencyMs    float64 `json:"avg_latency_ms"`
 }
 
@@ -123,7 +123,7 @@ func (ml *MLClient) SendPluginOutput(pluginOutput PluginOutputML) error {
 	latency := time.Since(startTime).Milliseconds()
 	ml.updateAverageLatency(float64(latency))
 
-	log.Printf("Plugin output sent to ML pipeline: %s (features: %d)", 
+	log.Printf("Plugin output sent to ML pipeline: %s (features: %d)",
 		mlResp.ProcessID, mlResp.FeatureCount)
 	return nil
 }
@@ -144,7 +144,7 @@ func (ml *MLClient) SendBatchOutputs(outputs []PluginOutputML) error {
 
 func (ml *MLClient) GetTrainingData(limit int) (*TrainingDataResponse, error) {
 	url := fmt.Sprintf("%s/training-data?limit=%d", ml.featureStoreURL, limit)
-	
+
 	resp, err := ml.httpClient.Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get training data: %w", err)
@@ -234,7 +234,7 @@ func (ml *MLClient) updateAverageLatency(latency float64) {
 func ConvertToMLOutput(pluginID, artifactID string, output interface{}) (PluginOutputML, error) {
 	// This would be implemented based on the actual output structure
 	// from the WASM runner
-	
+
 	mlOutput := PluginOutputML{
 		PluginID:   pluginID,
 		ArtifactID: artifactID,

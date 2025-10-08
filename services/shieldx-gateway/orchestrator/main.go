@@ -26,15 +26,15 @@ import (
 
 	redis "github.com/redis/go-redis/v9"
 
-	"shieldx/pkg/accesslog"
-	"shieldx/pkg/dpop"
-	"shieldx/pkg/guard"
-	"shieldx/pkg/ledger"
-	"shieldx/pkg/metrics"
-	otelobs "shieldx/pkg/observability/otel"
-	"shieldx/pkg/policy"
-	"shieldx/pkg/ratls"
-	tlsutil "shieldx/pkg/security/tls"
+	"shieldx/shared/shieldx-common/pkg/accesslog"
+	"shieldx/shared/shieldx-common/pkg/dpop"
+	"shieldx/shared/shieldx-common/pkg/guard"
+	"shieldx/shared/shieldx-common/pkg/ledger"
+	"shieldx/shared/shieldx-common/pkg/metrics"
+	otelobs "shieldx/shared/shieldx-common/pkg/observability/otel"
+	"shieldx/shared/shieldx-common/pkg/policy"
+	"shieldx/shared/shieldx-common/pkg/ratls"
+	tlsutil "shieldx/shared/shieldx-common/pkg/security/tls"
 )
 
 // Service constants

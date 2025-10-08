@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"shieldx/pkg/metrics"
+	"shieldx/shared/shieldx-common/pkg/metrics"
 )
 
 func main() {
@@ -111,7 +111,7 @@ var (
 	buckets   = make(map[string]*bucket)
 	rateLimit = struct {
 		capacity int
-		refill   int           // tokens per interval
+		refill   int // tokens per interval
 		interval time.Duration
 	}{capacity: 20, refill: 20, interval: time.Minute}
 )

@@ -17,10 +17,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"shieldx/pkg/certtransparency"
-	"shieldx/pkg/graphql"
-	"shieldx/pkg/ledger"
-	pqc "shieldx/pkg/pqc"
+	"shieldx/shared/shieldx-common/pkg/certtransparency"
+	"shieldx/shared/shieldx-common/pkg/graphql"
+	"shieldx/shared/shieldx-common/pkg/ledger"
+	pqc "shieldx/shared/shieldx-common/pkg/pqc"
 )
 
 // Phase1Config holds Phase 1 enhancement configuration

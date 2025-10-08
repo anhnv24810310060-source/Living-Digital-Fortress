@@ -9,7 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"shieldx/pkg/ebpf"
+	"shieldx/shared/shieldx-common/pkg/ebpf"
 )
 
 // ThreatResult represents the outcome of a threat analysis.

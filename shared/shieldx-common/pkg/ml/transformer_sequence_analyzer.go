@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"shieldx/pkg/ebpf"
+	"shieldx/shared/shieldx-common/pkg/ebpf"
 )
 
 // TransformerSequenceAnalyzer implements BERT-like architecture for syscall sequence analysis
@@ -17,25 +17,25 @@ import (
 type TransformerSequenceAnalyzer struct {
 	// Model configuration
 	config ModelConfig
-	
+
 	// Embedding layer
 	embeddings *EmbeddingLayer
-	
+
 	// Multi-head attention layers (12 layers x 8 heads)
 	transformerBlocks []*TransformerBlock
-	
+
 	// Classification head
 	classifier *ClassificationHead
-	
+
 	// Syscall vocabulary (syscall name -> token ID)
 	vocabulary map[string]int
-	
+
 	// Pre-computed positional encodings
 	positionalEncodings [][]float64
-	
+
 	// Attention cache for inference speed
 	attentionCache sync.Map
-	
+
 	// Performance metrics
 	inferenceLatencyMs float64
 	mu                 sync.RWMutex
@@ -43,13 +43,13 @@ type TransformerSequenceAnalyzer struct {
 
 // ModelConfig defines transformer architecture parameters
 type ModelConfig struct {
-	VocabSize      int     // Number of unique syscalls
-	EmbedDim       int     // 512 dimensions per Phase 2 spec
-	NumLayers      int     // 12 transformer layers
-	NumHeads       int     // 8 attention heads per layer
-	FFNHiddenDim   int     // Feed-forward network hidden dimension
-	MaxSeqLen      int     // 2048 context window
-	DropoutRate    float64 // Regularization
+	VocabSize        int     // Number of unique syscalls
+	EmbedDim         int     // 512 dimensions per Phase 2 spec
+	NumLayers        int     // 12 transformer layers
+	NumHeads         int     // 8 attention heads per layer
+	FFNHiddenDim     int     // Feed-forward network hidden dimension
+	MaxSeqLen        int     // 2048 context window
+	DropoutRate      float64 // Regularization
 	AttentionDropout float64
 }
 
@@ -77,30 +77,30 @@ type EmbeddingLayer struct {
 type TransformerBlock struct {
 	// Multi-head self-attention
 	multiHeadAttn *MultiHeadAttention
-	
+
 	// Feed-forward network
 	ffn *FeedForwardNetwork
-	
+
 	// Layer normalization
 	layerNorm1 *LayerNorm
 	layerNorm2 *LayerNorm
-	
+
 	// Dropout
 	dropoutRate float64
 }
 
 // MultiHeadAttention implements scaled dot-product attention with multiple heads
 type MultiHeadAttention struct {
-	numHeads    int
-	headDim     int
-	embedDim    int
-	
+	numHeads int
+	headDim  int
+	embedDim int
+
 	// Learned projections Q, K, V
 	wq [][]float64 // Query weights [embed_dim x embed_dim]
 	wk [][]float64 // Key weights
 	wv [][]float64 // Value weights
 	wo [][]float64 // Output projection
-	
+
 	dropout float64
 }
 
@@ -127,20 +127,20 @@ type ClassificationHead struct {
 
 // SequenceInput represents input to the transformer
 type SequenceInput struct {
-	Syscalls  []string
+	Syscalls   []string
 	Timestamps []time.Time
-	PIDs      []int
-	Features  *ebpf.ThreatFeatures
+	PIDs       []int
+	Features   *ebpf.ThreatFeatures
 }
 
 // AnalysisResult contains transformer inference output
 type AnalysisResult struct {
-	ThreatScore       float64           // 0.0-1.0
-	Confidence        float64           // Model confidence
-	AnomalyScores     []float64         // Per-token anomaly scores
-	AttentionWeights  [][]float64       // Visualization of attention
-	MaliciousPatterns []string          // Identified attack patterns
-	LatencyMs         float64           // Inference time
+	ThreatScore       float64     // 0.0-1.0
+	Confidence        float64     // Model confidence
+	AnomalyScores     []float64   // Per-token anomaly scores
+	AttentionWeights  [][]float64 // Visualization of attention
+	MaliciousPatterns []string    // Identified attack patterns
+	LatencyMs         float64     // Inference time
 	DetectedAt        time.Time
 }
 
@@ -152,24 +152,24 @@ func NewTransformerSequenceAnalyzer(config ModelConfig) (*TransformerSequenceAna
 		vocabulary:          initSyscallVocabulary(),
 		positionalEncodings: precomputePositionalEncodings(config.MaxSeqLen, config.EmbedDim),
 	}
-	
+
 	// Initialize embedding layer
 	tsa.embeddings = &EmbeddingLayer{
 		weights: randomMatrix(config.VocabSize, config.EmbedDim, 0.02),
 		dim:     config.EmbedDim,
 	}
-	
+
 	// Initialize transformer blocks
 	for i := 0; i < config.NumLayers; i++ {
 		tsa.transformerBlocks[i] = newTransformerBlock(config)
 	}
-	
+
 	// Initialize classification head
 	tsa.classifier = &ClassificationHead{
 		w: randomMatrix(config.EmbedDim, 5, 0.02), // 5 classes: benign, suspicious, malicious, exploit, advanced
 		b: make([]float64, 5),
 	}
-	
+
 	return tsa, nil
 }
 
@@ -177,63 +177,63 @@ func NewTransformerSequenceAnalyzer(config ModelConfig) (*TransformerSequenceAna
 // Constraint: Must return result within 100ms for real-time detection
 func (tsa *TransformerSequenceAnalyzer) Analyze(ctx context.Context, input *SequenceInput) (*AnalysisResult, error) {
 	startTime := time.Now()
-	
+
 	// Validate input
 	if len(input.Syscalls) == 0 {
 		return nil, fmt.Errorf("empty syscall sequence")
 	}
-	
+
 	// Truncate to max sequence length
 	seqLen := len(input.Syscalls)
 	if seqLen > tsa.config.MaxSeqLen {
 		seqLen = tsa.config.MaxSeqLen
 		input.Syscalls = input.Syscalls[len(input.Syscalls)-seqLen:]
 	}
-	
+
 	// Step 1: Tokenize syscalls
 	tokens := tsa.tokenize(input.Syscalls)
-	
+
 	// Step 2: Embed tokens + add positional encoding
 	embeddings := tsa.embed(tokens)
-	
+
 	// Step 3: Pass through transformer layers
 	hidden := embeddings
 	var attentionWeights [][]float64
-	
+
 	for i, block := range tsa.transformerBlocks {
 		var attn [][]float64
 		hidden, attn = block.forward(hidden)
-		
+
 		// Store attention from last layer for visualization
 		if i == len(tsa.transformerBlocks)-1 {
 			attentionWeights = attn
 		}
-		
+
 		// Check context timeout for real-time constraint
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
 	}
-	
+
 	// Step 4: Classification head (use [CLS] token representation)
 	logits := tsa.classifier.forward(hidden[0]) // Use first token as sequence representation
 	threatProbs := softmax(logits)
-	
+
 	// Step 5: Compute threat score (weighted by class severity)
 	threatScore := computeWeightedThreatScore(threatProbs)
 	confidence := maxFloat64(threatProbs)
-	
+
 	// Step 6: Identify malicious patterns via attention analysis
 	patterns := tsa.identifyPatterns(input.Syscalls, attentionWeights)
-	
+
 	// Step 7: Per-token anomaly scores
 	anomalyScores := computeAnomalyScores(hidden, tsa.embeddings)
-	
+
 	latency := time.Since(startTime).Seconds() * 1000
 	tsa.mu.Lock()
 	tsa.inferenceLatencyMs = latency
 	tsa.mu.Unlock()
-	
+
 	return &AnalysisResult{
 		ThreatScore:       threatScore,
 		Confidence:        confidence,
@@ -262,21 +262,21 @@ func (tsa *TransformerSequenceAnalyzer) tokenize(syscalls []string) []int {
 func (tsa *TransformerSequenceAnalyzer) embed(tokens []int) [][]float64 {
 	seqLen := len(tokens)
 	embeddings := make([][]float64, seqLen)
-	
+
 	for i, tokenID := range tokens {
 		// Token embedding
 		tokenEmbed := tsa.embeddings.weights[tokenID]
-		
+
 		// Add positional encoding
 		posEmbed := tsa.positionalEncodings[i]
-		
+
 		embed := make([]float64, tsa.config.EmbedDim)
 		for j := 0; j < tsa.config.EmbedDim; j++ {
 			embed[j] = tokenEmbed[j] + posEmbed[j]
 		}
 		embeddings[i] = embed
 	}
-	
+
 	return embeddings
 }
 
@@ -297,12 +297,12 @@ func (tb *TransformerBlock) forward(x [][]float64) ([][]float64, [][]float64) {
 	attnOut, attnWeights := tb.multiHeadAttn.forward(x)
 	x = addResidual(x, attnOut)
 	x = tb.layerNorm1.forward(x)
-	
+
 	// Feed-forward network with residual connection
 	ffnOut := tb.ffn.forward(x)
 	x = addResidual(x, ffnOut)
 	x = tb.layerNorm2.forward(x)
-	
+
 	return x, attnWeights
 }
 
@@ -324,31 +324,31 @@ func newMultiHeadAttention(embedDim, numHeads int, dropout float64) *MultiHeadAt
 // forward implements scaled dot-product attention
 func (mha *MultiHeadAttention) forward(x [][]float64) ([][]float64, [][]float64) {
 	seqLen := len(x)
-	
+
 	// Linear projections
 	q := matMul(x, mha.wq)
 	k := matMul(x, mha.wk)
 	v := matMul(x, mha.wv)
-	
+
 	// Split into heads and compute attention
 	output := make([][]float64, seqLen)
 	attentionWeights := make([][]float64, seqLen)
-	
+
 	for i := 0; i < seqLen; i++ {
 		output[i] = make([]float64, mha.embedDim)
 		attentionWeights[i] = make([]float64, seqLen)
-		
+
 		// Compute attention scores
 		scores := make([]float64, seqLen)
 		for j := 0; j < seqLen; j++ {
 			score := dotProduct(q[i], k[j]) / math.Sqrt(float64(mha.headDim))
 			scores[j] = score
 		}
-		
+
 		// Softmax
 		attn := softmax(scores)
 		attentionWeights[i] = attn
-		
+
 		// Weighted sum of values
 		for j := 0; j < seqLen; j++ {
 			for d := 0; d < mha.embedDim; d++ {
@@ -356,10 +356,10 @@ func (mha *MultiHeadAttention) forward(x [][]float64) ([][]float64, [][]float64)
 			}
 		}
 	}
-	
+
 	// Output projection
 	output = matMul(output, mha.wo)
-	
+
 	return output, attentionWeights
 }
 
@@ -378,10 +378,10 @@ func (ffn *FeedForwardNetwork) forward(x [][]float64) [][]float64 {
 	// First linear layer + GELU
 	hidden := matMulAdd(x, ffn.w1, ffn.b1)
 	hidden = gelu(hidden)
-	
+
 	// Second linear layer
 	output := matMulAdd(hidden, ffn.w2, ffn.b2)
-	
+
 	return output
 }
 
@@ -407,7 +407,7 @@ func (ln *LayerNorm) normalize(x []float64) []float64 {
 	mean := mean(x)
 	variance := variance(x, mean)
 	std := math.Sqrt(variance + ln.eps)
-	
+
 	output := make([]float64, len(x))
 	for i := range x {
 		output[i] = ln.gamma[i]*(x[i]-mean)/std + ln.beta[i]
@@ -430,7 +430,7 @@ func (ch *ClassificationHead) forward(x []float64) []float64 {
 // identifyPatterns detects known attack patterns via attention analysis
 func (tsa *TransformerSequenceAnalyzer) identifyPatterns(syscalls []string, attention [][]float64) []string {
 	patterns := []string{}
-	
+
 	// Known attack signatures in syscall sequences
 	signatures := map[string][]string{
 		"privilege_escalation": {"setuid", "setgid", "execve"},
@@ -439,13 +439,13 @@ func (tsa *TransformerSequenceAnalyzer) identifyPatterns(syscalls []string, atte
 		"network_exfiltration": {"socket", "connect", "sendto"},
 		"rootkit_behavior":     {"ptrace", "prctl", "mprotect"},
 	}
-	
+
 	for patternName, signature := range signatures {
 		if containsSequence(syscalls, signature) {
 			patterns = append(patterns, patternName)
 		}
 	}
-	
+
 	return patterns
 }
 
@@ -458,16 +458,16 @@ func initSyscallVocabulary() map[string]int {
 		"bind", "listen", "accept", "sendto", "recvfrom", "execve", "fork",
 		"vfork", "clone", "wait4", "kill", "ptrace", "setuid", "setgid",
 	}
-	
+
 	vocab := make(map[string]int)
 	vocab["<UNK>"] = 0
 	vocab["<PAD>"] = 1
 	vocab["<CLS>"] = 2
-	
+
 	for i, syscall := range commonSyscalls {
 		vocab[syscall] = i + 3
 	}
-	
+
 	return vocab
 }
 

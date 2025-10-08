@@ -3,7 +3,7 @@ package main
 import (
 	"crypto/ecdh"
 	"crypto/rand"
-	w "shieldx/pkg/wch"
+	w "shieldx/shared/shieldx-common/pkg/wch"
 	"testing"
 )
 

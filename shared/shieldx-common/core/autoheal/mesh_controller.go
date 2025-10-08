@@ -85,12 +85,12 @@ func (mc *MeshController) triggerRecovery(incident *Incident) {
 
 	// Orchestrator spawns replacement VM (mock)
 	newInstanceID := fmt.Sprintf("i-%d", time.Now().UnixNano())
-	
+
 	log.Printf("Orchestrator spawning replacement VM: %s for node %s", newInstanceID, incident.NodeID)
-	
+
 	// Simulate VM creation delay
 	time.Sleep(2 * time.Second)
-	
+
 	// Update node with new instance
 	if node, exists := mc.nodes[incident.NodeID]; exists {
 		node.Instance = newInstanceID
@@ -106,6 +106,6 @@ func (mc *MeshController) triggerRecovery(incident *Incident) {
 
 	// Mark incident as resolved
 	incident.Status = "resolved"
-	
+
 	log.Printf("Recovery completed for incident %s, new instance: %s", incident.ID, newInstanceID)
 }

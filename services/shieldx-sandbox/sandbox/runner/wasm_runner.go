@@ -23,13 +23,13 @@ type PluginInput struct {
 }
 
 type PluginOutput struct {
-	Success    bool                   `json:"success"`
-	Results    map[string]interface{} `json:"results"`
-	Confidence float64                `json:"confidence"`
-	Tags       []string               `json:"tags"`
-	Indicators []Indicator            `json:"indicators"`
-	Error      string                 `json:"error,omitempty"`
-	ExecutionTime int64               `json:"execution_time_ms"`
+	Success       bool                   `json:"success"`
+	Results       map[string]interface{} `json:"results"`
+	Confidence    float64                `json:"confidence"`
+	Tags          []string               `json:"tags"`
+	Indicators    []Indicator            `json:"indicators"`
+	Error         string                 `json:"error,omitempty"`
+	ExecutionTime int64                  `json:"execution_time_ms"`
 }
 
 type Indicator struct {
@@ -40,40 +40,40 @@ type Indicator struct {
 }
 
 type SandboxPolicy struct {
-	NetworkAccess    bool   `json:"network_access"`
-	FilesystemAccess string `json:"filesystem_access"`
-	MemoryLimit      string `json:"memory_limit"`
-	CPULimit         string `json:"cpu_limit"`
-	ExecutionTimeout string `json:"execution_timeout"`
+	NetworkAccess    bool     `json:"network_access"`
+	FilesystemAccess string   `json:"filesystem_access"`
+	MemoryLimit      string   `json:"memory_limit"`
+	CPULimit         string   `json:"cpu_limit"`
+	ExecutionTimeout string   `json:"execution_timeout"`
 	AllowedSyscalls  []string `json:"allowed_syscalls"`
-	RiskLevel        string `json:"risk_level"`
+	RiskLevel        string   `json:"risk_level"`
 }
 
 func NewWasmRunner() *WasmRunner {
 	ctx := context.Background()
-	
+
 	// Create runtime with security restrictions
 	config := wazero.NewRuntimeConfig().
 		WithCloseOnContextDone(true).
 		WithMemoryLimitPages(2048) // 128MB limit
-	
+
 	runtime := wazero.NewRuntimeWithConfig(ctx, config)
-	
+
 	// Instantiate WASI with restricted capabilities
 	wasi_snapshot_preview1.MustInstantiate(ctx, runtime)
-	
+
 	return &WasmRunner{runtime: runtime}
 }
 
 func (wr *WasmRunner) ExecutePlugin(wasmBytes []byte, input PluginInput, policy SandboxPolicy) (*PluginOutput, error) {
 	startTime := time.Now()
-	
+
 	// Parse execution timeout from policy
 	timeout, err := time.ParseDuration(policy.ExecutionTimeout)
 	if err != nil {
 		timeout = 30 * time.Second
 	}
-	
+
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
@@ -81,8 +81,8 @@ func (wr *WasmRunner) ExecutePlugin(wasmBytes []byte, input PluginInput, policy 
 	module, err := wr.runtime.Instantiate(ctx, wasmBytes)
 	if err != nil {
 		return &PluginOutput{
-			Success: false,
-			Error:   fmt.Sprintf("failed to instantiate WASM module: %v", err),
+			Success:       false,
+			Error:         fmt.Sprintf("failed to instantiate WASM module: %v", err),
 			ExecutionTime: time.Since(startTime).Milliseconds(),
 		}, err
 	}
@@ -92,8 +92,8 @@ func (wr *WasmRunner) ExecutePlugin(wasmBytes []byte, input PluginInput, policy 
 	inputJSON, err := json.Marshal(input)
 	if err != nil {
 		return &PluginOutput{
-			Success: false,
-			Error:   fmt.Sprintf("failed to marshal input: %v", err),
+			Success:       false,
+			Error:         fmt.Sprintf("failed to marshal input: %v", err),
 			ExecutionTime: time.Since(startTime).Milliseconds(),
 		}, err
 	}
@@ -102,8 +102,8 @@ func (wr *WasmRunner) ExecutePlugin(wasmBytes []byte, input PluginInput, policy 
 	analyzeFunc := module.ExportedFunction("analyze")
 	if analyzeFunc == nil {
 		return &PluginOutput{
-			Success: false,
-			Error:   "plugin missing 'analyze' function",
+			Success:       false,
+			Error:         "plugin missing 'analyze' function",
 			ExecutionTime: time.Since(startTime).Milliseconds(),
 		}, fmt.Errorf("plugin missing 'analyze' function")
 	}
@@ -112,8 +112,8 @@ func (wr *WasmRunner) ExecutePlugin(wasmBytes []byte, input PluginInput, policy 
 	mallocFunc := module.ExportedFunction("malloc")
 	if mallocFunc == nil {
 		return &PluginOutput{
-			Success: false,
-			Error:   "plugin missing 'malloc' function",
+			Success:       false,
+			Error:         "plugin missing 'malloc' function",
 			ExecutionTime: time.Since(startTime).Milliseconds(),
 		}, fmt.Errorf("plugin missing 'malloc' function")
 	}
@@ -122,8 +122,8 @@ func (wr *WasmRunner) ExecutePlugin(wasmBytes []byte, input PluginInput, policy 
 	results, err := mallocFunc.Call(ctx, inputSize)
 	if err != nil {
 		return &PluginOutput{
-			Success: false,
-			Error:   fmt.Sprintf("failed to allocate memory: %v", err),
+			Success:       false,
+			Error:         fmt.Sprintf("failed to allocate memory: %v", err),
 			ExecutionTime: time.Since(startTime).Milliseconds(),
 		}, err
 	}
@@ -133,8 +133,8 @@ func (wr *WasmRunner) ExecutePlugin(wasmBytes []byte, input PluginInput, policy 
 	// Write input to WASM memory
 	if !module.Memory().Write(uint32(inputPtr), inputJSON) {
 		return &PluginOutput{
-			Success: false,
-			Error:   "failed to write input to WASM memory",
+			Success:       false,
+			Error:         "failed to write input to WASM memory",
 			ExecutionTime: time.Since(startTime).Milliseconds(),
 		}, fmt.Errorf("failed to write input to WASM memory")
 	}
@@ -143,8 +143,8 @@ func (wr *WasmRunner) ExecutePlugin(wasmBytes []byte, input PluginInput, policy 
 	results, err = analyzeFunc.Call(ctx, inputPtr, inputSize)
 	if err != nil {
 		return &PluginOutput{
-			Success: false,
-			Error:   fmt.Sprintf("plugin execution failed: %v", err),
+			Success:       false,
+			Error:         fmt.Sprintf("plugin execution failed: %v", err),
 			ExecutionTime: time.Since(startTime).Milliseconds(),
 		}, err
 	}
@@ -156,8 +156,8 @@ func (wr *WasmRunner) ExecutePlugin(wasmBytes []byte, input PluginInput, policy 
 	outputBytes, ok := module.Memory().Read(uint32(outputPtr), uint32(outputSize))
 	if !ok {
 		return &PluginOutput{
-			Success: false,
-			Error:   "failed to read output from WASM memory",
+			Success:       false,
+			Error:         "failed to read output from WASM memory",
 			ExecutionTime: time.Since(startTime).Milliseconds(),
 		}, fmt.Errorf("failed to read output from WASM memory")
 	}
@@ -166,8 +166,8 @@ func (wr *WasmRunner) ExecutePlugin(wasmBytes []byte, input PluginInput, policy 
 	var output PluginOutput
 	if err := json.Unmarshal(outputBytes, &output); err != nil {
 		return &PluginOutput{
-			Success: false,
-			Error:   fmt.Sprintf("failed to parse plugin output: %v", err),
+			Success:       false,
+			Error:         fmt.Sprintf("failed to parse plugin output: %v", err),
 			ExecutionTime: time.Since(startTime).Milliseconds(),
 		}, err
 	}
@@ -241,10 +241,10 @@ func (wr *WasmRunner) TestPluginIsolation(wasmBytes []byte) error {
 
 func (wr *WasmRunner) GetRuntimeStats() map[string]interface{} {
 	return map[string]interface{}{
-		"runtime_type": "wazero",
-		"wasi_enabled": true,
-		"memory_limit": "128MB",
-		"network_access": false,
+		"runtime_type":      "wazero",
+		"wasi_enabled":      true,
+		"memory_limit":      "128MB",
+		"network_access":    false,
 		"filesystem_access": "none",
 	}
 }

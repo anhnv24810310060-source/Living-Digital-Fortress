@@ -55,7 +55,7 @@ import (
     "log"
     "time"
     
-    "github.com/shieldx-bot/shieldx/pkg/auth"
+    "github.com/shieldx-bot/shieldx/shared/shieldx-common/pkg/auth"
 )
 
 func main() {

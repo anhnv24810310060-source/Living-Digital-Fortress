@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"shieldx/pkg/policy"
+	"shieldx/shared/shieldx-common/pkg/policy"
 	"testing"
 )
 

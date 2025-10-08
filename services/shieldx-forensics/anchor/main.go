@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"time"
 
-	"shieldx/pkg/audit"
+	"shieldx/shared/shieldx-common/pkg/audit"
 )
 
 type anchorReport struct {

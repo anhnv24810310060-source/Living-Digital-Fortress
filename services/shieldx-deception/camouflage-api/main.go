@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"shieldx/core/maze_engine"
-	"shieldx/pkg/deception"
-	"shieldx/pkg/ledger"
-	"shieldx/pkg/metrics"
+	"shieldx/shared/shieldx-common/pkg/deception"
+	"shieldx/shared/shieldx-common/pkg/ledger"
+	"shieldx/shared/shieldx-common/pkg/metrics"
 
 	"github.com/google/uuid"
 )

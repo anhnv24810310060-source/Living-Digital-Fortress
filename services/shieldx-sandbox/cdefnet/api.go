@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"shieldx/services/cdefnet/store"
 	"shieldx/services/cdefnet/privacy"
-	"shieldx/pkg/ledger"
+	"shieldx/services/cdefnet/store"
+	"shieldx/shared/shieldx-common/pkg/ledger"
 )
 
 type SubmitIOCRequest struct {

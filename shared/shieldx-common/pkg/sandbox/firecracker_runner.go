@@ -13,10 +13,9 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 
-	"shieldx/pkg/ebpf"
+	"shieldx/shared/shieldx-common/pkg/ebpf"
 )
 
 // FirecrackerRunner implements hardware-isolated sandbox with eBPF monitoring
@@ -320,7 +319,7 @@ func (fr *FirecrackerRunner) executeInVM(ctx context.Context, vm *microVMInstanc
 		fmt.Sprintf("RLIMIT_AS=%d", fr.limits.MemSizeMib*1024*1024),
 		fmt.Sprintf("RLIMIT_NPROC=%d", fr.limits.MaxProcesses),
 	}
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	// cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
 	var stdoutBuf, stderrBuf bytes.Buffer
 	cmd.Stdout = &stdoutBuf
@@ -337,14 +336,14 @@ func (fr *FirecrackerRunner) executeInVM(ctx context.Context, vm *microVMInstanc
 
 	var runErr error
 	select {
-	case runErr = <-done:
-	case <-ctx.Done():
-		// Kill entire process group to ensure child processes are terminated.
-		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-		runErr = <-done
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			runErr = ctxErr
-		}
+	// case runErr = <-done:
+	// case <-ctx.Done():
+	// 	// Kill entire process group to ensure child processes are terminated.
+	// 	_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	// 	runErr = <-done
+	// 	if ctxErr := ctx.Err(); ctxErr != nil {
+	// 		runErr = ctxErr
+	// 	}
 	}
 
 	stdout = stdoutBuf.String()

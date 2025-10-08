@@ -2,19 +2,19 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
-	"shieldx/pkg/metrics"
-	logcorr "shieldx/pkg/observability/logcorr"
-	otelobs "shieldx/pkg/observability/otel"
-	"shieldx/pkg/ratls"
+	"shieldx/shared/shieldx-common/pkg/metrics"
+	logcorr "shieldx/shared/shieldx-common/pkg/observability/logcorr"
+	otelobs "shieldx/shared/shieldx-common/pkg/observability/otel"
+	"shieldx/shared/shieldx-common/pkg/ratls"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
-    "encoding/json"
 )
 
 func main() {

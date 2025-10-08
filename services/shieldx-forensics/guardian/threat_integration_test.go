@@ -1,8 +1,8 @@
 package main
 
 import (
-	"shieldx/pkg/ebpf"
-	gts "shieldx/pkg/guardian"
+	"shieldx/share/shieldx-common/pkg/ebpf"
+	gts "shieldx/share/shieldx-common/pkg/guardian"
 	"testing"
 )
 

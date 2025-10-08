@@ -121,8 +121,8 @@ make slo-check
 
 ```go
 import (
-    "shieldx/pkg/observability/otel"
-    "shieldx/pkg/observability/slo"
+    "shieldx/shared/shieldx-common/pkg/observability/otel"
+    "shieldx/shared/shieldx-common/pkg/observability/slo"
 )
 
 func main() {

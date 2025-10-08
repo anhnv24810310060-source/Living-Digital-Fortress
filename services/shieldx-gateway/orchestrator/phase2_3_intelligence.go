@@ -10,10 +10,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"shieldx/pkg/analytics"
-	"shieldx/pkg/graphql"
-	"shieldx/pkg/policy"
-	"shieldx/pkg/ratelimit"
+	"shieldx/shared/shieldx-common/pkg/analytics"
+	"shieldx/shared/shieldx-common/pkg/graphql"
+	"shieldx/shared/shieldx-common/pkg/policy"
+	"shieldx/shared/shieldx-common/pkg/ratelimit"
 )
 
 // Phase2Enhancement implements AI-Powered Traffic Intelligence

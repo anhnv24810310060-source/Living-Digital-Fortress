@@ -6,7 +6,7 @@ import (
 	"os"
 	"time"
 
-	"shieldx/pkg/metrics"
+	"shieldx/shared/shieldx-common/pkg/metrics"
 )
 
 func main() {

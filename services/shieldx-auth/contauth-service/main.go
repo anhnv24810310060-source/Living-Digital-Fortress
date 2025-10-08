@@ -15,10 +15,10 @@ import (
 	"sync"
 	"time"
 
-	"shieldx/pkg/metrics"
-	logcorr "shieldx/pkg/observability/logcorr"
-	otelobs "shieldx/pkg/observability/otel"
-	"shieldx/pkg/ratls"
+	"shieldx/shared/shieldx-common/pkg/metrics"
+	logcorr "shieldx/shared/shieldx-common/pkg/observability/logcorr"
+	otelobs "shieldx/shared/shieldx-common/pkg/observability/otel"
+	"shieldx/shared/shieldx-common/pkg/ratls"
 )
 
 // ContAuthService implements Continuous Authentication with behavioral biometrics
@@ -28,44 +28,44 @@ import (
 // - MUST encrypt telemetry data at rest
 // - MUST have rollback mechanism for ML models
 type ContAuthService struct {
-	userProfiles    map[string]*UserBehaviorProfile
-	profileMu       sync.RWMutex
-	
+	userProfiles map[string]*UserBehaviorProfile
+	profileMu    sync.RWMutex
+
 	keystrokeDynamics *KeystrokeDynamicsAnalyzer
 	mouseAnalyzer     *MouseBehaviorAnalyzer
 	deviceFingerprint *DeviceFingerprintEngine
 	riskScorer        *AdaptiveRiskScorer
-	
+
 	// Phase 2 P0: Federated Learning Integration
-	federatedEngine   *FederatedLearningEngine
-	
-	totalCollections  *metrics.Counter
-	totalDecisions    *metrics.Counter
-	anomalyCount      *metrics.Counter
-	avgRiskScore      *metrics.Gauge
-	
-	baselineWindow    time.Duration
-	anomalyThreshold  float64
-	minSampleSize     int
+	federatedEngine *FederatedLearningEngine
+
+	totalCollections *metrics.Counter
+	totalDecisions   *metrics.Counter
+	anomalyCount     *metrics.Counter
+	avgRiskScore     *metrics.Gauge
+
+	baselineWindow   time.Duration
+	anomalyThreshold float64
+	minSampleSize    int
 }
 
 // UserBehaviorProfile stores encrypted behavioral features
 type UserBehaviorProfile struct {
-	UserIDHash          string
-	CreatedAt           time.Time
-	LastUpdated         time.Time
-	SampleCount         int
-	
-	TypingSpeed         TypingSpeedProfile
-	KeyHoldTimes        StatisticalDistribution
-	KeyPressIntervals   StatisticalDistribution
-	MouseSpeed          StatisticalDistribution
-	ClickPatterns       map[string]float64
-	ScrollBehavior      ScrollProfile
-	
-	DeviceHash          string
-	DeviceFeatures      map[string]interface{}
-	
+	UserIDHash  string
+	CreatedAt   time.Time
+	LastUpdated time.Time
+	SampleCount int
+
+	TypingSpeed       TypingSpeedProfile
+	KeyHoldTimes      StatisticalDistribution
+	KeyPressIntervals StatisticalDistribution
+	MouseSpeed        StatisticalDistribution
+	ClickPatterns     map[string]float64
+	ScrollBehavior    ScrollProfile
+
+	DeviceHash     string
+	DeviceFeatures map[string]interface{}
+
 	BaselineEstablished bool
 	RiskBaseline        float64
 	TrustScore          float64
@@ -74,11 +74,11 @@ type UserBehaviorProfile struct {
 }
 
 type TypingSpeedProfile struct {
-	AvgWPM          float64
-	StdDevWPM       float64
-	AvgKeysPerSec   float64
-	TypoRate        float64
-	DeleteKeyRatio  float64
+	AvgWPM         float64
+	StdDevWPM      float64
+	AvgKeysPerSec  float64
+	TypoRate       float64
+	DeleteKeyRatio float64
 }
 
 type StatisticalDistribution struct {
@@ -125,10 +125,10 @@ type DeviceFingerprint struct {
 }
 
 type AdaptiveRiskScorer struct {
-	weights          map[string]float64
-	timeOfDayModel   *TimeBasedRiskModel
-	locationModel    *LocationRiskModel
-	mu               sync.RWMutex
+	weights        map[string]float64
+	timeOfDayModel *TimeBasedRiskModel
+	locationModel  *LocationRiskModel
+	mu             sync.RWMutex
 }
 
 type TimeBasedRiskModel struct{}
@@ -192,14 +192,14 @@ type RiskDecision struct {
 
 func main() {
 	service := NewContAuthService()
-	
+
 	mux := http.NewServeMux()
 	reg := metrics.NewRegistry()
 	httpMetrics := metrics.NewHTTPMetrics(reg, "contauth")
-	
+
 	rateLimit := makeRateLimiter(parseIntDefault("CONTAUTH_RL_PER_MIN", 300))
 	adminOnly := makeAdminMiddleware()
-	
+
 	mux.HandleFunc("/contauth/collect", rateLimit(service.handleCollect))
 	mux.HandleFunc("/contauth/score", rateLimit(service.handleScore))
 	mux.HandleFunc("/contauth/decision", rateLimit(service.handleDecision))
@@ -207,25 +207,25 @@ func main() {
 	mux.HandleFunc("/contauth/profile/stats", adminOnly(service.handleProfileStats))
 	mux.HandleFunc("/health", service.handleHealth)
 	mux.Handle("/metrics", reg)
-	
+
 	port := getenvDefault("CONTAUTH_PORT", "5002")
-	
+
 	shutdown := otelobs.InitTracer("contauth")
 	defer shutdown(context.Background())
-	
+
 	h := httpMetrics.Middleware(mux)
 	h = logcorr.Middleware(h)
 	h = otelobs.WrapHTTPHandler("contauth", h)
-	
+
 	gCertExpiry := metrics.NewGauge("ratls_cert_expiry_seconds", "Cert expiry")
 	reg.RegisterGauge(gCertExpiry)
 	reg.Register(service.totalCollections)
 	reg.Register(service.totalDecisions)
 	reg.Register(service.anomalyCount)
 	reg.RegisterGauge(service.avgRiskScore)
-	
+
 	srv := &http.Server{Addr: ":" + port, Handler: h}
-	
+
 	var issuer *ratls.AutoIssuer
 	if os.Getenv("RATLS_ENABLE") == "true" {
 		td := getenvDefault("RATLS_TRUST_DOMAIN", "shieldx.local")
@@ -233,13 +233,13 @@ func main() {
 		svc := getenvDefault("RATLS_SERVICE", "contauth")
 		rotate := parseDurationDefault("RATLS_ROTATE_EVERY", 45*time.Minute)
 		valid := parseDurationDefault("RATLS_VALIDITY", 60*time.Minute)
-		
+
 		ai, err := ratls.NewDevIssuer(ratls.Identity{TrustDomain: td, Namespace: ns, Service: svc}, rotate, valid)
 		if err != nil {
 			log.Fatalf("[contauth] RA-TLS init: %v", err)
 		}
 		issuer = ai
-		
+
 		go func() {
 			for {
 				if t, err := issuer.LeafNotAfter(); err == nil {
@@ -249,7 +249,7 @@ func main() {
 			}
 		}()
 	}
-	
+
 	if issuer != nil {
 		srv.TLSConfig = issuer.ServerTLSConfig(true, getenvDefault("RATLS_TRUST_DOMAIN", "shieldx.local"))
 		log.Printf("[contauth] (RA-TLS) starting on :%s", port)
@@ -263,7 +263,7 @@ func main() {
 func NewContAuthService() *ContAuthService {
 	// Phase 2 P0: Initialize Federated Learning with epsilon=1.0 (strong privacy)
 	flEngine := NewFederatedLearningEngine(1.0, 1e-5, 5)
-	
+
 	return &ContAuthService{
 		userProfiles:      make(map[string]*UserBehaviorProfile),
 		keystrokeDynamics: NewKeystrokeDynamicsAnalyzer(),
@@ -271,12 +271,12 @@ func NewContAuthService() *ContAuthService {
 		deviceFingerprint: NewDeviceFingerprintEngine(),
 		riskScorer:        NewAdaptiveRiskScorer(),
 		federatedEngine:   flEngine,
-		
+
 		totalCollections: metrics.NewCounter("contauth_collections_total", "Total telemetry collections"),
 		totalDecisions:   metrics.NewCounter("contauth_decisions_total", "Total auth decisions"),
 		anomalyCount:     metrics.NewCounter("contauth_anomalies_total", "Detected anomalies"),
 		avgRiskScore:     metrics.NewGauge("contauth_avg_risk_score", "Average risk score"),
-		
+
 		baselineWindow:   7 * 24 * time.Hour,
 		anomalyThreshold: 0.75,
 		minSampleSize:    50,
@@ -288,18 +288,18 @@ func (cas *ContAuthService) handleCollect(w http.ResponseWriter, r *http.Request
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	
+
 	var telemetry TelemetryData
 	if err := json.NewDecoder(r.Body).Decode(&telemetry); err != nil {
 		http.Error(w, "invalid json", http.StatusBadRequest)
 		return
 	}
-	
+
 	userIDHash := hashUserID(telemetry.UserID)
 	profile := cas.getOrCreateProfile(userIDHash)
 	cas.updateProfile(profile, &telemetry)
 	cas.totalCollections.Add(1)
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":       "collected",
@@ -313,22 +313,22 @@ func (cas *ContAuthService) handleScore(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	
+
 	var telemetry TelemetryData
 	if err := json.NewDecoder(r.Body).Decode(&telemetry); err != nil {
 		http.Error(w, "invalid json", http.StatusBadRequest)
 		return
 	}
-	
+
 	userIDHash := hashUserID(telemetry.UserID)
 	profile := cas.getOrCreateProfile(userIDHash)
 	riskScore, confidence, factors := cas.calculateRiskScore(profile, &telemetry)
-	
+
 	cas.avgRiskScore.Set(uint64(riskScore))
 	if riskScore > 70 {
 		cas.anomalyCount.Add(1)
 	}
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"risk_score": riskScore,
@@ -343,20 +343,20 @@ func (cas *ContAuthService) handleDecision(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	
+
 	var telemetry TelemetryData
 	if err := json.NewDecoder(r.Body).Decode(&telemetry); err != nil {
 		http.Error(w, "invalid json", http.StatusBadRequest)
 		return
 	}
-	
+
 	userIDHash := hashUserID(telemetry.UserID)
 	profile := cas.getOrCreateProfile(userIDHash)
 	riskScore, confidence, factors := cas.calculateRiskScore(profile, &telemetry)
 	decision := cas.makeDecision(profile, riskScore, confidence, factors)
-	
+
 	cas.totalDecisions.Add(1)
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(decision)
 }
@@ -367,12 +367,12 @@ func (cas *ContAuthService) handleProfileReset(w http.ResponseWriter, r *http.Re
 		http.Error(w, "user_id required", http.StatusBadRequest)
 		return
 	}
-	
+
 	userIDHash := hashUserID(userID)
 	cas.profileMu.Lock()
 	delete(cas.userProfiles, userIDHash)
 	cas.profileMu.Unlock()
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "reset"})
 }
@@ -387,7 +387,7 @@ func (cas *ContAuthService) handleProfileStats(w http.ResponseWriter, r *http.Re
 		}
 	}
 	cas.profileMu.RUnlock()
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"total_profiles":       totalProfiles,
@@ -409,11 +409,11 @@ func (cas *ContAuthService) getOrCreateProfile(userIDHash string) *UserBehaviorP
 	cas.profileMu.RLock()
 	profile, exists := cas.userProfiles[userIDHash]
 	cas.profileMu.RUnlock()
-	
+
 	if exists {
 		return profile
 	}
-	
+
 	newProfile := &UserBehaviorProfile{
 		UserIDHash:          userIDHash,
 		CreatedAt:           time.Now(),
@@ -425,31 +425,31 @@ func (cas *ContAuthService) getOrCreateProfile(userIDHash string) *UserBehaviorP
 		ClickPatterns:       make(map[string]float64),
 		DeviceFeatures:      make(map[string]interface{}),
 	}
-	
+
 	cas.profileMu.Lock()
 	cas.userProfiles[userIDHash] = newProfile
 	cas.profileMu.Unlock()
-	
+
 	return newProfile
 }
 
 func (cas *ContAuthService) updateProfile(profile *UserBehaviorProfile, telemetry *TelemetryData) {
 	profile.LastUpdated = time.Now()
 	profile.SampleCount++
-	
+
 	if len(telemetry.KeystrokeEvents) > 0 {
 		cas.updateKeystrokeProfile(profile, telemetry.KeystrokeEvents)
 	}
-	
+
 	if len(telemetry.MouseEvents) > 0 {
 		cas.updateMouseProfile(profile, telemetry.MouseEvents)
 	}
-	
+
 	deviceHash := cas.deviceFingerprint.GenerateFingerprint(&telemetry.DeviceInfo)
 	if profile.DeviceHash == "" {
 		profile.DeviceHash = deviceHash
 	}
-	
+
 	if !profile.BaselineEstablished && profile.SampleCount >= cas.minSampleSize {
 		profile.BaselineEstablished = true
 		profile.RiskBaseline = calculateBaseline(profile.RecentScores)
@@ -459,7 +459,7 @@ func (cas *ContAuthService) updateProfile(profile *UserBehaviorProfile, telemetr
 func (cas *ContAuthService) updateKeystrokeProfile(profile *UserBehaviorProfile, events []KeystrokeFeature) {
 	holdTimes := make([]float64, 0, len(events))
 	flightTimes := make([]float64, 0, len(events))
-	
+
 	for _, event := range events {
 		if event.HoldTime > 0 {
 			holdTimes = append(holdTimes, event.HoldTime)
@@ -468,7 +468,7 @@ func (cas *ContAuthService) updateKeystrokeProfile(profile *UserBehaviorProfile,
 			flightTimes = append(flightTimes, event.FlightTime)
 		}
 	}
-	
+
 	if len(holdTimes) > 0 {
 		profile.KeyHoldTimes = calculateStatistics(holdTimes)
 	}
@@ -479,13 +479,13 @@ func (cas *ContAuthService) updateKeystrokeProfile(profile *UserBehaviorProfile,
 
 func (cas *ContAuthService) updateMouseProfile(profile *UserBehaviorProfile, events []MouseFeature) {
 	velocities := make([]float64, 0, len(events))
-	
+
 	for _, event := range events {
 		if event.Velocity > 0 {
 			velocities = append(velocities, event.Velocity)
 		}
 	}
-	
+
 	if len(velocities) > 0 {
 		profile.MouseSpeed = calculateStatistics(velocities)
 	}
@@ -493,33 +493,33 @@ func (cas *ContAuthService) updateMouseProfile(profile *UserBehaviorProfile, eve
 
 func (cas *ContAuthService) calculateRiskScore(profile *UserBehaviorProfile, telemetry *TelemetryData) (float64, float64, map[string]float64) {
 	factors := make(map[string]float64)
-	
+
 	if !profile.BaselineEstablished {
 		return 50.0, 0.5, factors
 	}
-	
+
 	keystrokeRisk := cas.keystrokeDynamics.AnalyzeAnomaly(profile, telemetry.KeystrokeEvents)
 	factors["keystroke"] = keystrokeRisk
-	
+
 	mouseRisk := cas.mouseAnalyzer.AnalyzeAnomaly(profile, telemetry.MouseEvents)
 	factors["mouse"] = mouseRisk
-	
+
 	deviceRisk := cas.deviceFingerprint.AnalyzeDeviceChange(profile, &telemetry.DeviceInfo)
 	factors["device"] = deviceRisk
-	
+
 	weights := cas.riskScorer.GetAdaptiveWeights()
 	riskScore := (keystrokeRisk * weights["keystroke"]) +
 		(mouseRisk * weights["mouse"]) +
 		(deviceRisk * weights["device"])
-	
+
 	riskScore = math.Min(riskScore*100.0, 100.0)
 	confidence := calculateConfidence([]float64{keystrokeRisk, mouseRisk, deviceRisk})
-	
+
 	profile.RecentScores = append(profile.RecentScores, riskScore)
 	if len(profile.RecentScores) > 100 {
 		profile.RecentScores = profile.RecentScores[1:]
 	}
-	
+
 	return riskScore, confidence, factors
 }
 
@@ -531,7 +531,7 @@ func (cas *ContAuthService) makeDecision(profile *UserBehaviorProfile, riskScore
 		Timestamp:  time.Now(),
 		Factors:    factors,
 	}
-	
+
 	switch {
 	case riskScore < 30:
 		decision.Decision = "ALLOW"
@@ -549,13 +549,13 @@ func (cas *ContAuthService) makeDecision(profile *UserBehaviorProfile, riskScore
 		decision.RequiresMFA = true
 		decision.ChallengeType = "strong_mfa"
 		decision.Explanation = "high_risk"
-		
+
 		if riskScore > 90 {
 			decision.Decision = "DENY"
 			decision.Explanation = "critical_risk"
 		}
 	}
-	
+
 	return decision
 }
 
@@ -563,14 +563,14 @@ func calculateStatistics(data []float64) StatisticalDistribution {
 	if len(data) == 0 {
 		return StatisticalDistribution{}
 	}
-	
+
 	sort.Float64s(data)
 	mean := average(data)
 	stddev := stdDev(data, mean)
 	median := percentile(data, 0.5)
 	p25 := percentile(data, 0.25)
 	p75 := percentile(data, 0.75)
-	
+
 	return StatisticalDistribution{
 		Mean:   mean,
 		StdDev: stddev,
@@ -613,7 +613,7 @@ func (kda *KeystrokeDynamicsAnalyzer) AnalyzeAnomaly(profile *UserBehaviorProfil
 	if len(events) == 0 || !profile.BaselineEstablished {
 		return 0.0
 	}
-	
+
 	holdTimeDeviation := 0.0
 	if profile.KeyHoldTimes.StdDev > 0 {
 		for _, e := range events {
@@ -622,7 +622,7 @@ func (kda *KeystrokeDynamicsAnalyzer) AnalyzeAnomaly(profile *UserBehaviorProfil
 		}
 		holdTimeDeviation /= float64(len(events))
 	}
-	
+
 	return math.Min(holdTimeDeviation/3.0, 1.0)
 }
 
@@ -634,7 +634,7 @@ func (mba *MouseBehaviorAnalyzer) AnalyzeAnomaly(profile *UserBehaviorProfile, e
 	if len(events) == 0 || !profile.BaselineEstablished {
 		return 0.0
 	}
-	
+
 	velocityDeviation := 0.0
 	if profile.MouseSpeed.StdDev > 0 {
 		for _, e := range events {
@@ -643,7 +643,7 @@ func (mba *MouseBehaviorAnalyzer) AnalyzeAnomaly(profile *UserBehaviorProfile, e
 		}
 		velocityDeviation /= float64(len(events))
 	}
-	
+
 	return math.Min(velocityDeviation/3.0, 1.0)
 }
 
@@ -661,7 +661,7 @@ func (dfe *DeviceFingerprintEngine) GenerateFingerprint(info *DeviceInfo) string
 		info.ScreenResolution,
 		info.Timezone,
 		info.Languages)
-	
+
 	h := sha256.New()
 	h.Write(dfe.hashSalt)
 	h.Write([]byte(fpString))
@@ -670,15 +670,15 @@ func (dfe *DeviceFingerprintEngine) GenerateFingerprint(info *DeviceInfo) string
 
 func (dfe *DeviceFingerprintEngine) AnalyzeDeviceChange(profile *UserBehaviorProfile, info *DeviceInfo) float64 {
 	currentFP := dfe.GenerateFingerprint(info)
-	
+
 	if profile.DeviceHash == "" {
 		return 0.0
 	}
-	
+
 	if profile.DeviceHash != currentFP {
 		return 0.9
 	}
-	
+
 	return 0.0
 }
 
@@ -744,7 +744,7 @@ func makeRateLimiter(reqPerMin int) func(http.HandlerFunc) http.HandlerFunc {
 	}
 	var mu sync.Mutex
 	buckets := map[string]*bucket{}
-	
+
 	return func(next http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			ip := r.Header.Get("X-Forwarded-For")
@@ -752,7 +752,7 @@ func makeRateLimiter(reqPerMin int) func(http.HandlerFunc) http.HandlerFunc {
 				ip = strings.Split(r.RemoteAddr, ":")[0]
 			}
 			nowMin := time.Now().Unix() / 60
-			
+
 			mu.Lock()
 			b := buckets[ip]
 			if b == nil || b.window != nowMin {
@@ -762,7 +762,7 @@ func makeRateLimiter(reqPerMin int) func(http.HandlerFunc) http.HandlerFunc {
 			b.count++
 			c := b.count
 			mu.Unlock()
-			
+
 			if c > reqPerMin {
 				http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
 				return
@@ -781,7 +781,7 @@ func makeAdminMiddleware() func(http.HandlerFunc) http.HandlerFunc {
 			}
 		}
 	}
-	
+
 	return func(next http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			if r.Header.Get("X-Admin-Token") != token {

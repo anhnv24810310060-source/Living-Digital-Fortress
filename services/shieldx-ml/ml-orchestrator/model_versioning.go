@@ -44,42 +44,42 @@ type ModelRegistry struct {
 
 // RollbackPolicy defines how to rollback on failures
 type RollbackPolicy struct {
-	MaxFailureRate  float64       // Trigger rollback if failure rate exceeds this
+	MaxFailureRate   float64       // Trigger rollback if failure rate exceeds this
 	EvaluationWindow time.Duration // Time window for failure evaluation
-	MinRequests     int           // Minimum requests before considering rollback
+	MinRequests      int           // Minimum requests before considering rollback
 }
 
 // CanaryDeployment manages gradual model rollout
 type CanaryDeployment struct {
-	NewVersion      string
-	OldVersion      string
-	TrafficSplit    float64 // 0.0 to 1.0 - fraction to new version
-	StartTime       time.Time
-	MetricsNew      *DeploymentMetrics
-	MetricsOld      *DeploymentMetrics
+	NewVersion        string
+	OldVersion        string
+	TrafficSplit      float64 // 0.0 to 1.0 - fraction to new version
+	StartTime         time.Time
+	MetricsNew        *DeploymentMetrics
+	MetricsOld        *DeploymentMetrics
 	PromotionCriteria PromotionCriteria
-	Status          string // active, promoted, rolled_back
-	mu              sync.RWMutex
+	Status            string // active, promoted, rolled_back
+	mu                sync.RWMutex
 }
 
 type DeploymentMetrics struct {
-	Requests      int
-	Errors        int
-	AvgLatency    float64
-	P95Latency    float64
-	P99Latency    float64
-	Accuracy      float64
-	LastUpdated   time.Time
-	latencies     []float64
-	mu            sync.Mutex
+	Requests    int
+	Errors      int
+	AvgLatency  float64
+	P95Latency  float64
+	P99Latency  float64
+	Accuracy    float64
+	LastUpdated time.Time
+	latencies   []float64
+	mu          sync.Mutex
 }
 
 type PromotionCriteria struct {
-	MinRequests       int
-	MaxErrorRate      float64
-	MaxLatencyP95     float64
-	MinAccuracy       float64
-	RequiredDuration  time.Duration
+	MinRequests      int
+	MaxErrorRate     float64
+	MaxLatencyP95    float64
+	MinAccuracy      float64
+	RequiredDuration time.Duration
 }
 
 // NewModelRegistry creates a new registry with persistence
@@ -170,7 +170,7 @@ func (mr *ModelRegistry) ActivateVersion(version string) error {
 
 	model.Status = "active"
 	mr.activeVersions[model.Name] = version
-	
+
 	return mr.saveMetadata(model)
 }
 
@@ -341,7 +341,7 @@ func (dm *DeploymentMetrics) RecordRequest(latency float64, isError bool, accura
 	}
 
 	dm.latencies = append(dm.latencies, latency)
-	
+
 	// Keep only recent 1000 latencies
 	if len(dm.latencies) > 1000 {
 		dm.latencies = dm.latencies[len(dm.latencies)-1000:]
@@ -506,7 +506,7 @@ func (mr *ModelRegistry) saveMetadata(model *ModelVersion) error {
 
 func (mr *ModelRegistry) enforceVersionLimit(name string) {
 	versions := mr.ListVersions(name)
-	
+
 	if len(versions) <= mr.maxVersions {
 		return
 	}
@@ -523,7 +523,7 @@ func (mr *ModelRegistry) enforceVersionLimit(name string) {
 		if v.Status != "active" && v.Status != "rollback" {
 			// Delete model data
 			os.Remove(v.DataPath)
-			
+
 			// Delete metadata
 			metadataPath := filepath.Join(mr.storagePath, "metadata", fmt.Sprintf("%s.json", v.Version))
 			os.Remove(metadataPath)
@@ -550,7 +550,7 @@ func calculateHash(data []byte) string {
 
 func calculateMetricDeltas(m1, m2 map[string]float64) map[string]float64 {
 	deltas := make(map[string]float64)
-	
+
 	for key, val1 := range m1 {
 		if val2, exists := m2[key]; exists {
 			deltas[key] = val2 - val1

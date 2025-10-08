@@ -146,7 +146,7 @@ func (pv *PluginValidator) verifyCosignSignature(wasmData []byte, signature stri
 	tmpSig := fmt.Sprintf("/tmp/plugin_%d.sig", time.Now().UnixNano())
 
 	// Use cosign to verify signature
-	cmd := exec.Command("cosign", "verify-blob", 
+	cmd := exec.Command("cosign", "verify-blob",
 		"--signature", tmpSig,
 		"--certificate-identity-regexp", ".*",
 		"--certificate-oidc-issuer-regexp", ".*",
@@ -205,7 +205,7 @@ func (pv *PluginValidator) validateSBOM(sbom string) (bool, error) {
 
 func (pv *PluginValidator) runTrivyScan(wasmData []byte) (bool, string, error) {
 	tmpFile := fmt.Sprintf("/tmp/plugin_%d.wasm", time.Now().UnixNano())
-	
+
 	// Run Trivy scan
 	cmd := exec.Command("trivy", "fs", "--format", "json", tmpFile)
 	output, err := cmd.CombinedOutput()
@@ -281,13 +281,13 @@ func (pv *PluginValidator) calculateRiskScore(result *ValidationResult) float64 
 
 func (pv *PluginValidator) generateSandboxPolicy(result *ValidationResult) string {
 	policy := map[string]interface{}{
-		"network_access":     false,
-		"filesystem_access":  "none",
-		"memory_limit":       "128MB",
-		"cpu_limit":          "100m",
-		"execution_timeout":  "30s",
-		"allowed_syscalls":   []string{"read", "write", "exit"},
-		"risk_level":         getRiskLevel(result.RiskScore),
+		"network_access":    false,
+		"filesystem_access": "none",
+		"memory_limit":      "128MB",
+		"cpu_limit":         "100m",
+		"execution_timeout": "30s",
+		"allowed_syscalls":  []string{"read", "write", "exit"},
+		"risk_level":        getRiskLevel(result.RiskScore),
 	}
 
 	policyJSON, _ := json.Marshal(policy)
@@ -300,8 +300,8 @@ func (pv *PluginValidator) storePlugin(plugin *Plugin) error {
 	VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 	RETURNING id, created_at`
 
-	err := pv.db.QueryRow(query, plugin.Owner, plugin.Version, plugin.WasmHash, 
-		plugin.CosignSig, plugin.SBOM, plugin.Verified, plugin.Status, 
+	err := pv.db.QueryRow(query, plugin.Owner, plugin.Version, plugin.WasmHash,
+		plugin.CosignSig, plugin.SBOM, plugin.Verified, plugin.Status,
 		plugin.TrivyScan, plugin.SandboxPolicy).Scan(&plugin.ID, &plugin.CreatedAt)
 
 	return err

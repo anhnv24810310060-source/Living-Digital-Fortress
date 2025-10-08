@@ -14,10 +14,10 @@ type CreditsClient struct {
 }
 
 type ConsumeRequest struct {
-	TenantID      string `json:"tenant_id"`
-	Amount        int64  `json:"amount"`
-	Description   string `json:"description"`
-	Reference     string `json:"reference"`
+	TenantID       string `json:"tenant_id"`
+	Amount         int64  `json:"amount"`
+	Description    string `json:"description"`
+	Reference      string `json:"reference"`
 	IdempotencyKey string `json:"idempotency_key"`
 }
 
@@ -78,7 +78,7 @@ func (c *CreditsClient) HasSufficientCredits(tenantID string, amount int64) (boo
 
 func (c *CreditsClient) GetBalance(tenantID string) (int64, error) {
 	url := fmt.Sprintf("%s/credits/balance/%s", c.baseURL, tenantID)
-	
+
 	resp, err := c.httpClient.Get(url)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get balance: %w", err)
@@ -99,7 +99,7 @@ func (c *CreditsClient) GetBalance(tenantID string) (int64, error) {
 
 func (c *CreditsClient) CheckHealth() error {
 	url := fmt.Sprintf("%s/health", c.baseURL)
-	
+
 	resp, err := c.httpClient.Get(url)
 	if err != nil {
 		return fmt.Errorf("credits health check failed: %w", err)

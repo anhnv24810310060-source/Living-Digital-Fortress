@@ -14,8 +14,8 @@ import (
 	"sync"
 	"time"
 
-	"shieldx/pkg/ledger"
-	"shieldx/pkg/metrics"
+	"shieldx/shared/shieldx-common/pkg/ledger"
+	"shieldx/shared/shieldx-common/pkg/metrics"
 )
 
 type CamouflageEngine struct {

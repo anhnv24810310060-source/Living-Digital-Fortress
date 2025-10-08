@@ -20,10 +20,10 @@ import (
 	"sync"
 	"time"
 
-	"shieldx/pkg/metrics"
-	logcorr "shieldx/pkg/observability/logcorr"
-	otelobs "shieldx/pkg/observability/otel"
-	"shieldx/pkg/ratls"
+	"shieldx/shared/shieldx-common/pkg/metrics"
+	logcorr "shieldx/shared/shieldx-common/pkg/observability/logcorr"
+	otelobs "shieldx/shared/shieldx-common/pkg/observability/otel"
+	"shieldx/shared/shieldx-common/pkg/ratls"
 )
 
 type MLOrchestrator struct {
@@ -1171,11 +1171,13 @@ func (m *MLOrchestrator) handleAdversarialGenerate(w http.ResponseWriter, r *htt
 	for i, f := range req.Features {
 		g := req.Gradient[i]
 		sign := 1.0
-		if g < 0 { sign = -1.0 }
+		if g < 0 {
+			sign = -1.0
+		}
 		adv[i] = f + req.Epsilon*sign
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{"adversarial": adv, "epsilon": req.Epsilon})
 }
 
-func randFloat64() float64 { return float64(time.Now().UnixNano()%1_000_000)/1_000_000 }
+func randFloat64() float64 { return float64(time.Now().UnixNano()%1_000_000) / 1_000_000 }

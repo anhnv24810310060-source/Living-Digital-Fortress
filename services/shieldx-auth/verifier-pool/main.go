@@ -10,11 +10,11 @@ import (
 	"strconv"
 	"time"
 
-	"shieldx/pkg/verifier"
-	"shieldx/pkg/metrics"
-	otelobs "shieldx/pkg/observability/otel"
-	logcorr "shieldx/pkg/observability/logcorr"
-	"shieldx/pkg/ratls"
+	"shieldx/shared/shieldx-common/pkg/metrics"
+	logcorr "shieldx/shared/shieldx-common/pkg/observability/logcorr"
+	otelobs "shieldx/shared/shieldx-common/pkg/observability/otel"
+	"shieldx/shared/shieldx-common/pkg/ratls"
+	"shieldx/shared/shieldx-common/pkg/verifier"
 )
 
 type Server struct {
@@ -26,14 +26,14 @@ func main() {
 	port := getEnv("VERIFIER_POOL_PORT", "8087")
 	minNodes, _ := strconv.Atoi(getEnv("MIN_VERIFIER_NODES", "3"))
 	consensus, _ := strconv.ParseFloat(getEnv("CONSENSUS_THRESHOLD", "0.67"), 64)
-	
+
 	pool := verifier.NewPool(minNodes, consensus)
-	
+
 	server := &Server{
 		pool: pool,
 		port: port,
 	}
-	
+
 	mux := http.NewServeMux()
 	reg := metrics.NewRegistry()
 	httpMetrics := metrics.NewHTTPMetrics(reg, "verifier_pool")
@@ -44,7 +44,7 @@ func main() {
 	mux.HandleFunc("/whoami", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		info := map[string]interface{}{
-			"service": "verifier-pool",
+			"service":       "verifier-pool",
 			"ratls_enabled": os.Getenv("RATLS_ENABLE") == "true",
 		}
 		if os.Getenv("RATLS_ENABLE") == "true" {
@@ -75,12 +75,21 @@ func main() {
 		rotate := parseDurationDefault("RATLS_ROTATE_EVERY", 45*time.Minute)
 		valid := parseDurationDefault("RATLS_VALIDITY", 60*time.Minute)
 		ai, err := ratls.NewDevIssuer(ratls.Identity{TrustDomain: td, Namespace: ns, Service: svc}, rotate, valid)
-		if err != nil { log.Fatalf("[verifier-pool] RA-TLS init: %v", err) }
+		if err != nil {
+			log.Fatalf("[verifier-pool] RA-TLS init: %v", err)
+		}
 		issuer = ai
-		go func(){ for { if t, err := issuer.LeafNotAfter(); err==nil { gCertExpiry.Set(uint64(time.Until(t).Seconds())) }; time.Sleep(1*time.Minute) } }()
+		go func() {
+			for {
+				if t, err := issuer.LeafNotAfter(); err == nil {
+					gCertExpiry.Set(uint64(time.Until(t).Seconds()))
+				}
+				time.Sleep(1 * time.Minute)
+			}
+		}()
 	}
 	addr := fmt.Sprintf(":%s", port)
-	srv := &http.Server{ Addr: addr, Handler: h }
+	srv := &http.Server{Addr: addr, Handler: h}
 	if issuer != nil {
 		srv.TLSConfig = issuer.ServerTLSConfig(true, getenvDefault("RATLS_TRUST_DOMAIN", "shieldx.local"))
 		log.Printf("Verifier Pool (RA-TLS) starting on %s", addr)
@@ -96,26 +105,26 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	
+
 	var node verifier.VerifierNode
 	if err := json.NewDecoder(r.Body).Decode(&node); err != nil {
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
 		return
 	}
-	
+
 	node.LastSeen = time.Now()
 	if node.Reputation == 0 {
 		node.Reputation = 0.5
 	}
-	
+
 	if err := s.pool.AddNode(&node); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
-		"status": "registered",
+		"status":  "registered",
 		"node_id": node.ID,
 	})
 }
@@ -125,22 +134,22 @@ func (s *Server) handleValidate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	
+
 	var req verifier.ValidationRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
 		return
 	}
-	
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	
+
 	result, err := s.pool.ValidatePack(ctx, &req)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(result)
 }
@@ -149,16 +158,16 @@ func (s *Server) handleListNodes(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
 		"status": "nodes_listed",
-		"note": "Implementation pending - requires access control",
+		"note":   "Implementation pending - requires access control",
 	})
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status": "healthy",
+		"status":    "healthy",
 		"timestamp": time.Now(),
-		"service": "verifier-pool",
+		"service":   "verifier-pool",
 	})
 }
 
@@ -170,10 +179,16 @@ func getEnv(key, defaultValue string) string {
 }
 
 func getenvDefault(key, def string) string {
-	if v := os.Getenv(key); v != "" { return v }
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
 	return def
 }
 func parseDurationDefault(key string, def time.Duration) time.Duration {
-	if v := os.Getenv(key); v != "" { if d, err := time.ParseDuration(v); err == nil { return d } }
+	if v := os.Getenv(key); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			return d
+		}
+	}
 	return def
 }

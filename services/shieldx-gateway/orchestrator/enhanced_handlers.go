@@ -14,10 +14,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"shieldx/pkg/accesslog"
-	"shieldx/pkg/dpop"
-	"shieldx/pkg/policy"
-	"shieldx/pkg/validation"
+	"shieldx/shared/shieldx-common/pkg/accesslog"
+	"shieldx/shared/shieldx-common/pkg/dpop"
+	"shieldx/shared/shieldx-common/pkg/policy"
+	"shieldx/shared/shieldx-common/pkg/validation"
 )
 
 // P0: Enhanced request validation with detailed error responses
@@ -353,13 +353,13 @@ func pickBackendFromCandidates(candidates []*Backend, algo LBAlgo, hashKey strin
 	if len(candidates) == 0 {
 		return nil, fmt.Errorf("no candidates")
 	}
-	
+
 	switch algo {
 	case LBRoundRobin:
 		// Use time-based rotation for adhoc pools
-		idx := int(time.Now().UnixNano() / 1000000) % len(candidates)
+		idx := int(time.Now().UnixNano()/1000000) % len(candidates)
 		return candidates[idx], nil
-		
+
 	case LBLeastConnections:
 		best := candidates[0]
 		bestC := atomic.LoadInt64(&best.Conns)
@@ -370,7 +370,7 @@ func pickBackendFromCandidates(candidates []*Backend, algo LBAlgo, hashKey strin
 			}
 		}
 		return best, nil
-		
+
 	case LBEWMA:
 		best := candidates[0]
 		bestE := best.getEWMA()
@@ -388,7 +388,7 @@ func pickBackendFromCandidates(candidates []*Backend, algo LBAlgo, hashKey strin
 			}
 		}
 		return best, nil
-		
+
 	case LBP2CEWMA:
 		if len(candidates) == 1 {
 			return candidates[0], nil
@@ -406,14 +406,14 @@ func pickBackendFromCandidates(candidates []*Backend, algo LBAlgo, hashKey strin
 			return a, nil
 		}
 		return b, nil
-		
+
 	case LBConsistentHash:
 		key := hashKey
 		if key == "" {
 			key = fmt.Sprintf("time:%d", time.Now().UnixNano())
 		}
 		return chooseRendezvousWeighted(candidates, key), nil
-		
+
 	default:
 		return candidates[0], nil
 	}

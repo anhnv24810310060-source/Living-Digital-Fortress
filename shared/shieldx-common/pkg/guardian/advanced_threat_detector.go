@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 
-	"shieldx/pkg/ebpf"
-	"shieldx/pkg/ml"
-	"shieldx/pkg/sandbox"
+	"shieldx/shared/shieldx-common/pkg/ebpf"
+	"shieldx/shared/shieldx-common/pkg/ml"
+	"shieldx/shared/shieldx-common/pkg/sandbox"
 )
 
 // AdvancedThreatDetector implements Phase 2 P0: Multi-layer threat detection

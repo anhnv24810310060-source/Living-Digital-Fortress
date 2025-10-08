@@ -46,16 +46,16 @@ type ExperimentResult struct {
 }
 
 type VariantStats struct {
-	Requests      int64   `json:"requests"`
-	TruePositives int64   `json:"true_positives"`
-	FalsePositives int64  `json:"false_positives"`
-	TrueNegatives int64   `json:"true_negatives"`
-	FalseNegatives int64  `json:"false_negatives"`
-	AvgLatency    float64 `json:"avg_latency_ms"`
-	Accuracy      float64 `json:"accuracy"`
-	Precision     float64 `json:"precision"`
-	Recall        float64 `json:"recall"`
-	F1Score       float64 `json:"f1_score"`
+	Requests       int64   `json:"requests"`
+	TruePositives  int64   `json:"true_positives"`
+	FalsePositives int64   `json:"false_positives"`
+	TrueNegatives  int64   `json:"true_negatives"`
+	FalseNegatives int64   `json:"false_negatives"`
+	AvgLatency     float64 `json:"avg_latency_ms"`
+	Accuracy       float64 `json:"accuracy"`
+	Precision      float64 `json:"precision"`
+	Recall         float64 `json:"recall"`
+	F1Score        float64 `json:"f1_score"`
 }
 
 func NewABTestManager() *ABTestManager {

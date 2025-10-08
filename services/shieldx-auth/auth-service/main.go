@@ -8,7 +8,7 @@ import (
 	"os"
 	"time"
 
-	"shieldx/pkg/auth"
+	"shieldx/shared/shieldx-common/pkg/auth"
 
 	"github.com/redis/go-redis/v9"
 )

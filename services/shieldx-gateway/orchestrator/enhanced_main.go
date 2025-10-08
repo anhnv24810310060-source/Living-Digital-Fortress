@@ -10,10 +10,10 @@ import (
 	"sync"
 	"time"
 
-	"shieldx/pkg/adaptive"
-	"shieldx/pkg/certtransparency"
-	"shieldx/pkg/pqcrypto"
-	"shieldx/pkg/quic"
+	"shieldx/shared/shieldx-common/pkg/adaptive"
+	"shieldx/shared/shieldx-common/pkg/certtransparency"
+	"shieldx/shared/shieldx-common/pkg/pqcrypto"
+	"shieldx/shared/shieldx-common/pkg/quic"
 )
 
 // EnhancedOrchestrator wraps the base orchestrator with advanced features
