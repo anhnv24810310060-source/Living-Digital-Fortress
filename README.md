@@ -448,23 +448,24 @@ All key documentation is located in the [`/docs`](https://www.google.com/search?
   - **Discussions:** Join our [GitHub Discussions](https://www.google.com/search?q=https://github.com/shieldx-bot/shieldx/discussions) for questions and ideas.
   - **Security Vulnerabilities:** Please report privately by emailing **security@shieldx-project.org**.
 
+ 
+ 
 -----
 
 ### License
 
 This project is licensed under the **Apache License 2.0**. See the [LICENSE](https://www.google.com/search?q=LICENSE) file for details.
 
-Copyright © 2025 ShieldX Contributors.
+Copyright © 2024-Present ShieldX Contributors.
 
-\<div align="center"\>
-\<h3\>Ready to build the future of cloud security?\</h3\>
-\<p\>
-\<a href="https://www.google.com/search?q=%23-getting-started"\>Get Started\</a\> ·
-\<a href="https://www.google.com/search?q=docs/"\>Read the Docs\</a\> ·
-\<a href="[https://github.com/shieldx-bot/shieldx/discussions](https://www.google.com/search?q=https://github.com/shieldx-bot/shieldx/discussions)"\>Join Discussion\</a\> ·
-\<a href="[https://github.com/shieldx-bot/shieldx/issues](https://www.google.com/search?q=https://github.com/shieldx-bot/shieldx/issues)"\>Report an Issue\</a\>
-\</p\>
-\<p\>
-\<strong\>If you find ShieldX useful, please give us a ⭐ to show your support\!\</strong\>
-\</p\>
-\</div\>
+-----
+
+### Ready to build the future of cloud security?
+
+[Get Started](https://www.google.com/search?q=%23-getting-started) · [Read the Docs](https://www.google.com/search?q=docs/) · [Join Discussion](https://github.com/shieldx-bot/shieldx/discussions) · [Report an Issue](https://github.com/shieldx-bot/shieldx/issues)
+
+**If you find ShieldX useful, please give us a ⭐ to show your support\!**
+
+-----
+
+ 
