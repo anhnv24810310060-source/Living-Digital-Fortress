@@ -23,13 +23,39 @@ Your input is invaluable\! If you have an idea for a new feature or would like t
 
 -----
 
+
+
+
+
 ## 🚀 Phase 1: The Foundation & Core Visibility  
 
 *Goal: Build the Minimum Viable Product (MVP) of the Dashboard, providing the most critical information on system health and security events.*
 
-  - **[ ] 💡 Establish `shieldx-admin` Service**
+  - **A[ ] 💡 Establish `shieldx-admin` Service**
 
-      - [ ] 💡 Create the basic project structure for the dashboard service (Go backend + Frontend framework).
+      - [✅ ] 💡 Create the basic project structure for the dashboard service 
+         packages : 
+           
+          ```
+          --Backend-- 
+          Node.js : v22.20.0 (LTS)
+          Typescript: 5.9.3
+          ```
+
+           ```
+          --Frontend-- 
+          React : 19.1.0 
+          Next: 15.5.4
+          Typescript: 5.9.3
+          react-dom: 19.1.0
+          tailwindcss/postcss: 4
+          
+          ```
+
+          
+
+
+
       - [ ] 💡 Build a secure authentication mechanism for administrators.
 
   - **[ ] 💡 Main Dashboard Page**
