@@ -16,7 +16,7 @@ require (
 	github.com/prometheus/client_golang v1.19.1
 	github.com/quic-go/quic-go v0.44.0
 	github.com/redis/go-redis/v9 v9.5.2
-	github.com/tetratelabs/wazero v1.6.0
+	github.com/tetratelabs/wazero v1.9.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.54.0
 	go.opentelemetry.io/otel v1.38.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v1.38.0
