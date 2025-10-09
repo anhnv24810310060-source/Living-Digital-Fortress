@@ -13,7 +13,9 @@ import {
   SidebarProvider,
   SidebarTrigger,
 } from "@/components/ui/sidebar"
-
+import TotalRequests from "./components/TotalRequests"
+     // - [ ] 💡 **Key KPI Metrics Widget:** Display critical stats for 
+    // the last 24 hours (Total Requests, Threats Blocked, Avg. Latency...).
 export default function Page() {
   return (
     <SidebarProvider>
@@ -42,11 +44,14 @@ export default function Page() {
           </div>
         </header>
         <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
-          <div className="grid auto-rows-min gap-4 md:grid-cols-3">
+           <div className="grid auto-rows-min gap-4 md:grid-cols-3">
+             
+            <div className="bg-muted/50 aspect-video rounded-xl" >
+            <TotalRequests/>
+            </div>
             <div className="bg-muted/50 aspect-video rounded-xl" />
             <div className="bg-muted/50 aspect-video rounded-xl" />
-            <div className="bg-muted/50 aspect-video rounded-xl" />
-          </div>
+        </div>
           <div className="bg-muted/50 min-h-[100vh] flex-1 rounded-xl md:min-h-min" />
         </div>
       </SidebarInset>

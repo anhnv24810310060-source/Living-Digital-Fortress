@@ -52,11 +52,7 @@ Your input is invaluable\! If you have an idea for a new feature or would like t
           
           ```
 
-          
-
-
-
-      - [ ] 💡 Build a secure authentication mechanism for administrators.
+      - [ ] 💡 Build a secure authentication mechanism for administrators. (After All)
 
   - **[ ] 💡 Main Dashboard Page**
 
