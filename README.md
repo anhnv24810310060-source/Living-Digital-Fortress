@@ -3,7 +3,7 @@
 [![All Contributors](https://img.shields.io/badge/all_contributors-1-orange.svg?style=flat-square)](#contributors-)
 <!-- ALL-CONTRIBUTORS-BADGE:END -->
 -----
-
+g
 <div \>
 
  
@@ -45,6 +45,43 @@
 ## What is ShieldX?
 
 **ShieldX** is a comprehensive, cloud-native security platform designed to protect modern web applications and APIs from sophisticated cyber threats. It integrates multiple advanced security technologies into a unified, extensible, and high-performance system.
+
+
+
+
+Chắc chắn rồi. Đây là một đoạn tóm tắt được viết theo phong cách dễ hiểu, sử dụng phép ẩn dụ để người dùng mới có thể nhanh chóng nắm bắt được cách hoạt động và giá trị cốt lõi của ShieldX.
+
+Bạn có thể đặt đoạn này ngay sau phần huy hiệu (badges) và trước mục lục (Table of Contents) trong file `README.md` của mình.
+
+---
+
+  
+
+### How ShieldX Works: A Quick Overview
+
+Imagine ShieldX as a smart, multi-layered security checkpoint at the gateway to your application. Every user request must pass through a sophisticated inspection process before it's granted access.
+
+Here’s how it works in 4 simple steps:
+
+**1. Arrival at the Gateway**
+* Every request first arrives at the `Ingress Gateway`. This gate acts as the first line of defense, performing preliminary checks like rate limiting to defend against basic denial-of-service attacks.
+
+**2. Forwarding to the Command Center**
+* Requests that pass the initial check are forwarded to the `Orchestrator` – the "brain" of the entire system. Instead of making a decision on its own, the Orchestrator consults a team of specialists for simultaneous analysis.
+
+**3. Analysis by the Specialist Team**
+* Each specialist analyzes the request from a different angle:
+    * 🕵️ **The Guardian:** Answers the question: "Does this request contain malicious code or suspicious behavior?" It executes questionable parts in a hyper-isolated sandbox to see what they actually do.
+    * 👤 **ContAuth (Behavioral Authentication):** Answers the question: "Is this user's behavior normal?" It analyzes interaction patterns to detect signs of an account takeover.
+    * 📜 **The OPA Engine (Policy Engine):** Answers the question: "Does this request violate any predefined security rules?" It checks the request against your business logic and security policies.
+
+**4. The Final Decision and Action**
+* After receiving instant feedback from all specialists, the `Orchestrator` synthesizes the information, scores the risk, and makes the final decision:
+    * ✅ **Safe:** The request is allowed to proceed to your application.
+    * ❌ **Dangerous:** The request is blocked immediately.
+
+By combining these multiple layers of intelligent analysis, ShieldX can detect and neutralize sophisticated threats that traditional rule-based systems often miss.
+
 
 ### ✨ Key Features
 
