@@ -56,29 +56,84 @@ Bạn có thể đặt đoạn này ngay sau phần huy hiệu (badges) và trư
 ---
 
   
+ 
+### How ShieldX Works: A Detailed Overview
 
-### How ShieldX Works: A Quick Overview
+ShieldX operates as a smart, multi-layered security system at your application's gateway. Every request must pass through a sophisticated inspection process before it is granted access.
 
-Imagine ShieldX as a smart, multi-layered security checkpoint at the gateway to your application. Every user request must pass through a sophisticated inspection process before it's granted access.
+#### The 6-Step Processing Flow:
 
-Here’s how it works in 4 simple steps:
+**1. 🚪 Arrival at the Ingress Gateway (Port 8081)**
+* The request first arrives at the `Ingress Gateway`—the first line of defense.
+* It performs preliminary checks such as rate limiting, IP filtering, and QUIC protocol handling.
+* Basic DDoS attacks are blocked at the entry point.
+* Valid requests are forwarded to the Orchestrator.
 
-**1. Arrival at the Gateway**
-* Every request first arrives at the `Ingress Gateway`. This gate acts as the first line of defense, performing preliminary checks like rate limiting to defend against basic denial-of-service attacks.
+**2. 🧠 Orchestrator Analysis Coordination (Port 8080)**
+* The `Orchestrator`—the central brain—receives the request.
+* Instead of deciding on its own, it coordinates with a team of specialist analyzers in parallel.
+* It integrates OPA (Open Policy Agent) for immediate policy evaluation.
+* The request is sent to specialized services based on its suspicion level.
 
-**2. Forwarding to the Command Center**
-* Requests that pass the initial check are forwarded to the `Orchestrator` – the "brain" of the entire system. Instead of making a decision on its own, the Orchestrator consults a team of specialists for simultaneous analysis.
+**3. 🔍 Parallel Specialist Analysis**
+The Orchestrator sends the request to the following specialists simultaneously:
 
-**3. Analysis by the Specialist Team**
-* Each specialist analyzes the request from a different angle:
-    * 🕵️ **The Guardian:** Answers the question: "Does this request contain malicious code or suspicious behavior?" It executes questionable parts in a hyper-isolated sandbox to see what they actually do.
-    * 👤 **ContAuth (Behavioral Authentication):** Answers the question: "Is this user's behavior normal?" It analyzes interaction patterns to detect signs of an account takeover.
-    * 📜 **The OPA Engine (Policy Engine):** Answers the question: "Does this request violate any predefined security rules?" It checks the request against your business logic and security policies.
+* 🛡️ **Guardian Service (Port 9090) - Sandbox Execution:**
+    * Analyzes suspicious code/payloads in a Firecracker MicroVM.
+    * Monitors syscalls with eBPF to detect malicious behavior.
+    * Provides full hardware-level isolation (KVM).
+    * **Returns:** Malware score, behavioral analysis.
 
-**4. The Final Decision and Action**
-* After receiving instant feedback from all specialists, the `Orchestrator` synthesizes the information, scores the risk, and makes the final decision:
-    * ✅ **Safe:** The request is allowed to proceed to your application.
-    * ❌ **Dangerous:** The request is blocked immediately.
+* 👤 **ContAuth Service (Port 5002) - Behavioral Authentication:**
+    * Analyzes user behavior, including keystroke dynamics and mouse patterns.
+    * Compares behavior against a baseline user profile.
+    * Uses ML models to detect potential account takeovers.
+    * **Returns:** Risk score, anomaly indicators.
+
+* 📜 **OPA Policy Engine - Policy Validation:**
+    * Checks the request against predefined business logic rules.
+    * Evaluates against cryptographically signed policy bundles.
+    * Verifies access rights and compliance requirements.
+    * **Returns:** Allow/deny decision with reasoning.
+
+* 💳 **Credits Service (Port 5004) - Resource Management:**
+    * Checks user quotas and billing limits.
+    * Tracks real-time resource consumption.
+    * **Returns:** Resource availability status.
+
+**4. 🎯 Risk Scoring & Decision Synthesis**
+* The Orchestrator synthesizes the results from all specialist services.
+* It calculates a composite risk score based on:
+    * Guardian malware score (0-100)
+    * ContAuth behavioral risk (0-100)
+    * OPA policy violations
+    * Credits availability
+* A weighted scoring algorithm is applied to determine the final score.
+
+**5. ⚖️ Final Decision Making**
+Based on the composite score, a final decision is made:
+
+* ✅ **Safe** (score < threshold): The request is forwarded to the upstream application.
+* ⚠️ **Suspicious** (threshold ≤ score < critical):
+    * Logs detailed information and triggers alerts.
+    * May challenge the user with additional MFA.
+    * The request is forwarded with enhanced monitoring.
+* ❌ **Dangerous** (score ≥ critical):
+    * The request is blocked immediately.
+    * The event is logged to an immutable audit trail.
+    * An incident response workflow is triggered.
+
+**6. 📊 Observability & Learning**
+* The entire decision path is recorded in a ledger for auditability.
+* Metrics are exported to Prometheus for monitoring.
+* Distributed tracing is enabled with OpenTelemetry for end-to-end visibility.
+* ML models learn from false positives/negatives to improve their accuracy over time.
+
+#### Supporting Services:
+* 🔍 **Locator (Port 5008):** Handles service discovery and health monitoring.
+* 🎭 **Shadow (Port 5005):** Allows for safe testing of policy changes before deployment.
+* 📦 **Policy Rollout (Port 5006):** Manages the controlled deployment of new policy bundles.
+* ✅ **Verifier Pool (Port 5007):** Handles attestation and integrity verification of system components.
 
 By combining these multiple layers of intelligent analysis, ShieldX can detect and neutralize sophisticated threats that traditional rule-based systems often miss.
 
@@ -107,26 +162,33 @@ By combining these multiple layers of intelligent analysis, ShieldX can detect a
 
 ### Request Flow
 
-```mermaid
-graph LR
-    subgraph "Main Traffic Flow"
-        Client[<font size=4>👨‍💻<br>Client</font>] --> Ingress[<font size=4>🚪<br>Ingress Gateway</font>]
-        Ingress --> Orchestrator[<font size=4>🧠<br>Orchestrator</font>]
-    end
+ graph LR
+    Client["👨💻<br>Client"] --> Ingress["🚪<br>Ingress Gateway<br>Port 8081"]
+    Ingress --> Orchestrator["🧠<br>Orchestrator<br>Port 8080"]
+    
+    Orchestrator --> Guardian["🛡️<br>Guardian<br>Port 9090"]
+    Guardian --> Firecracker["🔥<br>Firecracker + eBPF"]
+    Firecracker --> Guardian
+    
+    Orchestrator --> ContAuth["👤<br>ContAuth<br>Port 5002"]
+    Orchestrator --> OPAPolicy["📜<br>OPA Engine"]
+    Orchestrator --> Credits["💳<br>Credits<br>Port 5004"]
+    
+    Guardian --> Orchestrator
+    ContAuth --> Orchestrator
+    OPAPolicy --> Orchestrator
+    Credits --> Orchestrator
+    
+    Orchestrator --> Decision{"⚖️<br>Risk Score"}
+    Decision -->|"✅ Safe"| Upstream["🌐<br>Upstream App"]
+    Decision -->|"⚠️ Suspicious"| MFA["🔐<br>MFA Challenge"]
+    Decision -->|"❌ Dangerous"| Block["🚫<br>Block & Log"]
+    
+    MFA --> Upstream
+    
+    Orchestrator -.-> Locator["🔍<br>Locator<br>Port 5008"]
+    Orchestrator -.-> Shadow["🎭<br>Shadow<br>Port 5005"]
 
-    subgraph "Analysis & Decision Loop"
-        Orchestrator -- "Suspicious Request" --> Guardian[<font size=4>🛡️<br>Guardian (Sandbox)</font>]
-        Guardian -- "Malware Analysis" --> Firecracker[<font size=4>🔥<br>Firecracker + eBPF</font>]
-        Orchestrator -- "Behavioral Auth" --> ContAuth[<font size=4> B<br>ContAuth</font>]
-        Orchestrator -- "Policy Check" --> OPAPolicy[<font size=4>📜<br>OPA Policy Engine</font>]
-        Orchestrator -- "Resource Check" --> Credits[<font size=4>💳<br>Credits Service</font>]
-    end
-
-    Orchestrator -- "Valid Request" --> Upstream[<font size=4>🌐<br>Upstream Service</font>]
-    Guardian -- "Analysis Result" --> Orchestrator
-    ContAuth -- "Risk Score" --> Orchestrator
-    OPAPolicy -- "Decision" --> Orchestrator
-```
 
 -----
 
