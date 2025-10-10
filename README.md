@@ -162,32 +162,35 @@ By combining these multiple layers of intelligent analysis, ShieldX can detect a
 
 ### Request Flow
 
- graph LR
-    Client["👨💻<br>Client"] --> Ingress["🚪<br>Ingress Gateway<br>Port 8081"]
-    Ingress --> Orchestrator["🧠<br>Orchestrator<br>Port 8080"]
+ ### Request Flow
+
+```mermaid
+graph LR
+    Client["👨💻<br/>Client"] --> Ingress["🚪<br/>Ingress Gateway<br/>Port 8081"]
+    Ingress --> Orchestrator["🧠<br/>Orchestrator<br/>Port 8080"]
     
-    Orchestrator --> Guardian["🛡️<br>Guardian<br>Port 9090"]
-    Guardian --> Firecracker["🔥<br>Firecracker + eBPF"]
+    Orchestrator --> Guardian["🛡️<br/>Guardian<br/>Port 9090"]
+    Guardian --> Firecracker["🔥<br/>Firecracker + eBPF"]
     Firecracker --> Guardian
     
-    Orchestrator --> ContAuth["👤<br>ContAuth<br>Port 5002"]
-    Orchestrator --> OPAPolicy["📜<br>OPA Engine"]
-    Orchestrator --> Credits["💳<br>Credits<br>Port 5004"]
+    Orchestrator --> ContAuth["👤<br/>ContAuth<br/>Port 5002"]
+    Orchestrator --> OPAPolicy["📜<br/>OPA Engine"]
+    Orchestrator --> Credits["💳<br/>Credits<br/>Port 5004"]
     
     Guardian --> Orchestrator
     ContAuth --> Orchestrator
     OPAPolicy --> Orchestrator
     Credits --> Orchestrator
     
-    Orchestrator --> Decision{"⚖️<br>Risk Score"}
-    Decision -->|"✅ Safe"| Upstream["🌐<br>Upstream App"]
-    Decision -->|"⚠️ Suspicious"| MFA["🔐<br>MFA Challenge"]
-    Decision -->|"❌ Dangerous"| Block["🚫<br>Block & Log"]
+    Orchestrator --> Decision{"⚖️<br/>Risk Score"}
+    Decision -->|"✅ Safe"| Upstream["🌐<br/>Upstream App"]
+    Decision -->|"⚠️ Suspicious"| MFA["🔐<br/>MFA Challenge"]
+    Decision -->|"❌ Dangerous"| Block["🚫<br/>Block & Log"]
     
     MFA --> Upstream
     
-    Orchestrator -.-> Locator["🔍<br>Locator<br>Port 5008"]
-    Orchestrator -.-> Shadow["🎭<br>Shadow<br>Port 5005"]
+    Orchestrator -.-> Locator["🔍<br/>Locator<br/>Port 5008"]
+    Orchestrator -.-> Shadow["🎭<br/>Shadow<br/>Port 5005"]
 
 
 -----
