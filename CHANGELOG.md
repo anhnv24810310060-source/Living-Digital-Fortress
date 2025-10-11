@@ -12,7 +12,7 @@ Format: Keep a Changelog (https://keepachangelog.com), and Semantic Versioning o
 - Replaced placeholder README with comprehensive overview.
 
 ### Fixed
-- `/packages` endpoint in marketplace now returns an empty array (`[]`) instead of `null` when there are no packages. See #31.
+- `/packages` endpoint in marketplace now returns an empty array (`[]`) instead of `null` when there are no packages. See #28.
 
 ### Security
 - Baseline security scanning workflow established.
