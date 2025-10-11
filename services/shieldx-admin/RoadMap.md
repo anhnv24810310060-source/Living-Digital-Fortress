@@ -37,15 +37,11 @@ Your input is invaluable\! If you have an idea for a new feature or would like t
          packages : 
            
           ```
-          --Backend-- 
-          Node.js : v22.20.0 (LTS)
-          Typescript: 5.9.3
-          ```
+          
 
            ```
           --Frontend-- 
           React : 19.1.0 
-          Next: 15.5.4
           Typescript: 5.9.3
           react-dom: 19.1.0
           tailwindcss/postcss: 4
@@ -56,8 +52,8 @@ Your input is invaluable\! If you have an idea for a new feature or would like t
 
   - **[ ] 💡 Main Dashboard Page**
 
-      - [ ] 💡 **Key KPI Metrics Widget:** Display critical stats for the last 24 hours (Total Requests, Threats Blocked, Avg. Latency...).
-      - [ ] 💡 **System Health Status Widget:** Show the status (Online/Offline/Warning) of each microservice (Orchestrator, Guardian, Credits...).
+      - [✅] 💡 **Key KPI Metrics Widget:** Display critical stats for the last 24 hours (Total Requests, Threats Blocked, Avg. Latency....
+      - [✅] 💡 **System Health Status Widget:** Show the status (Online/Offline/Warning) of each microservice (Orchestrator, Guardian, Credits...).
       - [ ] 💡 **Latest Alerts Widget:** Display the 10 most recent high-severity security alerts.
 
   - **[ ] 💡 Event Investigation Page**
