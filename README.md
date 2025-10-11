@@ -191,7 +191,7 @@ graph LR
     
     Orchestrator -.-> Locator["🔍<br/>Locator<br/>Port 5008"]
     Orchestrator -.-> Shadow["🎭<br/>Shadow<br/>Port 5005"]
-
+```
 
 -----
 
