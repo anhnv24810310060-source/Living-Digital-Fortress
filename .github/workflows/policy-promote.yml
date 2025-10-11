@@ -14,13 +14,16 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - name: Download artifact (if available)
+        uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           path: dist
-        continue-on-error: true
       - name: Ensure bundle exists
         run: |
-          test -f dist/policy-bundle.zip || echo "No bundle from previous job; rebuilding" && true
+          if [ ! -f dist/policy-bundle.zip ]; then
+            echo "No bundle from previous job; rebuilding"
+          fi
       - uses: actions/setup-go@v5
         with:
           go-version: '1.24'

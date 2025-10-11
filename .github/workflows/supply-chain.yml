@@ -155,88 +155,9 @@ jobs:
         with:
           cosign-release: 'v2.4.1'
 
+
       - name: Cosign sign pushed image (keyless)
         env:
           COSIGN_EXPERIMENTAL: "true"
         run: |
           cosign sign --yes "${{ steps.meta.outputs.image }}@${{ steps.build.outputs.digest }}"
-name: Supply Chain
-
-on:
-  push:
-    branches: [ main ]
-  workflow_dispatch:
-    inputs:
-      image:
-        description: "Container image to sign (e.g., ghcr.io/org/app:tag)"
-        required: false
-        type: string
-
-permissions:
-  contents: read
-  id-token: write
-
-jobs:
-  sbom:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.22'
-
-      - name: Install Syft
-        uses: anchore/sbom-action/download-syft@v0.17.9
-
-      - name: Generate SBOMs
-        run: |
-          make sbom-all
-
-      - name: Upload SBOM Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: sbom-artifacts
-          path: dist/sbom/**
-
-  snapshot:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.22'
-
-      - name: Install Goreleaser
-        uses: goreleaser/goreleaser-action@v6
-        with:
-          version: latest
-          distribution: goreleaser-pro
-          install-only: true
-        env:
-          GORELEASER_KEY: ${{ secrets.GORELEASER_KEY || '' }}
-
-      - name: Run snapshot release
-        run: |
-          make release-snapshot
-
-  image-sign:
-    if: ${{ inputs.image != '' }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Cosign
-        uses: sigstore/cosign-installer@v3.5.0
-
-      - name: Keyless sign image
-        env:
-          COSIGN_EXPERIMENTAL: "true"
-        run: |
-          make image-sign IMAGE='${{ inputs.image }}'
