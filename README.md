@@ -1,6 +1,6 @@
 
 <!-- ALL-CONTRIBUTORS-BADGE:START - Do not remove or modify this section -->
-[![All Contributors](https://img.shields.io/badge/all_contributors-1-orange.svg?style=flat-square)](#contributors-)
+[![All Contributors](https://img.shields.io/badge/all_contributors-2-orange.svg?style=flat-square)](#contributors-)
 <!-- ALL-CONTRIBUTORS-BADGE:END -->
 -----
 g
@@ -582,6 +582,7 @@ Copyright © 2024-Present ShieldX Contributors.
   <tbody>
     <tr>
       <td align="center" valign="top" width="14.28%"><a href="https://github.com/sebyx07"><img src="https://avatars.githubusercontent.com/u/5052549?v=4?s=100" width="100px;" alt="S"/><br /><sub><b>S</b></sub></a><br /><a href="https://github.com/shieldx-bot/shieldx/commits?author=sebyx07" title="Documentation">📖</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/VaibhavPr"><img src="https://avatars.githubusercontent.com/u/69839789?v=4?s=100" width="100px;" alt="Vaibhav Prasad"/><br /><sub><b>Vaibhav Prasad</b></sub></a><br /><a href="https://github.com/shieldx-bot/shieldx/commits?author=VaibhavPr" title="Tests">⚠️</a></td>
     </tr>
   </tbody>
 </table>
