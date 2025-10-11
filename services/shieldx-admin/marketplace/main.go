@@ -50,14 +50,18 @@ func main() {
 }
 
 func (s *Server) handlePackages(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodGet {
-		packages := s.registry.GetTopPackages(20)
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(packages)
-		return
-	}
+    if r.Method == http.MethodGet {
+        packages := s.registry.GetTopPackages(20)
+        if packages == nil {
+            // Ensure an empty slice of pointers is returned instead of nil for JSON encoding
+            packages = []*marketplace.Package{}
+        }
+        w.Header().Set("Content-Type", "application/json")
+        json.NewEncoder(w).Encode(packages)
+        return
+    }
 
-	http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+    http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 }
 
 func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
