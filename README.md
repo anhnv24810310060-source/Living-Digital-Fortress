@@ -6,39 +6,38 @@
 
 <div \>
 
- 
+
 
 # 🛡️ ShieldX - AI-Powered Cloud Security Platform
 
 **Next-generation cloud security combining AI/ML threat detection, deception technology, and sandbox isolation.**
- 
+
 [![CI](https://github.com/shieldx-bot/shieldx/actions/workflows/ci.yml/badge.svg)](./.github/workflows/ci.yml)
 [![Security Scan](https://github.com/shieldx-bot/shieldx/actions/workflows/security.yml/badge.svg)](./.github/workflows/security.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Go Version](https://img.shields.io/badge/Go-1.25+-00ADD8?style=flat&logo=go)](https://go.dev/)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
- 
+
 [Documentation](https://www.google.com/search?q=docs/) · [Architecture](https://www.google.com/search?q=docs/ARCHITECTURE.md) · [API Reference](https://www.google.com/search?q=docs/API.md) · [Report an Issue](https://www.google.com/search?q=https://github.com/shieldx-bot/shieldx/issues)
- 
+
 > **Status**: 🧪 ALPHA / EXPERIMENTAL – This project is under active development and is not yet production-ready. We welcome contributions to help us move forward\!
 
 -----
 
 ## 📖 Table of Contents
 
-  - [What is ShieldX?](https://www.google.com/search?q=%23what-is-shieldx)
-  - [✨ Key Features](https://www.google.com/search?q=%23-key-features)
-  - [🎯 Use Cases](https://www.google.com/search?q=%23-use-cases)
-  - [🧠 Core Concepts](https://www.google.com/search?q=%23-core-concepts)
-  - [🏗️ System Architecture](https://www.google.com/search?q=%23%EF%B8%8F-system-architecture)
-  - [🚀 Getting Started](https://www.google.com/search?q=%23-getting-started)
-  - [🛠️ Service Setup Guides](https://www.google.com/search?q=%23%EF%B8%8F-service-setup-guides)
-  - [👨‍💻 Development Guide](https://www.google.com/search?q=%23-development-guide)
-  - [🤝 Contributing](https://www.google.com/search?q=%23-contributing)
-  - [🧪 Testing](https://www.google.com/search?q=%23-testing)
-  - [📚 Documentation](https://www.google.com/search?q=%23-documentation)
-  - [📊 Monitoring & Observability](https://www.google.com/search?q=%23-monitoring--observability)
-  - [🆘 Troubleshooting](https://www.google.com/search?q=%23-troubleshooting)
+- [What is ShieldX?](#what-is-shieldx)
+- [✨ Key Features](#-key-features)
+- [🎯 Use Cases](#-use-cases)
+- [🧠 Core Concepts](#-core-concepts)
+- [🏗️ System Architecture](#-system-architecture)
+- [🚀 Getting Started](#-getting-started)
+- [👨‍💻 Development Guide](#-development-guide)
+- [🤝 Contributing](#-contributing)
+- [🧪 Testing](#-testing)
+- [📚 Documentation](#-documentation)
+- [📊 Monitoring & Observability](#-monitoring--observability)
+- [🆘 Troubleshooting](#-troubleshooting)
 
 -----
 
@@ -55,8 +54,8 @@ Bạn có thể đặt đoạn này ngay sau phần huy hiệu (badges) và trư
 
 ---
 
-  
- 
+
+
 ### How ShieldX Works: A Detailed Overview
 
 ShieldX operates as a smart, multi-layered security system at your application's gateway. Every request must pass through a sophisticated inspection process before it is granted access.
@@ -168,27 +167,27 @@ By combining these multiple layers of intelligent analysis, ShieldX can detect a
 graph LR
     Client["👨💻<br/>Client"] --> Ingress["🚪<br/>Ingress Gateway<br/>Port 8081"]
     Ingress --> Orchestrator["🧠<br/>Orchestrator<br/>Port 8080"]
-    
+
     Orchestrator --> Guardian["🛡️<br/>Guardian<br/>Port 9090"]
     Guardian --> Firecracker["🔥<br/>Firecracker + eBPF"]
     Firecracker --> Guardian
-    
+
     Orchestrator --> ContAuth["👤<br/>ContAuth<br/>Port 5002"]
     Orchestrator --> OPAPolicy["📜<br/>OPA Engine"]
     Orchestrator --> Credits["💳<br/>Credits<br/>Port 5004"]
-    
+
     Guardian --> Orchestrator
     ContAuth --> Orchestrator
     OPAPolicy --> Orchestrator
     Credits --> Orchestrator
-    
+
     Orchestrator --> Decision{"⚖️<br/>Risk Score"}
     Decision -->|"✅ Safe"| Upstream["🌐<br/>Upstream App"]
     Decision -->|"⚠️ Suspicious"| MFA["🔐<br/>MFA Challenge"]
     Decision -->|"❌ Dangerous"| Block["🚫<br/>Block & Log"]
-    
+
     MFA --> Upstream
-    
+
     Orchestrator -.-> Locator["🔍<br/>Locator<br/>Port 5008"]
     Orchestrator -.-> Shadow["🎭<br/>Shadow<br/>Port 5005"]
 ```
@@ -216,203 +215,14 @@ graph LR
 -----
 
 ## 🚀 Getting Started
+For a fast setup and local development environment, please follow the dedicated setup guide:
 
-### Prerequisites
+➡️ **[Local Setup Guide → `docs/local-setup.md`](./docs/local-setup.md)**
 
-**Required:**
+That guide includes all prerequisites, installation commands for Ubuntu/macOS, and step-by-step setup instructions to get ShieldX running locally.
 
-  * Go `1.22` or higher
-  * Docker `24.0+` & Docker Compose `2.20+`
-  * `make`
-  * `git`
+---
 
-**Recommended:**
-
-  * 4GB+ RAM
-  * Linux Kernel `5.10+` with KVM support (`/dev/kvm`) for the Guardian service.
-
-### Quick Start Installation
-
-1.  **Clone the repository:**
-
-    ```bash
-    git clone https://github.com/shieldx-bot/shieldx.git
-    cd shieldx
-    ```
-
-2.  **Install dependencies:**
-
-    ```bash
-    go mod download && go mod verify
-    ```
-
-3.  **Build all service binaries:**
-
-    ```bash
-    make build
-    ```
-
-4.  **Start infrastructure services (PostgreSQL, Redis):**
-
-    ```bash
-    docker compose up -d postgres redis
-    ```
-
-5.  **Run database migrations:**
-
-    ```bash
-    make migrate-up
-    ```
-
-6.  **Start all ShieldX services:**
-
-    ```bash
-    make run-all
-    ```
-
-7.  **Verify that services are running:**
-
-    ```bash
-    make health-check
-    ```
-
-    **Expected Response from each healthy service:**
-
-    ```json
-    {
-      "status": "healthy",
-      "version": "0.1.0",
-      "timestamp": "2025-10-08T10:00:00Z"
-    }
-    ```
-
------
-
-## 🛠️ Service Setup Guides
-
-For detailed setup, configuration, and API documentation for each microservice, please refer to the `README.md` within its respective directory. The following are quick-start summaries.
-
-\<details\>
-\<summary\>\<b\>1. Orchestrator Service (`:8080`)\</b\>\</summary\>
-
-**Purpose:** Central routing and policy evaluation engine.
-
-**Setup:**
-
-```bash
-cd services/orchestrator
-
-# Create .env file for configuration
-cat > .env << EOF
-ORCHESTRATOR_PORT=8080
-REDIS_HOST=localhost
-REDIS_PORT=6379
-OPA_BUNDLE_URL=http://localhost:8181/bundles/latest
-LOG_LEVEL=info
-EOF
-
-# Run the service
-go run cmd/server/main.go
-```
-
-> See more: [`services/orchestrator/README.md`](https://www.google.com/search?q=services/orchestrator/README.md)
-
-\</details\>
-
-\<details\>
-\<summary\>\<b\>2. Ingress Service (`:8081`)\</b\>\</summary\>
-
-**Purpose:** Traffic gateway with rate limiting and filtering.
-
-**Setup:**
-
-```bash
-cd services/ingress
-
-# Create .env file for configuration
-cat > .env << EOF
-INGRESS_PORT=8081
-REDIS_HOST=localhost
-RATE_LIMIT_PER_MINUTE=1000
-ENABLE_QUIC=true
-EOF
-
-# Run the service
-go run cmd/server/main.go
-```
-
-> See more: [`services/ingress/README.md`](https://www.google.com/search?q=services/ingress/README.md)
-
-\</details\>
-
-\<details\>
-\<summary\>\<b\>3. Guardian Service (`:9090`)\</b\>\</summary\>
-
-**Purpose:** Sandbox execution with Firecracker MicroVMs.
-
-**Requirements:** Linux kernel 5.10+, KVM enabled, and root privileges (`sudo`).
-
-**Setup:**
-
-```bash
-cd services/guardian
-
-# Verify KVM support
-ls -l /dev/kvm && lsmod | grep kvm
-
-# Create .env file with paths to your kernel and rootfs
-cat > .env << EOF
-GUARDIAN_PORT=9090
-FIRECRACKER_KERNEL=/path/to/vmlinux
-FIRECRACKER_ROOTFS=/path/to/rootfs.ext4
-SANDBOX_TIMEOUT=30
-MAX_MEMORY_MB=512
-EOF
-
-# Run with elevated privileges
-sudo go run cmd/server/main.go
-```
-
-> **Note:** Guardian requires Linux. On Windows/macOS, it will run in a limited stub mode.
-> See more: [`services/guardian/README.md`](https://www.google.com/search?q=services/guardian/README.md)
-
-\</details\>
-
-\<details\>
-\<summary\>\<b\>4. Credits Service (`:5004`)\</b\>\</summary\>
-
-**Purpose:** Resource consumption tracking and billing.
-
-**Setup:**
-
-```bash
-cd services/shieldx-credits
-
-# Ensure PostgreSQL is running via docker-compose
-
-# Create .env file
-cat > .env << EOF
-CREDITS_PORT=5004
-CREDITS_DB_HOST=localhost
-CREDITS_DB_PORT=5432
-CREDITS_DB_USER=credits_user
-CREDITS_DB_PASSWORD=credits_pass
-CREDITS_DB_NAME=credits
-CREDITS_DB_SSL_MODE=disable
-EOF
-
-# Run database migrations before starting
-# (The 'make migrate-up' command handles this)
-
-# Run the service
-go run cmd/server/main.go
-```
-
-> See more: [`services/shieldx-credits/CREDITS-SERVICE.md`](https://www.google.com/search?q=services/shieldx-credits/CREDITS-SERVICE.md)
-
-\</details\>
-
------
 
 ## 👨‍💻 Development Guide
 
@@ -421,8 +231,8 @@ go run cmd/server/main.go
 ```
 shieldx/
 ├── services/          # Microservices
-│   ├── shieldx-admin/        # the central administrative service 
-│   ├── shieldx-auth/         # the central authentication and authorization 
+│   ├── shieldx-admin/        # the central administrative service
+│   ├── shieldx-auth/         # the central authentication and authorization
 │   ├── shieldx-credits/      # manages resource consumption and billing for tenants
 │   ├── shieldx-deception/    # a system that proactively deploys deception technology to detect, analyze, and misdirect cyber attacks in real-time
 │   ├── shieldx-forensics/    # A centralized platform for cybersecurity incident analysis, evidence collection, and reporting.
@@ -434,13 +244,13 @@ shieldx/
 ├── shared/            # Shared Go libraries (common pkg, utils)
 │   └── shieldx-common/
 │   └── shieldx-sdk/
-├── pkg/               
+├── pkg/
 ├── infrastructure/    # Deployment configs (Docker, K8s, Terraform)
 ├── docs/              # Project documentation
 ├── tools/             # CLI tools and utilities
 ├── .github/           # GitHub Actions workflows for CI/CD
 ├── Makefile           # Automation for build, test, lint, run
-└── README.md    
+└── README.md
 ```
 
 ### Development Workflow
@@ -526,12 +336,12 @@ make security-scan
 
 All key documentation is located in the [`/docs`](https://www.google.com/search?q=docs/) directory:
 
-  - [`ARCHITECTURE.md`](https://www.google.com/search?q=docs/ARCHITECTURE.md): System architecture and design decisions.
-  - [`API.md`](https://www.google.com/search?q=docs/API.md): Complete API reference.
-  - [`DEPLOYMENT.md`](https://www.google.com/search?q=docs/DEPLOYMENT.md): Deployment guides for Docker & Kubernetes.
-  - [`THREAT_MODEL.md`](https://www.google.com/search?q=docs/THREAT_MODEL.md): Threat model and mitigations.
-  - [`ROADMAP.md`](https://www.google.com/search?q=docs/ROADMAP.md): Development roadmap.
-
+  - [`LOCAL_SETUP.md`](./docs/local_setup.md): Step-by-step guide to set up the project locally.
+  - [`ARCHITECTURE.md`](./docs/ARCHITECTURE.md): System architecture and design decisions.
+  - [`API.md`](./docs/API.md): Complete API reference.
+  - [`DEPLOYMENT.md`](./docs/DEPLOYMENT.md): Deployment guides for Docker & Kubernetes.
+  - [`THREAT_MODEL.md`](./docs/THREAT_MODEL.md): Threat model and mitigations.
+  - [`ROADMAP.md`](./docs/ROADMAP.md): Development roadmap.
 -----
 
 ## 📊 Monitoring & Observability
@@ -558,9 +368,13 @@ All key documentation is located in the [`/docs`](https://www.google.com/search?
   - **Bug Reports:** [Open an Issue](https://www.google.com/search?q=https://github.com/shieldx-bot/shieldx/issues) on GitHub.
   - **Discussions:** Join our [GitHub Discussions](https://www.google.com/search?q=https://github.com/shieldx-bot/shieldx/discussions) for questions and ideas.
   - **Security Vulnerabilities:** Please report privately by emailing **security@shieldx-project.org**.
+  - For any quick question or doubt, Feel free to reach out to Discord server
 
- 
- 
+    <a href="TODO_ADD_DISCORD_LINK">
+      <img src="https://user-images.githubusercontent.com/74038190/235294015-47144047-25ab-417c-af1b-6746820a20ff.gif" width="50" alt="Discord" />
+    </a>
+
+
 -----
 
 ### License
@@ -573,7 +387,7 @@ Copyright © 2025-Present ShieldX Contributors.
 
 ### Ready to build the future of cloud security?
 
-[Get Started](https://www.google.com/search?q=%23-getting-started) · [Read the Docs](https://www.google.com/search?q=docs/) · [Join Discussion](https://github.com/shieldx-bot/shieldx/discussions) · [Report an Issue](https://github.com/shieldx-bot/shieldx/issues)
+[Get Started](./docs/local-setup.md) · [Read the Docs](./docs/) · [Join Discussion](https://github.com/shieldx-bot/shieldx/discussions) · [Report an Issue](https://github.com/shieldx-bot/shieldx/issues)
 
 **If you find ShieldX useful, please give us a ⭐ to show your support\!**
 
@@ -604,4 +418,4 @@ Copyright © 2025-Present ShieldX Contributors.
 <!-- prettier-ignore-end -->
 
 <!-- ALL-CONTRIBUTORS-LIST:END -->
- 
+
