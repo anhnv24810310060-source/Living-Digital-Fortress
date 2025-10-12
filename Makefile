@@ -1,3 +1,5 @@
+# Use bash for improved shell features
+SHELL := /bin/bash
 
 # ShieldX Cloud Build System
 
@@ -66,7 +68,7 @@ dev-build: dev-env-check
 	@if [ -n "$(SERVICE)" ]; then \
 		$(COMPOSE) build $(SERVICE); \
 	else \
-		$(COMPOSE) build --pull --parallel; \
+		$(COMPOSE) build --pull --parallel || (echo "Parallel build failed, retrying sequentially..." && $(COMPOSE) build --pull); \
 	fi
 
 # Start stack (all or a single SERVICE=<name>)
