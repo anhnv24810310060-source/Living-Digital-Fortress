@@ -33,7 +33,7 @@ services:
   orchestrator:
     build:
       context: .
-      dockerfile: docker/Dockerfile.orchestrator
+      dockerfile: infrastructure/docker-compose/docker/Dockerfile.orchestrator
     image: shieldx/orchestrator:dev
     container_name: shieldx-orchestrator
     environment:
@@ -49,7 +49,7 @@ services:
       - "8080:8080"
     volumes:
       - ./policy.example.json:/etc/shieldx/policy.json:ro
-      - ./policies/opa:/etc/shieldx/opa:ro
+      - ./services/shieldx-policy/policies/opa:/etc/shieldx/opa:ro
       - shared-data:/app/data
     depends_on:
       redis:
@@ -66,7 +66,7 @@ services:
   locator:
     build:
       context: .
-      dockerfile: docker/Dockerfile.locator
+      dockerfile: infrastructure/docker-compose/docker/Dockerfile.locator
     image: shieldx/locator:dev
     container_name: shieldx-locator
     environment:
@@ -84,7 +84,7 @@ services:
   guardian:
     build:
       context: .
-      dockerfile: docker/Dockerfile.guardian
+      dockerfile: infrastructure/docker-compose/docker/Dockerfile.guardian
     image: shieldx/guardian:dev
     container_name: shieldx-guardian
     environment:
@@ -105,7 +105,7 @@ services:
   ingress:
     build:
       context: .
-      dockerfile: docker/Dockerfile.ingress
+      dockerfile: infrastructure/docker-compose/docker/Dockerfile.ingress
     image: shieldx/ingress:dev
     container_name: shieldx-ingress
     environment:
@@ -134,7 +134,7 @@ services:
         condition: service_healthy
     volumes:
       - ./policy.example.json:/etc/shieldx/policy.json:ro
-      - ./policies/opa:/etc/shieldx/opa:ro
+      - ./services/shieldx-policy/policies/opa:/etc/shieldx/opa:ro
       - ./certs:/certs:ro
       - shared-data:/app/data
     networks:
@@ -143,7 +143,7 @@ services:
   ml-orchestrator:
     build:
       context: .
-      dockerfile: docker/Dockerfile.ml-orchestrator
+      dockerfile: infrastructure/docker-compose/docker/Dockerfile.ml-orchestrator
     image: shieldx/ml-orchestrator:dev
     container_name: shieldx-ml-orchestrator
     environment:
@@ -160,7 +160,7 @@ services:
   verifier-pool:
     build:
       context: .
-      dockerfile: docker/Dockerfile.verifier-pool
+      dockerfile: infrastructure/docker-compose/docker/Dockerfile.verifier-pool
     image: shieldx/verifier-pool:dev
     container_name: shieldx-verifier-pool
     environment:
@@ -173,7 +173,7 @@ services:
   shieldx-gateway:
     build:
       context: .
-      dockerfile: docker/Dockerfile.shieldx-gateway
+      dockerfile: infrastructure/docker-compose/docker/Dockerfile.shieldx-gateway
     image: shieldx/gateway:dev
     container_name: shieldx-gateway
     environment:
@@ -208,7 +208,7 @@ services:
   auth-service:
     build:
       context: .
-      dockerfile: docker/Dockerfile.auth-service
+      dockerfile: infrastructure/docker-compose/docker/Dockerfile.auth-service
     image: shieldx/auth-service:dev
     container_name: shieldx-auth-service
     environment:
@@ -227,7 +227,7 @@ services:
   contauth:
     build:
       context: .
-      dockerfile: docker/Dockerfile.contauth
+      dockerfile: infrastructure/docker-compose/docker/Dockerfile.contauth
     image: shieldx/contauth:dev
     container_name: shieldx-contauth
     environment:
@@ -241,7 +241,7 @@ services:
   policy-rollout:
     build:
       context: .
-      dockerfile: docker/Dockerfile.policy-rollout
+      dockerfile: infrastructure/docker-compose/docker/Dockerfile.policy-rollout
     image: shieldx/policy-rollout:dev
     container_name: shieldx-policy-rollout
     environment:
@@ -256,7 +256,7 @@ services:
     container_name: shieldx-otel-collector
     command: ["--config=/etc/otel-config.yaml"]
     volumes:
-      - ./pilot/observability/otel-collector-config.yaml:/etc/otel-config.yaml:ro
+      - ./infrastructure/kubernetes/pilot/observability/otel-collector-config.yaml:/etc/otel-config.yaml:ro
     ports:
       - "4318:4318"
       - "4317:4317"
@@ -275,9 +275,9 @@ services:
       - --config.file=/etc/prometheus/prometheus.yml
       - --web.enable-admin-api
     volumes:
-      - ./pilot/observability/prometheus-scrape.yml:/etc/prometheus/prometheus.yml:ro
+      - ./infrastructure/kubernetes/pilot/observability/prometheus-scrape.yml:/etc/prometheus/prometheus.yml:ro
     ports:
-      - "19090:9090"
+      - "9090:9090"
     networks:
       - shieldx-net
 
@@ -290,8 +290,8 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - ./pilot/observability/grafana/datasources:/etc/grafana/provisioning/datasources:ro
-      - ./pilot/observability/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./infrastructure/kubernetes/pilot/observability/grafana-provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./infrastructure/kubernetes/pilot/observability/grafana-provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
     depends_on:
       prometheus:
         condition: service_started
