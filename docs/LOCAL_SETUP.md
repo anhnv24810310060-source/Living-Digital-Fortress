@@ -73,8 +73,7 @@
 
 For detailed setup, configuration, and API documentation for each microservice, please refer to the `README.md` within its respective directory. The following are quick-start summaries.
 
-\<details\>
-\<summary\>\<b\>1. Orchestrator Service (`:8080`)\</b\>\</summary\>
+##1. Orchestrator Service (`:8080`) 
 
 **Purpose:** Central routing and policy evaluation engine.
 
@@ -82,8 +81,9 @@ For detailed setup, configuration, and API documentation for each microservice, 
 
 ```bash
 cd services/orchestrator
-
+``
 # Create .env file for configuration
+```bash
 cat > .env << EOF
 ORCHESTRATOR_PORT=8080
 REDIS_HOST=localhost
@@ -91,17 +91,15 @@ REDIS_PORT=6379
 OPA_BUNDLE_URL=http://localhost:8181/bundles/latest
 LOG_LEVEL=info
 EOF
-
+```
 # Run the service
+```bash
 go run cmd/server/main.go
 ```
 
 > See more: [`services/orchestrator/README.md`](https://www.google.com/search?q=services/orchestrator/README.md)
 
-\</details\>
-
-\<details\>
-\<summary\>\<b\>2. Ingress Service (`:8081`)\</b\>\</summary\>
+ ##2. Ingress Service (`:8081`) 
 
 **Purpose:** Traffic gateway with rate limiting and filtering.
 
@@ -109,25 +107,25 @@ go run cmd/server/main.go
 
 ```bash
 cd services/ingress
-
+```
 # Create .env file for configuration
+```bash
 cat > .env << EOF
 INGRESS_PORT=8081
 REDIS_HOST=localhost
 RATE_LIMIT_PER_MINUTE=1000
 ENABLE_QUIC=true
 EOF
+```
 
 # Run the service
+```bash
 go run cmd/server/main.go
 ```
 
 > See more: [`services/ingress/README.md`](https://www.google.com/search?q=services/ingress/README.md)
 
-\</details\>
-
-\<details\>
-\<summary\>\<b\>3. Guardian Service (`:9090`)\</b\>\</summary\>
+ 3. Guardian Service (`:9090`) 
 
 **Purpose:** Sandbox execution with Firecracker MicroVMs.
 
@@ -137,11 +135,13 @@ go run cmd/server/main.go
 
 ```bash
 cd services/guardian
-
+```
 # Verify KVM support
+```bash
 ls -l /dev/kvm && lsmod | grep kvm
-
+```
 # Create .env file with paths to your kernel and rootfs
+```bash
 cat > .env << EOF
 GUARDIAN_PORT=9090
 FIRECRACKER_KERNEL=/path/to/vmlinux
@@ -149,29 +149,27 @@ FIRECRACKER_ROOTFS=/path/to/rootfs.ext4
 SANDBOX_TIMEOUT=30
 MAX_MEMORY_MB=512
 EOF
-
+```
 # Run with elevated privileges
+```bash
 sudo go run cmd/server/main.go
 ```
 
 > **Note:** Guardian requires Linux. On Windows/macOS, it will run in a limited stub mode.
 > See more: [`services/guardian/README.md`](https://www.google.com/search?q=services/guardian/README.md)
 
-\</details\>
-
-\<details\>
-\<summary\>\<b\>4. Credits Service (`:5004`)\</b\>\</summary\>
-
+ 4. Credits Service (`:5004`) 
 **Purpose:** Resource consumption tracking and billing.
 
 **Setup:**
 
 ```bash
 cd services/shieldx-credits
-
+```
 # Ensure PostgreSQL is running via docker-compose
 
 # Create .env file
+```bash
 cat > .env << EOF
 CREDITS_PORT=5004
 CREDITS_DB_HOST=localhost
@@ -181,16 +179,17 @@ CREDITS_DB_PASSWORD=credits_pass
 CREDITS_DB_NAME=credits
 CREDITS_DB_SSL_MODE=disable
 EOF
-
+```
 # Run database migrations before starting
 # (The 'make migrate-up' command handles this)
 
 # Run the service
+```bash
 go run cmd/server/main.go
 ```
 
 > See more: [`services/shieldx-credits/CREDITS-SERVICE.md`](https://www.google.com/search?q=services/shieldx-credits/CREDITS-SERVICE.md)
 
-\</details\>
+ 
 
 -----
