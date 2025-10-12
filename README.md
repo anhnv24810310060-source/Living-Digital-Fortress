@@ -421,20 +421,26 @@ go run cmd/server/main.go
 ```
 shieldx/
 ├── services/          # Microservices
-│   ├── orchestrator/    # Central routing service
-│   ├── ingress/         # Gateway service
-│   ├── guardian/        # Sandbox service
+│   ├── shieldx-admin/        # the central administrative service 
+│   ├── shieldx-auth/         # the central authentication and authorization 
+│   ├── shieldx-credits/      # manages resource consumption and billing for tenants
+│   ├── shieldx-deception/    # a system that proactively deploys deception technology to detect, analyze, and misdirect cyber attacks in real-time
+│   ├── shieldx-forensics/    # A centralized platform for cybersecurity incident analysis, evidence collection, and reporting.
+│   ├── shieldx-gateway/      # The single entry point of ShieldX, handling routing, authentication, rate limiting, and monitoring of all HTTP requests.
+│   ├── shieldx-ml/           #  the brain of the system, providing the capability to detect and predict security threats using advanced Machine Learning models.
+│   ├── shieldx-policy/       # central service for securely and flexibly managing, enforcing, and deploying security policies, using Open Policy Agent (OPA) as its core engine.
+│   ├── shieldx-sandbox/      # Provides a secure, isolated environment for executing and analyzing suspicious files to detect behavior-based malware.
 │   └── ...              # Other services
 ├── shared/            # Shared Go libraries (common pkg, utils)
 │   └── shieldx-common/
-├── core/              # Core engines (policy, scoring, autoheal)
+│   └── shieldx-sdk/
+├── pkg/               
 ├── infrastructure/    # Deployment configs (Docker, K8s, Terraform)
 ├── docs/              # Project documentation
 ├── tools/             # CLI tools and utilities
-├── tests/             # Integration and End-to-End tests
 ├── .github/           # GitHub Actions workflows for CI/CD
 ├── Makefile           # Automation for build, test, lint, run
-└── README.md          # This file
+└── README.md    
 ```
 
 ### Development Workflow
@@ -561,7 +567,7 @@ All key documentation is located in the [`/docs`](https://www.google.com/search?
 
 This project is licensed under the **Apache License 2.0**. See the [LICENSE](https://www.google.com/search?q=LICENSE) file for details.
 
-Copyright © 2024-Present ShieldX Contributors.
+Copyright © 2025-Present ShieldX Contributors.
 
 -----
 
