@@ -10,7 +10,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 COPY . .
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    go build -tags="$GO_TAGS" -o /out/ml-orchestrator ./services/ml-orchestrator
+    go build -tags="$GO_TAGS" -o /out/ml-orchestrator ./services/shieldx-ml/ml-orchestrator
 
 FROM gcr.io/distroless/static-debian12:nonroot
 WORKDIR /app
