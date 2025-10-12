@@ -26,18 +26,18 @@
 
 ## 📖 Table of Contents
 
-- [What is ShieldX?](#what-is-shieldx)
-- [✨ Key Features](#-key-features)
-- [🎯 Use Cases](#-use-cases)
-- [🧠 Core Concepts](#-core-concepts)
-- [🏗️ System Architecture](#-system-architecture)
-- [🚀 Getting Started](#-getting-started)
-- [👨‍💻 Development Guide](#-development-guide)
-- [🤝 Contributing](#-contributing)
-- [🧪 Testing](#-testing)
-- [📚 Documentation](#-documentation)
-- [📊 Monitoring & Observability](#-monitoring--observability)
-- [🆘 Troubleshooting](#-troubleshooting)
+  - [What is ShieldX?](#what-is-shieldx)
+  - [✨ Key Features](#-key-features)
+  - [🎯 Use Cases](#-use-cases)
+  - [🧠 Core Concepts](#-core-concepts)
+  - [🏗️ System Architecture](#-system-architecture)
+  - [🚀 Getting Started](#-getting-started)
+  - [👨‍💻 Development Guide](#-development-guide)
+  - [🤝 Contributing](#-contributing)
+  - [🧪 Testing](#-testing)
+  - [📚 Documentation](#-documentation)
+  - [📊 Monitoring & Observability](#-monitoring--observability)
+  - [🆘 Troubleshooting](#-troubleshooting)
 
 -----
 
@@ -214,11 +214,14 @@ graph LR
 
 -----
 
-## 🚀 Setup cho môi trường Developer
+## 🚀 Getting Started
+
+### Setup cho môi trường Developer
 
 For a fast setup and local development environment, please follow the dedicated setup guide:
-*(English: [Developer Local Setup](./docs/local-setup.md))*
-
+*(English: [Developer Local Setup](docs/LOCAL_SETUP.md))*
+Đây là hướng dẫn nhanh để thiết lập môi trường phát triển nội bộ:
+*(Tiếng Việt: [Hướng dẫn thiết lập địa phương](docs/LOCAL_SETUP_VI.md))*
 
 
 
@@ -332,9 +335,9 @@ make security-scan
 
 ## 📚 Documentation
 
-All key documentation is located in the [`/docs`](https://www.google.com/search?q=docs/) directory:
+All key documentation is located in the [`/docs`](./docs) directory:
 
-  - [`LOCAL_SETUP.md`](./docs/local_setup.md): Step-by-step guide to set up the project locally.
+  - [`LOCAL_SETUP.md`](./docs/LOCAL_SETUP.md): Step-by-step guide to set up the project locally.
   - [`ARCHITECTURE.md`](./docs/ARCHITECTURE.md): System architecture and design decisions.
   - [`API.md`](./docs/API.md): Complete API reference.
   - [`DEPLOYMENT.md`](./docs/DEPLOYMENT.md): Deployment guides for Docker & Kubernetes.
@@ -385,7 +388,7 @@ Copyright © 2025-Present ShieldX Contributors.
 
 ### Ready to build the future of cloud security?
 
-[Get Started](./docs/local-setup.md) · [Read the Docs](./docs/) · [Join Discussion](https://github.com/shieldx-bot/shieldx/discussions) · [Report an Issue](https://github.com/shieldx-bot/shieldx/issues)
+[Get Started](docs/LOCAL_SETUP.md) · [Read the Docs](./docs/) · [Join Discussion](https://github.com/shieldx-bot/shieldx/discussions) · [Report an Issue](https://github.com/shieldx-bot/shieldx/issues)
 
 **If you find ShieldX useful, please give us a ⭐ to show your support\!**
 
