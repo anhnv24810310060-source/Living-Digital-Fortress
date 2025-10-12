@@ -22,7 +22,11 @@
 
 > **Status**: 🧪 ALPHA / EXPERIMENTAL – This project is under active development and is not yet production-ready. We welcome contributions to help us move forward\!
 
+                     
 -----
+ ##                                                 Progress of Completing the Statistical System (75/100%)
+                                                           
+                                          ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░ 
 
 ## 📖 Table of Contents
 
@@ -46,11 +50,6 @@
 **ShieldX** is a comprehensive, cloud-native security platform designed to protect modern web applications and APIs from sophisticated cyber threats. It integrates multiple advanced security technologies into a unified, extensible, and high-performance system.
 
 
-
-
-Chắc chắn rồi. Đây là một đoạn tóm tắt được viết theo phong cách dễ hiểu, sử dụng phép ẩn dụ để người dùng mới có thể nhanh chóng nắm bắt được cách hoạt động và giá trị cốt lõi của ShieldX.
-
-Bạn có thể đặt đoạn này ngay sau phần huy hiệu (badges) và trước mục lục (Table of Contents) trong file `README.md` của mình.
 
 ---
 
@@ -216,12 +215,11 @@ graph LR
 
 ## 🚀 Getting Started
 
-### Setup cho môi trường Developer
+### Setup for Developer environment
 
 For a fast setup and local development environment, please follow the dedicated setup guide:
-*(English: [Developer Local Setup](docs/LOCAL_SETUP.md))*
-Đây là hướng dẫn nhanh để thiết lập môi trường phát triển nội bộ:
-*(Tiếng Việt: [Hướng dẫn thiết lập địa phương](docs/LOCAL_SETUP_VI.md))*
+*(English: [Developer And  Contributors Setup](docs/Contributors_SETUP.md))*
+ 
 
 
 
@@ -281,13 +279,13 @@ shieldx/
 
 We welcome contributions of all kinds\! Your help is essential for making ShieldX a great security platform. Please read our [**Contributing Guide**](https://www.google.com/search?q=CONTRIBUTING.md) for detailed instructions.
 
-### How to Contribute
+#### How to Contribute
 
 1.  **Find an Issue:** Check the [open issues](https://www.google.com/search?q=https://github.com/shieldx-bot/shieldx/issues) and look for labels like `good first issue` or `help wanted`.
 2.  **Discuss First:** For major changes, please open an issue first to discuss your proposal.
 3.  **Submit a Pull Request:** Fork the repository, create a feature branch, and submit a PR with your changes.
 
-### Contribution Areas
+#### Contribution Areas
 
 | Area | Examples |
 |:---|:---|
@@ -298,36 +296,62 @@ We welcome contributions of all kinds\! Your help is essential for making Shield
 
 -----
 
-## 🧪 Testing
+### Quick launch (full stack)
 
+
+#### (optional) build full image
 ```bash
-# Run all unit tests
+make dev-build
+```
+#### start full services
+```bash
+make dev-up
+```
+#### wait for endpoints to be ready
+```bash
+make dev-health
+```
+
+### 🧪 Testing
+
+
+#### Run all unit tests
+```bash
 make test
-
-# Run tests with code coverage report
+```
+#### Run tests with code coverage report
+```bash
 make test-coverage
-
-# Run integration tests (requires Docker environment)
+```
+#### Run integration tests (requires Docker environment)
+```bash
 make test-integration
-
-# Run end-to-end tests
+```
+#### Run end-to-end tests
+```bash
 make test-e2e
-
-# Test OPA policies
+```
+#### Test OPA policies
+```bash
 cd policies
 opa test . -v
 ```
 
 ### Code Quality Tools
 
+##### Format all Go code
+
 ```bash
-# Format all Go code
 make fmt
+```
+##### Run the linter to check for style issues and errors
 
-# Run the linter to check for style issues and errors
+```bash
 make lint
+```
+##### Run security vulnerability scans
 
-# Run security vulnerability scans
+```bash
 make security-scan
 ```
 
@@ -336,8 +360,8 @@ make security-scan
 ## 📚 Documentation
 
 All key documentation is located in the [`/docs`](./docs) directory:
-
-  - [`LOCAL_SETUP.md`](./docs/LOCAL_SETUP.md): Step-by-step guide to set up the project locally.
+  - [`Contributors_SETUP.md`](./docs/Contributors_SETUP.md): Step-by-step guide to setting up projects and each service . (Recomment)
+  - [`LOCAL_SETUP.md`](./docs/LOCAL_SETUP.md): Step-by-step guide to set up the project  .
   - [`ARCHITECTURE.md`](./docs/ARCHITECTURE.md): System architecture and design decisions.
   - [`API.md`](./docs/API.md): Complete API reference.
   - [`DEPLOYMENT.md`](./docs/DEPLOYMENT.md): Deployment guides for Docker & Kubernetes.
