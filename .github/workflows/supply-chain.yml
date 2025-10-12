@@ -88,19 +88,19 @@ jobs:
       matrix:
         include:
           - name: ingress
-            dockerfile: docker/Dockerfile.ingress
+            dockerfile: infrastructure/docker-compose/docker/Dockerfile.ingress
           - name: locator
-            dockerfile: docker/Dockerfile.locator
+            dockerfile: infrastructure/docker-compose/docker/Dockerfile.locator
           - name: ml-orchestrator
-            dockerfile: docker/Dockerfile.ml-orchestrator
+            dockerfile: infrastructure/docker-compose/docker/Dockerfile.ml-orchestrator
           - name: verifier-pool
-            dockerfile: docker/Dockerfile.verifier-pool
+            dockerfile: infrastructure/docker-compose/docker/Dockerfile.verifier-pool
           - name: contauth
-            dockerfile: docker/Dockerfile.contauth
+            dockerfile: infrastructure/docker-compose/docker/Dockerfile.contauth
           - name: shieldx-gateway
-            dockerfile: docker/Dockerfile.shieldx-gateway
+            dockerfile: infrastructure/docker-compose/docker/Dockerfile.shieldx-gateway
           - name: policy-rollout
-            dockerfile: docker/Dockerfile.policy-rollout
+            dockerfile: infrastructure/docker-compose/docker/Dockerfile.policy-rollout
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -121,7 +121,7 @@ jobs:
       - name: Define image name
         id: meta
         run: |
-          IMAGE="ghcr.io/${{ github.repository_owner }}/ldf-${{ matrix.name }}:${{ github.sha }}"
+          IMAGE="ghcr.io/${{ github.repository_owner }}/shieldx-${{ matrix.name }}:${{ github.sha }}"
           echo "image=$IMAGE" >> $GITHUB_OUTPUT
 
       - name: Build and push

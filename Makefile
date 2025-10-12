@@ -1,3 +1,5 @@
+# Use bash for improved shell features
+SHELL := /bin/bash
 
 # ShieldX Cloud Build System
 
@@ -38,19 +40,121 @@ sign:
 	cosign sign-blob --key cosign.key sbom.json || echo "Install cosign: https://docs.sigstore.dev/cosign/installation/"
 	@echo "Artifacts signed"
 
-# OpenTelemetry stack management
+###############################
+# Developer docker-compose UX #
+###############################
+
+# Project and compose settings
+PROJECT ?= shieldx
+COMPOSE_FILES ?= docker-compose.full.yml
+COMPOSE := docker compose -p $(PROJECT) -f $(COMPOSE_FILES)
+
+# Known service names (from docker-compose.full.yml)
+SERVICES := postgres redis orchestrator locator guardian ingress ml-orchestrator verifier-pool shieldx-gateway auth-service contauth policy-rollout otel-collector prometheus grafana
+
+.PHONY: services dev-env-check dev-up dev-down dev-clean dev-build dev-pull dev-restart dev-logs dev-ps dev-shell dev-health
+
+services:
+	@echo "Available services:"; \
+	for s in $(SERVICES); do echo "  - $$s"; done
+
+dev-env-check:
+	@command -v docker >/dev/null 2>&1 || { echo "docker is required"; exit 1; }
+	@docker compose version >/dev/null 2>&1 || { echo "Docker Compose v2 plugin is required"; exit 1; }
+
+# Build images (all or a single SERVICE=<name>)
+dev-build: dev-env-check
+	@echo "Building images$(if $(SERVICE), for $(SERVICE), in parallel)..."
+	@if [ -n "$(SERVICE)" ]; then \
+		$(COMPOSE) build $(SERVICE); \
+	else \
+		$(COMPOSE) build --pull --parallel || (echo "Parallel build failed, retrying sequentially..." && $(COMPOSE) build --pull); \
+	fi
+
+# Start stack (all or a single SERVICE=<name>)
+dev-up: dev-env-check
+	@echo "Starting $(if $(SERVICE),service $(SERVICE),ShieldX stack)..."
+	@if [ -n "$(SERVICE)" ]; then \
+		$(COMPOSE) up -d $(SERVICE); \
+	else \
+		$(COMPOSE) up -d; \
+	fi
+
+dev-down: dev-env-check
+	@echo "Stopping stack..."
+	@$(COMPOSE) down --remove-orphans
+
+dev-clean: dev-env-check
+	@echo "Stopping stack and removing volumes..."
+	@$(COMPOSE) down -v --remove-orphans
+
+dev-restart: dev-env-check
+	@echo "Restarting $(if $(SERVICE),service $(SERVICE),all services)..."
+	@if [ -n "$(SERVICE)" ]; then \
+		$(COMPOSE) restart $(SERVICE); \
+	else \
+		$(COMPOSE) restart; \
+	fi
+
+dev-logs: dev-env-check
+	@echo "Tailing logs $(if $(SERVICE),for $(SERVICE),for all) (Ctrl+C to stop)..."
+	@if [ -n "$(SERVICE)" ]; then \
+		$(COMPOSE) logs -f --tail=200 $(SERVICE); \
+	else \
+		$(COMPOSE) logs -f --tail=200; \
+	fi
+
+dev-ps: dev-env-check
+	@$(COMPOSE) ps
+
+dev-pull: dev-env-check
+	@echo "Pulling images$(if $(SERVICE), for $(SERVICE), for all)..."
+	@if [ -n "$(SERVICE)" ]; then \
+		$(COMPOSE) pull $(SERVICE); \
+	else \
+		$(COMPOSE) pull; \
+	fi
+
+dev-shell: dev-env-check
+	@if [ -z "$(SERVICE)" ]; then echo "Usage: make dev-shell SERVICE=<name>"; exit 1; fi
+	@echo "Opening shell in $(SERVICE) ..."
+	@$(COMPOSE) exec $(SERVICE) sh -lc 'command -v bash >/dev/null 2>&1 && exec bash || exec sh'
+
+# Lightweight health probe for common endpoints
+dev-health:
+	@echo "=== ShieldX Dev Health Check ==="; \
+	failures=0; \
+	check() { name="$$1"; url="$$2"; timeout="$$3"; i=0; \
+	  until curl -sf --connect-timeout 1 "$$url" >/dev/null 2>&1; do \
+		if [ "$$i" -ge "$$timeout" ]; then echo "  ❌ $$name not ready: $$url"; failures=$$((failures+1)); return; fi; \
+		i=$$((i+1)); sleep 1; \
+	  done; echo "  ✅ $$name OK"; }; \
+	check orchestrator      http://localhost:8080/health 120; \
+	check ingress           http://localhost:8081/health 120; \
+	check shieldx-gateway   http://localhost:8082/health 120; \
+	check locator           http://localhost:8083/healthz 120; \
+	check auth-service      http://localhost:8084/health 120; \
+	check ml-orchestrator   http://localhost:8087/health 120; \
+	check verifier-pool     http://localhost:8090/health 120; \
+	check contauth          http://localhost:5002/health 120; \
+	check policy-rollout    http://localhost:8099/health 120; \
+	check guardian          http://localhost:9090/healthz 120; \
+	check prometheus        http://localhost:9090/-/healthy 120; \
+	check grafana           http://localhost:3000/api/health 120; \
+	if [ "$$failures" -gt 0 ]; then echo "=== Result: $$failures failures"; exit 1; else echo "=== Result: all healthy"; fi
+
+## OpenTelemetry stack management (observability demo compose)
 otel-up:
 	@echo "Starting OpenTelemetry observability stack..."
-	cd pilot/observability && docker-compose up -d
+	docker compose -f infrastructure/kubernetes/pilot/observability/docker-compose.yml up -d
 	@echo "Observability stack started"
 	@echo "  - Prometheus: http://localhost:9090"
 	@echo "  - Grafana: http://localhost:3000 (admin/fortress123)"
-	@echo "  - Tempo: http://localhost:3200"
 	@echo "  - OTLP Endpoint: http://localhost:4318"
 
 otel-down:
 	@echo "Stopping OpenTelemetry observability stack..."
-	cd pilot/observability && docker-compose down
+	docker compose -f infrastructure/kubernetes/pilot/observability/docker-compose.yml down
 	@echo "Observability stack stopped"
 
 # Check SLO status
@@ -158,23 +262,23 @@ benchmark:
 
 # Docker builds for production
 docker-build:
-	docker build -t shieldx/ingress -f docker/Dockerfile.ingress .
-	docker build -t shieldx/ml-orchestrator -f docker/Dockerfile.ml .
-	docker build -t shieldx/decoy-manager -f docker/Dockerfile.decoy .
+	docker build -t shieldx/ingress -f infrastructure/docker-compose/docker/Dockerfile.ingress .
+	docker build -t shieldx/ml-orchestrator -f infrastructure/docker-compose/docker/Dockerfile.ml-orchestrator .
+	@echo "Note: decoy-manager Dockerfile is not defined; skipping."
 
 # Minimal images for observability demo
 .PHONY: docker-ingress docker-locator demo-up demo-down
 docker-ingress:
-	docker build --build-arg GO_TAGS="$(GO_TAGS)" -t shieldx/ingress:dev -f docker/Dockerfile.ingress .
+	docker build --build-arg GO_TAGS="$(GO_TAGS)" -t shieldx/ingress:dev -f infrastructure/docker-compose/docker/Dockerfile.ingress .
 
 docker-locator:
-	docker build --build-arg GO_TAGS="$(GO_TAGS)" -t shieldx/locator:dev -f docker/Dockerfile.locator .
+	docker build --build-arg GO_TAGS="$(GO_TAGS)" -t shieldx/locator:dev -f infrastructure/docker-compose/docker/Dockerfile.locator .
 
 demo-up: docker-ingress docker-locator
-	docker compose -f pilot/observability/docker-compose.yml -f pilot/observability/docker-compose.override.yml up --build -d
+	docker compose -f infrastructure/kubernetes/pilot/observability/docker-compose.yml -f infrastructure/kubernetes/pilot/observability/docker-compose.override.yml up --build -d
 
 demo-down:
-	docker compose -f pilot/observability/docker-compose.yml -f pilot/observability/docker-compose.override.yml down
+	docker compose -f infrastructure/kubernetes/pilot/observability/docker-compose.yml -f infrastructure/kubernetes/pilot/observability/docker-compose.override.yml down
 
 # Policy-as-code (November)
 .PHONY: policy-bundle policy-sign policy-verify policy-all
@@ -206,12 +310,12 @@ observability: prom
 	@echo "Observability components started (Prometheus). Import Grafana dashboard from pilot/observability/grafana-dashboard-http-slo.json"
 
 prom:
-	@echo "Starting Prometheus with pilot/observability/prometheus-scrape.yml"
+	@echo "Starting Prometheus with infrastructure/kubernetes/pilot/observability/prometheus-scrape.yml"
 	@echo "Note: requires 'prometheus' binary on PATH or docker; adjust as needed"
-	-prometheus --config.file=pilot/observability/prometheus-scrape.yml --web.enable-admin-api --web.listen-address=0.0.0.0:9091
+	-prometheus --config.file=infrastructure/kubernetes/pilot/observability/prometheus-scrape.yml --web.enable-admin-api --web.listen-address=0.0.0.0:9091
 
 grafana:
-	@echo "Import dashboard: pilot/observability/grafana-dashboard-http-slo.json"
+	@echo "Import dashboard: infrastructure/kubernetes/pilot/observability/grafana-dashboard-http-slo.json"
 
 # Demo health check: waits for Prometheus targets and Jaeger UI to be up
 demo-health:

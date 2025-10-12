@@ -3,8 +3,8 @@ services:
   ingress:
     image: shieldx/ingress:dev
     build:
-      context: ../../
-      dockerfile: docker/Dockerfile.ingress
+      context: ../../..
+      dockerfile: infrastructure/docker-compose/docker/Dockerfile.ingress
       args:
         GO_TAGS: otelotlp
     environment:
@@ -20,8 +20,8 @@ services:
   locator:
     image: shieldx/locator:dev
     build:
-      context: ../../
-      dockerfile: docker/Dockerfile.locator
+      context: ../../..
+      dockerfile: infrastructure/docker-compose/docker/Dockerfile.locator
       args:
         GO_TAGS: otelotlp
     environment:
@@ -38,8 +38,8 @@ services:
   shieldx-gateway:
     image: shieldx/shieldx-gateway:dev
     build:
-      context: ../../
-      dockerfile: docker/Dockerfile.shieldx-gateway
+      context: ../../..
+      dockerfile: infrastructure/docker-compose/docker/Dockerfile.shieldx-gateway
       args:
         GO_TAGS: otelotlp
     environment:
@@ -56,8 +56,8 @@ services:
   contauth:
     image: shieldx/contauth:dev
     build:
-      context: ../../
-      dockerfile: docker/Dockerfile.contauth
+      context: ../../..
+      dockerfile: infrastructure/docker-compose/docker/Dockerfile.contauth
       args:
         GO_TAGS: otelotlp
     environment:
@@ -75,8 +75,8 @@ services:
   verifier-pool:
     image: shieldx/verifier-pool:dev
     build:
-      context: ../../
-      dockerfile: docker/Dockerfile.verifier-pool
+      context: ../../..
+      dockerfile: infrastructure/docker-compose/docker/Dockerfile.verifier-pool
       args:
         GO_TAGS: otelotlp
     environment:
@@ -93,8 +93,8 @@ services:
   ml-orchestrator:
     image: shieldx/ml-orchestrator:dev
     build:
-      context: ../../
-      dockerfile: docker/Dockerfile.ml-orchestrator
+      context: ../../..
+      dockerfile: infrastructure/docker-compose/docker/Dockerfile.ml-orchestrator
       args:
         GO_TAGS: otelotlp
     environment:
@@ -111,8 +111,8 @@ services:
   policy-rollout:
     image: shieldx/policy-rollout:dev
     build:
-      context: ../../
-      dockerfile: docker/Dockerfile.policy-rollout
+      context: ../../..
+      dockerfile: infrastructure/docker-compose/docker/Dockerfile.policy-rollout
     environment:
       - POLICY_ROLLOUT_PORT=8099
     ports:

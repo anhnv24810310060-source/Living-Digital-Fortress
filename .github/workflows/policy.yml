@@ -4,8 +4,8 @@ on:
   pull_request:
     paths:
       - 'pkg/policy/**'
-      - 'policies/**'
-      - 'policy-tests/**'
+      - 'services/shieldx-policy/policies/**'
+      - 'services/shieldx-policy/policy-tests/**'
       - 'Makefile'
 
 jobs:
@@ -18,7 +18,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version-file: go.mod
       - name: Install opa and conftest
         run: |
           curl -L -o opa https://openpolicyagent.org/downloads/latest/opa_linux_amd64
@@ -28,11 +28,11 @@ jobs:
       - name: Build policyctl
         run: |
           mkdir -p bin dist
-          go build -o bin/policyctl ./cmd/policyctl
+          go build -o bin/policyctl ./tools/cli/cmd/policyctl
       - name: Bundle policy (produce digest)
         run: |
           set -e
-          DIGEST_LINE=$(./bin/policyctl bundle -dir policies/demo -out dist/policy-bundle.zip | grep '^digest:')
+          DIGEST_LINE=$(./bin/policyctl bundle -dir services/shieldx-policy/policies/demo -out dist/policy-bundle.zip | grep '^digest:')
           echo "$DIGEST_LINE" | awk '{print $2}' > dist/digest.txt
           echo "Digest=$(cat dist/digest.txt)"
       - name: Install Cosign
@@ -49,7 +49,7 @@ jobs:
           cosign verify-blob --signature dist/policy-bundle.cosign.sig dist/digest.txt
       - name: OPA unit tests
         run: |
-          opa test -v policy-tests
+          opa test -v services/shieldx-policy/policy-tests
       - name: Conftest check (example)
         run: |
-          conftest test policy-tests/fixtures/deployment.json -p policy-tests
+          conftest test services/shieldx-policy/policy-tests/fixtures/deployment.json -p services/shieldx-policy/policy-tests

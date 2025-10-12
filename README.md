@@ -214,14 +214,12 @@ graph LR
 
 -----
 
-## 🚀 Getting Started
+## 🚀 Setup cho môi trường Developer
+
 For a fast setup and local development environment, please follow the dedicated setup guide:
+*(English: [Developer Local Setup](./docs/local-setup.md))*
 
-➡️ **[Local Setup Guide → `docs/local-setup.md`](./docs/local-setup.md)**
 
-That guide includes all prerequisites, installation commands for Ubuntu/macOS, and step-by-step setup instructions to get ShieldX running locally.
-
----
 
 
 ## 👨‍💻 Development Guide
