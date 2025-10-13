@@ -15,6 +15,7 @@ import (
 	"time"
 
 	otelobs "shieldx/shared/shieldx-common/pkg/observability/otel"
+	"shieldx/shared/shieldx-common/pkg/metrics"
 	"shieldx/shared/shieldx-common/pkg/policy"
 )
 
@@ -25,6 +26,12 @@ type state struct {
 	verifyFail    uint64
 	rolloutPct    uint64       // 0..100
 	lastSource    atomic.Value // string (url or manual)
+	// metrics
+	reg           *metrics.Registry
+	mVerifyOK     *metrics.Counter
+	mVerifyFail   *metrics.Counter
+	mDriftTotal   *metrics.Counter
+	mRolloutGauge *metrics.Gauge
 }
 
 func (s *state) digest() string {
@@ -40,7 +47,17 @@ func main() {
 	if v := os.Getenv("POLICY_ROLLOUT_PORT"); v != "" {
 		addr = ":" + v
 	}
-	st := &state{}
+	// metrics registry
+	reg := metrics.NewRegistry()
+	st := &state{reg: reg}
+	st.mVerifyOK = metrics.NewCounter("policy_verify_success_total", "Total successful policy verifications")
+	st.mVerifyFail = metrics.NewCounter("policy_verify_failure_total", "Total failed policy verifications")
+	st.mDriftTotal = metrics.NewCounter("policy_drift_events_total", "Total detected policy drift events")
+	st.mRolloutGauge = metrics.NewGauge("policy_rollout_percentage", "Current canary rollout percentage")
+	reg.Register(st.mVerifyOK)
+	reg.Register(st.mVerifyFail)
+	reg.Register(st.mDriftTotal)
+	reg.RegisterGauge(st.mRolloutGauge)
 	st.currentDigest.Store("")
 	atomic.StoreUint64(&st.rolloutPct, 10)
 	// Optional registry digest polling for drift detection
@@ -52,13 +69,8 @@ func main() {
 		}
 	}
 
-	http.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
-		fmt.Fprintf(w, "policy_verify_success_total %d\n", atomic.LoadUint64(&st.verifyOK))
-		fmt.Fprintf(w, "policy_verify_failure_total %d\n", atomic.LoadUint64(&st.verifyFail))
-		fmt.Fprintf(w, "policy_drift_events_total %d\n", atomic.LoadUint64(&st.driftCount))
-		fmt.Fprintf(w, "policy_rollout_percentage %d\n", atomic.LoadUint64(&st.rolloutPct))
-	})
+	// Expose metrics via registry
+	http.Handle("/metrics", reg)
 
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) })
 
@@ -82,6 +94,7 @@ func main() {
 				w.Header().Set("x-verify-status", "fail")
 				w.Header().Set("x-verify-source", req.URL)
 				atomic.AddUint64(&st.verifyFail, 1)
+				st.mVerifyFail.Inc()
 				http.Error(w, "verify failed: "+verr.Error(), 400)
 				return
 			}
@@ -89,9 +102,11 @@ func main() {
 			w.Header().Set("x-verify-source", req.URL)
 			w.Header().Set("x-verify-digest", digest)
 			atomic.AddUint64(&st.verifyOK, 1)
+			st.mVerifyOK.Inc()
 			st.currentDigest.Store(digest)
 			st.lastSource.Store(req.URL)
 			atomic.StoreUint64(&st.rolloutPct, 10)
+			st.mRolloutGauge.Set(10)
 			w.WriteHeader(202)
 			_, _ = w.Write([]byte(fmt.Sprintf("canary started (digest %s) in %s", digest, time.Since(start))))
 			return
@@ -103,13 +118,16 @@ func main() {
 		// fallback: plain digest + self-signed demo (Noop)
 		if err := policy.VerifyDigest(policy.NoopVerifier{}, req.Digest, []byte(req.Digest)); err != nil {
 			atomic.AddUint64(&st.verifyFail, 1)
+			st.mVerifyFail.Inc()
 			http.Error(w, "verify failed", 400)
 			return
 		}
 		atomic.AddUint64(&st.verifyOK, 1)
+		st.mVerifyOK.Inc()
 		st.currentDigest.Store(req.Digest)
 		st.lastSource.Store("manual")
 		atomic.StoreUint64(&st.rolloutPct, 10)
+		st.mRolloutGauge.Set(10)
 		w.WriteHeader(202)
 		_, _ = w.Write([]byte("canary started"))
 	})
@@ -122,6 +140,7 @@ func main() {
 			// simulate drift 5% chance
 			if rand.Intn(100) < 5 {
 				atomic.AddUint64(&st.driftCount, 1)
+				st.mDriftTotal.Inc()
 			}
 			// simulate canary promotion
 			p := atomic.LoadUint64(&st.rolloutPct)
@@ -129,9 +148,11 @@ func main() {
 				// simulate SLO check pass 80%
 				if rand.Intn(100) < 80 {
 					atomic.StoreUint64(&st.rolloutPct, p+10)
+					st.mRolloutGauge.Set(p + 10)
 				} else {
 					// rollback
 					atomic.StoreUint64(&st.rolloutPct, 0)
+					st.mRolloutGauge.Set(0)
 					st.currentDigest.Store("")
 				}
 			}
@@ -160,6 +181,7 @@ func main() {
 				local := st.digest()
 				if local != "" && local != remote {
 					atomic.AddUint64(&st.driftCount, 1)
+					st.mDriftTotal.Inc()
 				}
 			}
 		}()
@@ -169,7 +191,10 @@ func main() {
 	shutdown := otelobs.InitTracer("policy_rollout")
 	defer shutdown(nil)
 	mux := http.DefaultServeMux
-	h := otelobs.WrapHTTPHandler("policy_rollout", mux)
+	// Add HTTP metrics middleware
+	httpMetrics := metrics.NewHTTPMetrics(reg, "policy_rollout")
+	h := httpMetrics.Middleware(mux)
+	h = otelobs.WrapHTTPHandler("policy_rollout", h)
 	log.Printf("policy-rollout listening on %s", addr)
 	log.Fatal(http.ListenAndServe(addr, h))
 }

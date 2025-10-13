@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"shieldx/shared/shieldx-common/pkg/auth"
+	"shieldx/shared/shieldx-common/pkg/metrics"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -123,8 +124,13 @@ func main() {
 		},
 	})
 
+	// Metrics registry and HTTP metrics middleware
+	reg := metrics.NewRegistry()
+	httpMetrics := metrics.NewHTTPMetrics(reg, "auth_service")
+
 	// Setup routes
 	mux := http.NewServeMux()
+	mux.Handle("/metrics", reg)
 
 	// Public endpoints
 	mux.HandleFunc("/health", healthHandler)
@@ -156,7 +162,8 @@ func main() {
 	log.Printf("🔒 RBAC Engine loaded with %d default roles", len(auth.GetDefaultRoles()))
 	log.Printf("🌐 OAuth2 Provider initialized with %d clients", 2)
 
-	if err := http.ListenAndServe(":"+port, mux); err != nil {
+	h := httpMetrics.Middleware(mux)
+	if err := http.ListenAndServe(":"+port, h); err != nil {
 		log.Fatal("Server failed:", err)
 	}
 }

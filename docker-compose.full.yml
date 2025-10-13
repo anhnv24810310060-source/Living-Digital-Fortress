@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   postgres:
     image: postgres:15-alpine
@@ -45,6 +43,7 @@ services:
       LOG_LEVEL: "info"
       # Dev mode HTTP (no TLS) fallback; remove in production when RA-TLS or certs are configured
       ORCH_ALLOW_INSECURE: "1"
+      ACCESSLOG_FALLBACK_STDOUT: "1"
     ports:
       - "8080:8080"
     volumes:
@@ -90,7 +89,7 @@ services:
     environment:
       GUARDIAN_PORT: "9090"
     ports:
-      - "9090:9090"
+      - "9091:9090"
     volumes:
       - shared-data:/app/data
     networks:
@@ -116,13 +115,15 @@ services:
       GUARDIAN_URL: "http://guardian:9090"
       ORCHESTRATOR_URL: "http://orchestrator:8080"
       REDIS_ADDR: "redis:6379"
-      RATLS_ENABLE: "false"
+      RATLS_ENABLE: "true"
+      RATLS_REQUIRE_CLIENT_CERT: "false"
       ADMISSION_SECRET: "dev-secret-12345"
       ADMISSION_HEADER: "X-ShieldX-Admission"
       LOG_LEVEL: "info"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4318"
     ports:
       - "8081:8081"
+      - "8443:8443"
     depends_on:
       orchestrator:
         condition: service_started
@@ -277,7 +278,7 @@ services:
     volumes:
       - ./infrastructure/kubernetes/pilot/observability/prometheus-scrape.yml:/etc/prometheus/prometheus.yml:ro
     ports:
-      - "9090:9090"
+      - "9092:9090"
     networks:
       - shieldx-net
 

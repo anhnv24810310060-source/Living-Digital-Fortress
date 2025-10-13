@@ -1,4 +1,3 @@
-package threatgraph
 package main
 
 import (
@@ -20,6 +19,11 @@ type ThreatGraphService struct {
 	nodes    map[string]*ThreatNode
 	edges    map[string][]*ThreatEdge
 	registry *metrics.Registry
+	// metrics
+	eventsTotal *metrics.Counter
+	nodesTotal  *metrics.Counter
+	queriesTotal *metrics.Counter
+	highRiskGauge *metrics.Gauge
 }
 
 type ThreatNode struct {
@@ -68,16 +72,25 @@ type ThreatQueryResponse struct {
 }
 
 func NewThreatGraphService() *ThreatGraphService {
-	reg := metrics.NewRegistry("threatgraph")
-	reg.RegisterCounter("threatgraph_events_total", "Total threat events processed")
-	reg.RegisterCounter("threatgraph_nodes_total", "Total threat nodes in graph")
-	reg.RegisterCounter("threatgraph_queries_total", "Total threat graph queries")
-	reg.RegisterGauge("threatgraph_high_risk_nodes", "Number of high-risk nodes")
+	reg := metrics.NewRegistry()
+	// Define and register metrics with HELP/TYPE via registry
+	events := metrics.NewCounter("threatgraph_events_total", "Total threat events processed")
+	nodes := metrics.NewCounter("threatgraph_nodes_total", "Total threat nodes in graph")
+	queries := metrics.NewCounter("threatgraph_queries_total", "Total threat graph queries")
+	highRisk := metrics.NewGauge("threatgraph_high_risk_nodes", "Number of high-risk nodes")
+	reg.Register(events)
+	reg.Register(nodes)
+	reg.Register(queries)
+	reg.RegisterGauge(highRisk)
 
 	return &ThreatGraphService{
-		nodes:    make(map[string]*ThreatNode),
-		edges:    make(map[string][]*ThreatEdge),
-		registry: reg,
+		nodes:         make(map[string]*ThreatNode),
+		edges:         make(map[string][]*ThreatEdge),
+		registry:      reg,
+		eventsTotal:   events,
+		nodesTotal:    nodes,
+		queriesTotal:  queries,
+		highRiskGauge: highRisk,
 	}
 }
 
@@ -99,7 +112,7 @@ func (tg *ThreatGraphService) IngestEvent(event ThreatEvent) error {
 			Metadata:  make(map[string]interface{}),
 		}
 		tg.nodes[nodeID] = node
-		tg.registry.IncrementCounter("threatgraph_nodes_total")
+		tg.nodesTotal.Inc()
 	}
 
 	node.LastSeen = time.Now()
@@ -136,11 +149,11 @@ func (tg *ThreatGraphService) IngestEvent(event ThreatEvent) error {
 		tg.edges[nodeID] = append(tg.edges[nodeID], edge)
 	}
 
-	tg.registry.IncrementCounter("threatgraph_events_total")
+	tg.eventsTotal.Inc()
 	
 	// Update high-risk gauge
 	if node.Score >= 0.7 {
-		tg.registry.SetGauge("threatgraph_high_risk_nodes", float64(tg.countHighRiskNodes()))
+		tg.highRiskGauge.Set(uint64(tg.countHighRiskNodes()))
 	}
 
 	return nil
@@ -160,7 +173,7 @@ func (tg *ThreatGraphService) Query(req ThreatQueryRequest) *ThreatQueryResponse
 	tg.mu.RLock()
 	defer tg.mu.RUnlock()
 
-	tg.registry.IncrementCounter("threatgraph_queries_total")
+	tg.queriesTotal.Inc()
 
 	nodes := []*ThreatNode{}
 	edges := []*ThreatEdge{}
@@ -308,12 +321,13 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(map[string]string{"status": "healthy"})
 	})
-	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
-		service.registry.WriteMetrics(w)
-	})
+	// Standard Prometheus exposition via registry
+	mux.Handle("/metrics", service.registry)
 
-	handler := metrics.HTTPMetrics(mux, service.registry, "threatgraph")
-	handler = otelobs.WrapHTTPHandler(handler, "threatgraph")
+	// HTTP metrics middleware + OTEL wrapping
+	httpMetrics := metrics.NewHTTPMetrics(service.registry, "threatgraph")
+	handler := httpMetrics.Middleware(mux)
+	handler = otelobs.WrapHTTPHandler("threatgraph", handler)
 
 	addr := ":" + port
 	log.Printf("ThreatGraph service starting on %s", addr)

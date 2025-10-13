@@ -1,8 +1,5 @@
 # Use bash for improved shell features
 SHELL := /bin/bash
-
-# ShieldX Cloud Build System
-
 .PHONY: all build test clean firecracker ebpf ml-orchestrator observability prom grafana
 .PHONY: demo-health fmt lint sbom sign release otel-up otel-down slo-check
 
@@ -48,6 +45,7 @@ sign:
 PROJECT ?= shieldx
 COMPOSE_FILES ?= docker-compose.full.yml
 COMPOSE := docker compose -p $(PROJECT) -f $(COMPOSE_FILES)
+HEALTH_TIMEOUT ?= 60
 
 # Known service names (from docker-compose.full.yml)
 SERVICES := postgres redis orchestrator locator guardian ingress ml-orchestrator verifier-pool shieldx-gateway auth-service contauth policy-rollout otel-collector prometheus grafana
@@ -124,24 +122,72 @@ dev-shell: dev-env-check
 dev-health:
 	@echo "=== ShieldX Dev Health Check ==="; \
 	failures=0; \
+	ADM_SECRET="dev-secret-12345"; ADM_MIN=$$(($$(date +%s)/60)); \
+	ADM_TOKEN=$$(printf "%s|%s" "$$ADM_MIN" "ingress" | openssl dgst -sha256 -hmac "$$ADM_SECRET" -binary | xxd -p -c 256); \
+	curl_do() { url="$$1"; shift; if [[ "$$url" == https://localhost:8081/* ]]; then curl -skf --connect-timeout 1 -H "X-ShieldX-Admission: $$ADM_TOKEN" "$$url" "$$@"; else curl -sf --connect-timeout 1 "$$url" "$$@"; fi; }; \
 	check() { name="$$1"; url="$$2"; timeout="$$3"; i=0; \
-	  until curl -sf --connect-timeout 1 "$$url" >/dev/null 2>&1; do \
+	  until curl_do "$$url" >/dev/null 2>&1; do \
 		if [ "$$i" -ge "$$timeout" ]; then echo "  ❌ $$name not ready: $$url"; failures=$$((failures+1)); return; fi; \
 		i=$$((i+1)); sleep 1; \
 	  done; echo "  ✅ $$name OK"; }; \
-	check orchestrator      http://localhost:8080/health 120; \
-	check ingress           http://localhost:8081/health 120; \
-	check shieldx-gateway   http://localhost:8082/health 120; \
-	check locator           http://localhost:8083/healthz 120; \
-	check auth-service      http://localhost:8084/health 120; \
-	check ml-orchestrator   http://localhost:8087/health 120; \
-	check verifier-pool     http://localhost:8090/health 120; \
-	check contauth          http://localhost:5002/health 120; \
-	check policy-rollout    http://localhost:8099/health 120; \
-	check guardian          http://localhost:9090/healthz 120; \
-	check prometheus        http://localhost:9090/-/healthy 120; \
-	check grafana           http://localhost:3000/api/health 120; \
+	check orchestrator      http://localhost:8080/health $(HEALTH_TIMEOUT); \
+	# Ingress uses TLS in dev via RA-TLS; require Admission header; allow self-signed
+	check ingress           https://localhost:8081/healthz $(HEALTH_TIMEOUT); \
+	check shieldx-gateway   http://localhost:8082/health $(HEALTH_TIMEOUT); \
+	check locator           http://localhost:8083/healthz $(HEALTH_TIMEOUT); \
+	check auth-service      http://localhost:8084/health $(HEALTH_TIMEOUT); \
+	check ml-orchestrator   http://localhost:8087/health $(HEALTH_TIMEOUT); \
+	check verifier-pool     http://localhost:8090/health $(HEALTH_TIMEOUT); \
+	check contauth          http://localhost:5002/health $(HEALTH_TIMEOUT); \
+	check policy-rollout    http://localhost:8099/health $(HEALTH_TIMEOUT); \
+	check guardian          http://localhost:9091/healthz $(HEALTH_TIMEOUT); \
+	check prometheus        http://localhost:9092/-/healthy $(HEALTH_TIMEOUT); \
+	check grafana           http://localhost:3000/api/health $(HEALTH_TIMEOUT); \
 	if [ "$$failures" -gt 0 ]; then echo "=== Result: $$failures failures"; exit 1; else echo "=== Result: all healthy"; fi
+
+.PHONY: dev-health-fast
+dev-health-fast:
+	@echo "=== ShieldX Dev Health Check (fast) ==="; \
+	ADM_SECRET="dev-secret-12345"; ADM_MIN=$$(($$(date +%s)/60)); \
+	ADM_TOKEN=$$(printf "%s|%s" "$$ADM_MIN" "ingress" | openssl dgst -sha256 -hmac "$$ADM_SECRET" -binary | xxd -p -c 256); \
+	curl_do() { url="$$1"; shift; if [[ "$$url" == https://localhost:8081/* ]]; then curl -skf --connect-timeout 1 --max-time 2 -H "X-ShieldX-Admission: $$ADM_TOKEN" "$$url" "$$@"; else curl -sf --connect-timeout 1 --max-time 2 "$$url" "$$@"; fi; }; \
+	declare -a NAMES=( \
+	  orchestrator ingress shieldx-gateway locator auth-service ml-orchestrator \
+	  verifier-pool contauth policy-rollout guardian prometheus grafana \
+	); \
+	declare -a URLS=( \
+	  http://localhost:8080/health \
+	  https://localhost:8081/healthz \
+	  http://localhost:8082/health \
+	  http://localhost:8083/healthz \
+	  http://localhost:8084/health \
+	  http://localhost:8087/health \
+	  http://localhost:8090/health \
+	  http://localhost:5002/health \
+	  http://localhost:8099/health \
+	  http://localhost:9091/healthz \
+	  http://localhost:9092/-/healthy \
+	  http://localhost:3000/api/health \
+	); \
+	failures=0; \
+	tmpdir=$$(mktemp -d); \
+	for i in "$${!NAMES[@]}"; do \
+	  ( \
+	    name="$${NAMES[$$i]}"; url="$${URLS[$$i]}"; tries=0; max=20; \
+	    until curl_do "$$url" >/dev/null 2>&1; do \
+	      tries=$$((tries+1)); [ "$$tries" -ge "$$max" ] && { echo "  ❌ $$name not ready: $$url" > "$$tmpdir/$$name"; exit 0; }; \
+	      sleep 0.5; \
+	    done; echo "  ✅ $$name OK" > "$$tmpdir/$$name"; \
+	  ) & \
+	done; \
+	wait; \
+	for f in "$$tmpdir"/*; do cat "$$f"; [[ $$(cat "$$f") == *"❌"* ]] && failures=$$((failures+1)); done; \
+	rm -rf "$$tmpdir"; \
+	if [ "$$failures" -gt 0 ]; then echo "=== Result: $$failures failures"; exit 1; else echo "=== Result: all healthy"; fi
+
+.PHONY: metrics-check
+metrics-check:
+	@bash tools/testing/metrics-check.sh
 
 ## OpenTelemetry stack management (observability demo compose)
 otel-up:
