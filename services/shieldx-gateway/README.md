@@ -1,3 +1,27 @@
+## Ingress Redirect Configuration
+
+Simple env-driven redirect rules can be enabled to remap incoming hosts to target customer domains.
+
+- INGRESS_REDIRECT: Comma-separated rules `from->to`. `from` supports exact host, `*.example.com`, or `default`. `to` is a hostname.
+- INGRESS_REDIRECT_SCHEME: Scheme for redirects, default `https`.
+- INGRESS_REDIRECT_CODE: HTTP code, default `307` (supports 301/302/307).
+- INGRESS_REDIRECT_ALLOW: Allowlist of target hosts. If empty, it is derived from `to` hosts plus `default` target.
+
+Examples:
+
+- `INGRESS_REDIRECT="old.com->new.com"`
+- `INGRESS_REDIRECT="*.tenant.io->customer.example.com"`
+- `INGRESS_REDIRECT="old.com->new.com, *.tenant.io->customer.example.com, default->customer.example.com"`
+- `INGRESS_REDIRECT_ALLOW="new.com,customer.example.com"`
+
+Security notes:
+
+- Set `INGRESS_REDIRECT_ALLOW` in production to avoid open redirects.
+- Redirect runs after admission/rate-limit filters and preserves path/query.
+
+Further reading:
+- See full setup and deployment guide in `docs/INGRESS-REDIRECT-SETUP.md`.
+
 # ShieldX Gateway - Production Central Orchestrator
 
 ## Overview

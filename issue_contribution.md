@@ -304,3 +304,120 @@ Ghi chú: Một số cấu hình có thể chấp nhận trong môi trường de
 - Vị trí: `services/shieldx-gateway/ingress/main.go` (XDP, QUIC), `.../masque/main.go`.
 - Đề xuất: Flag gating chặt chẽ; yêu cầu mTLS; audit log khi bật; default off prod nếu không cần.
 - Hoàn thành khi: Prod không expose QUIC/XDP trừ khi explicit; kiểm tra port scan.
+
+---
+
+## Bổ sung phát hiện mới (tiếp)
+
+39) InsecureSkipVerify=true trong Guardian QUIC client (MITM risk)
+- Mô tả: Guardian gọi MASQUE qua QUIC với `&tls.Config{InsecureSkipVerify: true}` → không xác thực chứng chỉ server, có thể bị MITM/impersonation.
+- Vị trí: `services/shieldx-forensics/guardian/main.go:683` (hàm `masqueSingleExchange`).
+- Đề xuất: Bật xác thực server: cung cấp CA tin cậy hoặc certificate pinning (Public Key Pinning/SPKI); cấu hình SAN/hostname check; cân nhắc mTLS.
+- Hoàn thành khi: Kết nối QUIC fail nếu cert sai; integration test kiểm tra hostname/cert pin pass.
+
+40) Nhiều service chạy HTTP thuần (không TLS) ở runtime
+- Mô tả: Các services lắng nghe bằng `http.ListenAndServe` trực tiếp → nếu hở ra ngoài mạng/k8s ingress có thể bị sniff/MITM.
+- Vị trí (ví dụ tiêu biểu):
+  - `services/shieldx-auth/auth-service/main.go:166`
+  - `services/shieldx-policy/policy-rollout/main.go:199`
+  - `services/shieldx-forensics/threatgraph/writer.go:240`, `.../threatgraph/main.go:334`, `.../anchor/main.go:74`, `.../guardian/main.go:637`
+  - `services/shieldx-deception/decoy-manager/main.go:255`, `.../decoy-http/main.go:50`, `.../sinkhole/main.go:73`, `.../shapeshifter/main.go:294`
+  - `services/shieldx-sandbox/autoheal/main.go:25`
+  - `services/shieldx-admin/marketplace/main.go:49`, `.../webapi/main.go:184`
+  - `shared/shieldx-sdk/plugin_registry/main.go:53`
+  - `services/shieldx-gateway/masque/main.go:64`
+- Đề xuất: Ẩn sau gateway nội bộ/tái sử dụng listener TLS chuẩn; hoặc ràng buộc networkPolicy để chỉ nội bộ truy cập; bật mTLS khi liên-service.
+- Hoàn thành khi: Prod không có cổng HTTP public; kiểm thử nmap/sslyze xác nhận chỉ TLS/mTLS.
+
+41) OAuth2 ClientSecret hardcode trong Auth Service (demo secrets)
+- Mô tả: `ClientSecret: "demo-secret-change-in-production"` và `"mobile-secret-change-in-production"` tồn tại trong code → dễ bị lạm dụng nếu triển khai nhầm ở prod.
+- Vị trí: `services/shieldx-auth/auth-service/main.go:87`, `:98`.
+- Đề xuất: Đọc client secret từ secret store/biến môi trường; không commit secret mẫu; fail-fast nếu thiếu secret ở prod profile.
+- Hoàn thành khi: Secrets không còn trong code; CI kiểm tra block khi phát hiện chuỗi này; runtime yêu cầu secret hợp lệ.
+
+42) PQC Service: CORS "*" và API key mặc định yếu
+- Mô tả: `Access-Control-Allow-Origin: *` và `PQC_API_KEY` default `default_pqc_key` → dễ bị lạm dụng từ web origins tùy ý.
+- Vị trí: `services/shieldx-auth/pqc-service/main.go:350` (CORS), `.../pqc-service/main.go` (hàm `validateToken`).
+- Đề xuất: Dùng allowlist origin; buộc API key mạnh từ secret; cân nhắc JWT/mTLS thay API key; thêm rate-limit/log.
+- Hoàn thành khi: Chỉ origin hợp lệ được phép; key mặc định bị loại bỏ; test CORS/401 pass.
+
+43) Sử dụng crypto/md5 trong Credits sharding (không phù hợp mục đích bảo mật)
+- Mô tả: Import `crypto/md5` trong cơ chế sharding; nếu dùng cho mục đích bảo mật (ví dụ ký, token) là không an toàn; nếu chỉ băm phân phối khoá có thể chấp nhận nhưng nên cân nhắc thuật toán tốt hơn.
+- Vị trí: `services/shieldx-credits/credits/sharding_engine.go:5`.
+- Đề xuất: Xác nhận phạm vi sử dụng chỉ cho sharding (không bảo mật); cân nhắc thay bằng `sha256`/`xxhash` tùy yêu cầu; ghi chú rõ trong code.
+- Hoàn thành khi: Audit code xác nhận không dùng md5 cho bảo mật; cập nhật docs/comment; (nếu đổi) benchmark ổn.
+
+44) Khả năng Command Injection trong Gateway Ingress (dùng `sh -c` + format chuỗi)
+- Mô tả: Nhiều lệnh shell xây dựng qua `fmt.Sprintf` và thực thi bằng `exec.Command("sh", "-c", ...)` với dữ liệu runtime (`iface`, `cidr`, `classid`, `altIface`, …) → rủi ro injection nếu các tham số này có thể bị ảnh hưởng (env/inputs).
+- Vị trí: `services/shieldx-gateway/ingress/main.go` tại các dòng: 154, 164-165, 728, 908, 1339-1363 (tc/ip/nft/wg commands).
+- Đề xuất: 
+  - Whitelist giá trị (regex chặt chẽ cho interface name/IP/classid);
+  - Tránh `sh -c`, dùng `exec.Command` với tham số tách biệt;
+  - Chạy trong context ít quyền (capabilities tối thiểu); audit log lệnh;
+  - Nếu bắt buộc shell, escape mạnh và thêm unit test injection.
+- Hoàn thành khi: Lệnh dùng args tách biệt; inputs được validate; test case chứa ký tự đặc biệt bị từ chối.
+
+45) Dynamic SQL bằng `fmt.Sprintf` cho tên bảng/cột trong Credits
+- Mô tả: Query template được ghép `fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)...")`; dù giá trị dùng `$1..$n`, việc ghép tên bảng/cột từ input có risk injection nếu không whitelist.
+- Vị trí: `services/shieldx-credits/credits/multi_cloud_dr.go:367, 397, 412`.
+- Đề xuất: Whitelist bảng/cột hợp lệ; không nhận từ user; nếu cấu hình, validate nghiêm ngặt; giữ parameterized cho values.
+- Hoàn thành khi: Validation tồn tại; tests với tên bảng xấu bị từ chối.
+
+46) Bỏ qua lỗi JSON unmarshal ở Deception Shadow
+- Mô tả: Một số `json.Unmarshal` không kiểm tra lỗi → dữ liệu không hợp lệ có thể khiến logic sai/ẩn lỗi.
+- Vị trí: `services/shieldx-deception/shadow/evaluator.go:553-554, 633`.
+- Đề xuất: Kiểm tra lỗi và trả 400/log; thêm fuzz test đầu vào.
+- Hoàn thành khi: Tất cả Unmarshal có xử lý lỗi; tests pass.
+
+47) Đọc toàn bộ body không giới hạn ở vài nơi (tiềm ẩn DoS)
+- Mô tả: Sử dụng `io.ReadAll` và bỏ qua lỗi/không giới hạn kích thước.
+- Vị trí ví dụ: `services/shieldx-deception/decoy-http/main.go:76`, `services/shieldx-ml/ml-orchestrator/main.go:823, 914`, `services/shieldx-gateway/ingress/main.go:276`.
+- Đề xuất: Dùng `http.MaxBytesReader` cho request; `io.LimitedReader` với ngưỡng hợp lý; bắt buộc Content-Length và timeout.
+- Hoàn thành khi: >ngưỡng trả 413; benchmark ổn định memory.
+
+48) InsecureSkipVerify trong tooling/tests (FYI)
+- Mô tả: Xuất hiện trong CLI/test/README (không phải prod), nhưng cần đảm bảo không lan sang runtime.
+- Vị trí: `tools/cli/cmd/wch-client/main.go:142,162,378`, `infrastructure/kubernetes/pilot/tests/red-team-test.go:49`, `pkg/wch/README.md`, `shared/shieldx-common/pkg/wch/README.md`, `pkg/ratls/ratls_test.go`.
+- Đề xuất: Rõ chú thích chỉ dành cho test/dev; kiểm CI để ngăn flag này trong mã prod.
+- Hoàn thành khi: CI rule tồn tại; không còn InsecureSkipVerify trong mã service prod.
+
+49) REDIS_PASSWORD có thể rỗng (auth yếu) trong Auth Service
+- Mô tả: Cho phép `REDIS_PASSWORD` rỗng → nếu Redis lộ ra mạng nội bộ có thể bị truy cập trái phép.
+- Vị trí: `services/shieldx-auth/auth-service/main.go:20, 32, 51, 62`.
+- Đề xuất: Prod bắt buộc mật khẩu/ACL; fail-fast nếu biến rỗng; TLS giữa app↔Redis nếu qua mạng.
+- Hoàn thành khi: Khởi động prod fail nếu thiếu pass; healthcheck xác nhận ACL.
+
+50) MASQUE QUIC: TLS cấu hình tự cấp phát không ràng buộc trust (dev path)
+- Mô tả: `generateInsecureTLSConfig()` tạo cert tự ký cho QUIC MASQUE (phục vụ dev), nếu bật nhầm prod sẽ thiếu trust/bảo mật.
+- Vị trí: `services/shieldx-gateway/masque/main.go:147-150`.
+- Đề xuất: Tách profile dev/prod; prod dùng RA-TLS/cert hợp lệ; thêm client auth.
+- Hoàn thành khi: Prod không còn codepath insecure; test mTLS pass.
+
+51) JWT chưa kiểm tra Issuer/Audience ràng buộc (bỏ sót xác thực ngữ cảnh)
+- Mô tả: Hàm `ValidateToken` chỉ kiểm tra phương thức ký và hạn dùng; không ràng buộc Issuer/Audience với giá trị kỳ vọng → có thể chấp nhận token hợp lệ về chữ ký nhưng phát hành từ issuer khác.
+- Vị trí: `pkg/auth/jwt_manager.go` và `shared/shieldx-common/pkg/auth/jwt_manager.go` (hàm `ValidateToken`).
+- Đề xuất: Dùng parser với tùy chọn chặt: `jwt.NewParser(jwt.WithValidMethods(["RS256"]), jwt.WithIssuer(expectedIssuer), jwt.WithAudience(expectedAud))`; sau khi parse, kiểm tra thêm `claims.Issuer`, `claims.Audience`, `claims.Subject` theo config; cân nhắc `kid` rotation và JWKS.
+- Hoàn thành khi: Unit test token sai issuer/audience bị từ chối; cấu hình issuer/aud tồn tại qua biến môi trường/secret.
+
+52) ThreatGraph dùng default Neo4j password "password"
+- Mô tả: Biến `NEO4J_PASSWORD` có default "password" → nếu chạy dev cấu hình này ở môi trường hở mạng sẽ rất yếu.
+- Vị trí: `services/shieldx-forensics/threatgraph/writer.go` (khối `main()`), có `neo4jPassword := getEnv("NEO4J_PASSWORD", "password")`.
+- Đề xuất: Không có default ở prod; đọc từ secret store; fail-fast nếu thiếu; bật Neo4j TLS và user có quyền tối thiểu; đổi mật khẩu mặc định khi khởi tạo.
+- Hoàn thành khi: Prod không nhận default; kiểm tra khởi động fail nếu thiếu mật khẩu; connection yêu cầu TLS và cred mạnh.
+
+---
+
+## Tự động hóa và guardrails đề xuất
+
+- Thêm SAST vào CI:
+  - Gosec: quét `./...` và block PR với mức độ >= medium. Tập trung các rule: G402 (TLS InsecureSkipVerify), G104 (Unhandled errors), G304 (file path from untrusted), G204 (Subprocess launched with variable), SQL injection patterns.
+  - Semgrep: rules go security, jwt best practices, http server hardening, SSRF; custom rules phát hiện `http.Get(` không timeout/limit.
+- Image/dep scanning:
+  - Trivy scan images trong pipeline; `go list -m -u all` + `govulncheck` cho modules.
+- Pre-commit hooks: chạy `gofmt -s`, `golangci-lint`, `gosec -quiet`, `semgrep —error`.
+- Build profiles:
+  - Distinguish dev/prod via build tags/env; fail-fast ở prod khi phát hiện: secrets default, ORCH_ALLOW_INSECURE, CORS "*", InsecureSkipVerify.
+- Tests tối thiểu thêm:
+  - SSRF denylist (localhost, 169.254/16, RFC1918), size/timeouts cho tải file; JWT issuer/aud validation; MaxBytesReader ở endpoints POST nặng.
+- Tài liệu/SOP:
+  - Quy trình rotate secrets (JWT/Admission/Neo4j); chuẩn hóa CORS/headers; network policy cho /metrics và health.

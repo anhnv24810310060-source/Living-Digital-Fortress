@@ -13,6 +13,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -1087,6 +1088,15 @@ func main() {
 			http.Error(w, "rate limit", http.StatusTooManyRequests)
 			return
 		}
+		// Optional redirect middleware (simple, env-driven)
+		if redirectInitOnce.Do(loadRedirectConfig); redirectEnabled {
+			if dst, ok := chooseRedirectHost(r.Host, r.URL); ok {
+				if allowedRedirectTarget(dst) {
+					http.Redirect(w, r, buildRedirectURL(dst, r.URL), redirectCode)
+					return
+				}
+			}
+		}
 		mux.ServeHTTP(w, r)
 	}))
 	h := otelobs.WrapHTTPHandler(serviceName, baseH)
@@ -1192,6 +1202,102 @@ func main() {
 		log.Fatalf("TLS required: set RATLS_ENABLE=true or provide INGRESS_TLS_CERT_FILE/INGRESS_TLS_KEY_FILE env vars")
 	}
 }
+
+// --- Redirect support (INGRESS_REDIRECT) ---
+var (
+	redirectEnabled bool
+	redirectRules   []redirRule
+	redirectDefaultHost string
+	redirectAllowedTargets map[string]struct{}
+	redirectScheme string
+	redirectCode   int
+	redirectInitOnce sync.Once
+)
+
+type redirRule struct{
+	from string // host or wildcard like *.example.com
+	to   string // target host
+}
+
+func loadRedirectConfig(){
+	cfg := strings.TrimSpace(os.Getenv("INGRESS_REDIRECT"))
+	redirectEnabled = cfg != ""
+	redirectScheme = getenvDefault("INGRESS_REDIRECT_SCHEME", "https")
+	redirectCode = getenvInt("INGRESS_REDIRECT_CODE", 307)
+	redirectRules, redirectDefaultHost = parseRedirectRules(cfg)
+	// allowlist: explicit or derive from rule targets
+	allow := parseSet(os.Getenv("INGRESS_REDIRECT_ALLOW"))
+	if len(allow) == 0 {
+		allow = map[string]struct{}{}
+		for _, r := range redirectRules { if r.to != "" { allow[r.to] = struct{}{} } }
+		if redirectDefaultHost != "" { allow[redirectDefaultHost] = struct{}{} }
+	}
+	redirectAllowedTargets = allow
+}
+
+func parseRedirectRules(s string)([]redirRule, string){
+	var rules []redirRule
+	var def string
+	for _, seg := range strings.Split(s, ","){
+		seg = strings.TrimSpace(seg)
+		if seg == "" { continue }
+		kv := strings.SplitN(seg, "->", 2)
+		if len(kv) != 2 { continue }
+		left := strings.ToLower(strings.TrimSpace(kv[0]))
+		right := hostOnly(strings.ToLower(strings.TrimSpace(kv[1])))
+		if left == "default" { def = right; continue }
+		if left == "" || right == "" { continue }
+		rules = append(rules, redirRule{from:left, to:right})
+	}
+	return rules, def
+}
+
+func allowedRedirectTarget(host string) bool {
+	h := hostOnly(host)
+	if len(redirectAllowedTargets) == 0 { return true }
+	_, ok := redirectAllowedTargets[h]
+	return ok
+}
+
+func chooseRedirectHost(reqHost string, u *url.URL) (string, bool){
+	rh := hostOnly(reqHost)
+	// exact match
+	for _, r := range redirectRules {
+		if !strings.Contains(r.from, "*") && strings.EqualFold(r.from, rh) {
+			if r.to != "" && !sameHost(r.to, rh) { return r.to, true }
+		}
+	}
+	// wildcard match: *.example.com
+	parts := strings.Split(rh, ".")
+	for _, r := range redirectRules {
+		if strings.HasPrefix(r.from, "*.") {
+			suf := strings.TrimPrefix(r.from, "*.")
+			if strings.HasSuffix(rh, "."+suf) && r.to != "" && !sameHost(r.to, rh) {
+				return r.to, true
+			}
+		}
+	}
+	if redirectDefaultHost != "" && !sameHost(redirectDefaultHost, rh) {
+		return redirectDefaultHost, true
+	}
+	return "", false
+}
+
+func buildRedirectURL(host string, u *url.URL) string {
+	nu := url.URL{Scheme: redirectScheme, Host: host, Path: u.EscapedPath(), RawQuery: u.RawQuery, Fragment: u.Fragment}
+	return nu.String()
+}
+
+func hostOnly(h string) string {
+	h = strings.TrimSpace(strings.ToLower(h))
+	if h == "" { return "" }
+	if strings.Contains(h, ":") {
+		if host, _, err := net.SplitHostPort(h); err == nil { return host }
+	}
+	return h
+}
+
+func sameHost(a,b string) bool { return hostOnly(a) == hostOnly(b) }
 
 func normalizeHTU(r *http.Request) string {
 	u := *r.URL
