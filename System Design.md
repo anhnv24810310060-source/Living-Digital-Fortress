@@ -1,33 +1,42 @@
-ShieldX System Documentation
+# ShieldX System Documentation
 System Overview
 ShieldX is an advanced network security system designed to protect web applications and APIs from cyber attacks. The system uses AI/ML technology, deception technology and sandbox isolation to detect and prevent threats.
 
 
-Overall Architecture
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Edge Workers  │    │   Load Balancer │    │   Web Console   │
-│   (Cloudflare)  │    │   (HAProxy)     │    │   (React)       │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-         │                       │                       │
-┌─────────────────────────────────────────────────────────────────┐
-│                    Core Services Layer                          │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐            │
-│  │Orchestrator │  │   Ingress   │  │  Guardian   │            │
-│  │   (8080)    │  │   (8081)    │  │   (9090)    │            │
-│  └─────────────┘  └─────────────┘  └─────────────┘            │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐            │
-│  │   Credits   │  │  ContAuth   │  │   Shadow    │            │
-│  │   (5004)    │  │   (5002)    │  │   (5005)    │            │
-│  └─────────────┘  └─────────────┘  └─────────────┘            │
-└─────────────────────────────────────────────────────────────────┘
-         │                       │                       │
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   PostgreSQL    │    │     Redis       │    │   Firecracker   │
-│   (Database)    │    │   (Cache)       │    │   (Sandbox)     │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
+# Overall Architecture 
 
-Main Components
-1. Orchestrator Service (Port 8080)
+
+```mermaid
+graph LR
+    Client["👨💻<br/>Client"] --> Ingress["🚪<br/>Ingress Gateway<br/>Port 8081"]
+    Ingress --> Orchestrator["🧠<br/>Orchestrator<br/>Port 8080"]
+
+    Orchestrator --> Guardian["🛡️<br/>Guardian<br/>Port 9090"]
+    Guardian --> Firecracker["🔥<br/>Firecracker + eBPF"]
+    Firecracker --> Guardian
+
+    Orchestrator --> ContAuth["👤<br/>ContAuth<br/>Port 5002"]
+    Orchestrator --> OPAPolicy["📜<br/>OPA Engine"]
+    Orchestrator --> Credits["💳<br/>Credits<br/>Port 5004"]
+
+    Guardian --> Orchestrator
+    ContAuth --> Orchestrator
+    OPAPolicy --> Orchestrator
+    Credits --> Orchestrator
+
+    Orchestrator --> Decision{"⚖️<br/>Risk Score"}
+    Decision -->|"✅ Safe"| Upstream["🌐<br/>Upstream App"]
+    Decision -->|"⚠️ Suspicious"| MFA["🔐<br/>MFA Challenge"]
+    Decision -->|"❌ Dangerous"| Block["🚫<br/>Block & Log"]
+
+    MFA --> Upstream
+
+    Orchestrator -.-> Locator["🔍<br/>Locator<br/>Port 5008"]
+    Orchestrator -.-> Shadow["🎭<br/>Shadow<br/>Port 5005"]
+```
+
+# Main Components
+### 1. Orchestrator Service (Port 8080)
 Function: Central coordination, request routing
 
 Technology: Go, OPA (Open Policy Agent)
@@ -39,7 +48,7 @@ Load balancing
 Health monitoring
 Metrics collection
 
-2. Ingress Service (Port 8081)
+### 2. Ingress Service (Port 8081)
 Function: Main gateway, inbound traffic processing
 
 Technology: Go, QUIC protocol
@@ -49,7 +58,7 @@ Rate limiting
 Request filtering
 Whisper Channel Protocol (WCH)
 
-3. Guardian Service (Port 9090)
+### 3. Guardian Service (Port 9090)
 Functions: Sandbox execution, malware analysis
 Technology: Go, Firecracker, eBPF
 
@@ -59,7 +68,7 @@ Memory forensics
 Syscall monitoring
 Threat scoring
 
-4. Credits Service (Port 5004)
+### 4. Credits Service (Port 5004)
 Functions: Resource management, billing
 
 Tools Technology: Go, PostgreSQL
@@ -70,7 +79,7 @@ Usage tracking
 Payment processing
 Quota management
 
-5. Continuous Authentication (Port 5002)
+### 5. Continuous Authentication (Port 5002)
 Functionality: Continuous behavior-based authentication
 Technology: Go, Python ML models
 
@@ -80,7 +89,7 @@ Mouse behavior analysis
 Device fingerprinting
 Risk scoring
 
-6. Shadow Evaluation (Port 5005)
+### 6. Shadow Evaluation (Port 5005)
 Functionality: Test security rules in virtual environments
 Technology: Go, Docker
 
@@ -91,6 +100,7 @@ Performance metrics
 Safe deployment
 
 Request Processing Flow
+```bash
 1. Client Request → Edge Worker (Cloudflare)
 2. Edge Worker → Camouflage API (Template selection)
 3. Request → Ingress Service (Rate limiting, filtering)
@@ -100,39 +110,39 @@ Request Processing Flow
 7. Response ← Orchestrator (Decision routing)
 8. Response ← Ingress (Apply deception if needed)
 9. Client ← Edge Worker (Camouflaged response)
+```
 
-
-Công nghệ Bảo mật
-1. Deception Technology
+##Security Technology
+### 1. Deception Technology
 Camouflage Engine : Giả mạo server fingerprints
 
 Decoy Services : Tạo honeypots động
 
 Adaptive Responses : Thay đổi phản hồi theo threat level
 
-2. Sandbox Isolation
+### 2. Sandbox Isolation
 Firecracker MicroVMs : Isolated execution environment
 
 eBPF Monitoring : Syscall tracking
 
 Memory Forensics : Exploit detection
 
-3. Machine Learning
+### 3. Machine Learning
 Anomaly Detection : Phát hiện hành vi bất thường
 
 Behavioral Analysis : Phân tích pattern người dùng
 
 Threat Intelligence : Correlation và prediction
 
-4. Zero-Knowledge Protocols
+### 4. Zero-Knowledge Protocols
 Rate Limiting : Privacy-preserving rate limits
 
 Authentication : Anonymous verification
 
 Audit : Tamper-proof logging
 
-Cơ sở Dữ liệu
-PostgreSQL Clusters
+## Database
+### PostgreSQL Clusters
 -- Credits Database
 - credits_transactions
 - tenant_quotas
@@ -150,7 +160,7 @@ PostgreSQL Clusters
 - performance_metrics
 
 
-sql
+### sql
 Redis Cache
 - Session data
 - Rate limit counters
@@ -158,44 +168,56 @@ Redis Cache
 - Configuration cache
 
 
-API Endpoints
+## API Endpoints
 Orchestrator API
+```bash
 GET  /health              - Health check
 POST /route               - Route request
 GET  /metrics             - Prometheus metrics
 GET  /policy              - Get routing policy
+```
 
-
-Credits API
+## Credits API
+```bash
 POST /credits/consume     - Consume credits
 GET  /credits/balance/:id - Get balance
 POST /credits/topup       - Add credits
 GET  /credits/history     - Usage history
+```
 
-
-ContAuth API
+## ContAuth API
+```bash
 POST /contauth/collect    - Collect telemetry
 POST /contauth/score      - Calculate risk
 GET  /contauth/decision   - Get auth decision
+```
 
-
-Deployment
+## Deployment
+```bash  
 Docker Compose
+```
 # Development environment
+``` bash 
 docker-compose up -d
+```
 
 # Production environment  
+``` bash
 docker-compose -f docker-compose.prod.yml up -d
+```
 
 
 yaml
 Kubernetes
 # Deploy to cluster
+``` bash 
 kubectl apply -f pilot/pilot-deployment.yml
-
+```
 # Check status
-kubectl get pods -n shieldx-system
 
+``` bash
+kubectl get pods -n shieldx-system
+```
 
 Monitoring & Metrics
 Prometheus Metrics
@@ -235,35 +257,43 @@ GDPR : Data protection
 
 PCI DSS : Payment security
 
-Vận hành Hàng ngày
+# Daily Operations
 1. Health Monitoring
 # Check service health
+```bash
 curl http://localhost:8080/health
 curl http://localhost:8081/health
 curl http://localhost:5002/health
 
+```
 
 2. Log Analysis
 # View audit logs
+```bash
 tail -f data/ledger-ingress.log
 tail -f data/ledger-credits.log
 tail -f data/ledger-contauth.log
 
+```
 
 3. Performance Tuning
 # Check metrics
+```bash
 curl http://localhost:8080/metrics
 curl http://localhost:9090/metrics
-
+```
 
 4. Backup & Recovery
 # Database backup
+```bash
 pg_dump shieldx_credits > backup.sql
 pg_dump shieldx_contauth > backup.sql
-
+```
 # Configuration backup
-kubectl get configmaps -o yaml > config-backup.yml
 
+```bash
+kubectl get configmaps -o yaml > config-backup.yml
+```
 
 Troubleshooting
 Common Issues
@@ -293,15 +323,20 @@ Review user permissions
 
 Debug Commands
 # Check service logs
+
+```bash
 docker logs shieldx-orchestrator
 docker logs shieldx-ingress
-
+```
 # Database connections
+```bash
 psql -h localhost -p 5432 -U credits_user -d credits
-
+```
 # Redis cache
-redis-cli -h localhost -p 6379
 
+```bash 
+redis-cli -h localhost -p 6379
+```
  
 Contact & Support
  
