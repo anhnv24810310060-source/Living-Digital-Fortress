@@ -11,6 +11,9 @@ from typing import Dict, Any
 
 from models.autoencoder import AnomalyDetectionAE
 from models.lstm_autoencoder import SequentialAnomalyDetector
+from models.cnn1d import PacketThreatDetector
+from models.transformer import TransformerThreatDetector
+from models.threat_classifier import ThreatClassifier
 
 # Configure logging
 logging.basicConfig(
@@ -60,14 +63,16 @@ def train_model(model_name: str):
     
     Request body:
     {
-        "model_type": "autoencoder" | "lstm_autoencoder",
+        "model_type": "autoencoder" | "lstm_autoencoder" | "cnn1d" | "transformer" | "threat_classifier",
         "config": {
             "input_dim": 50,
             "latent_dim": 32,
             "hidden_dim": 64,  # for LSTM
+            "num_classes": 6,  # for classifiers
             ...
         },
         "training_data": [[...], [...], ...],  # numpy array as list
+        "training_labels": [0, 1, ...],  # for supervised models
         "training_params": {
             "epochs": 100,
             "batch_size": 256,
@@ -81,6 +86,9 @@ def train_model(model_name: str):
         model_type = data.get('model_type')
         config = data.get('config', {})
         training_data = np.array(data.get('training_data'))
+        training_labels = data.get('training_labels')
+        if training_labels is not None:
+            training_labels = np.array(training_labels)
         training_params = data.get('training_params', {})
         
         # Create model based on type
@@ -99,6 +107,46 @@ def train_model(model_name: str):
                 num_layers=config.get('num_layers', 2),
                 bidirectional=config.get('bidirectional', False),
                 learning_rate=config.get('learning_rate', 0.001)
+            )
+        elif model_type == 'cnn1d':
+            model = PacketThreatDetector(
+                input_dim=config.get('input_dim'),
+                num_classes=config.get('num_classes', 6),
+                num_filters=config.get('num_filters'),
+                kernel_sizes=config.get('kernel_sizes'),
+                learning_rate=config.get('learning_rate', 0.001)
+            )
+        elif model_type == 'transformer':
+            model = TransformerThreatDetector(
+                input_dim=config.get('input_dim'),
+                num_classes=config.get('num_classes', 6),
+                d_model=config.get('d_model', 256),
+                nhead=config.get('nhead', 8),
+                num_layers=config.get('num_layers', 6),
+                learning_rate=config.get('learning_rate', 0.0001)
+            )
+        elif model_type == 'threat_classifier':
+            model = ThreatClassifier(
+                input_dim=config.get('input_dim'),
+                num_classes=config.get('num_classes', 6),
+                enable_autoencoder=config.get('enable_autoencoder', True),
+                enable_lstm=config.get('enable_lstm', True),
+                enable_cnn=config.get('enable_cnn', True),
+                enable_transformer=config.get('enable_transformer', True)
+            )
+        else:
+            return jsonify({'error': f'Unknown model type: {model_type}'}), 400
+        
+        # Train model
+        logger.info(f"Training {model_type} model: {model_name}")
+        if model_type in ['cnn1d', 'transformer', 'threat_classifier']:
+            # Supervised models need labels
+            if training_labels is None:
+                return jsonify({'error': f'{model_type} requires training_labels'}), 400
+            model.fit(training_data, training_labels, **training_params)
+        else:
+            # Unsupervised models
+            model.fit(training_data, **training_params)
             )
         else:
             return jsonify({'error': f'Unknown model type: {model_type}'}), 400

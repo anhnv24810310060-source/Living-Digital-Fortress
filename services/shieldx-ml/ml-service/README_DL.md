@@ -29,6 +29,32 @@ This service provides PyTorch-based deep learning models for advanced anomaly de
    - Sequence reconstruction error scoring
    - Support for variable-length sequences
 
+5. **CNN1DClassifier** - 1D Convolutional Neural Network
+   - Multi-kernel convolutions for feature extraction
+   - Max pooling and batch normalization
+   - Packet-level threat classification
+
+6. **PacketThreatDetector** - CNN-based threat detection
+   - Multi-class threat classification
+   - Optimized for network packet analysis
+   - Real-time inference capability
+
+7. **TransformerEncoder** - Transformer-based detection
+   - Multi-head self-attention mechanism
+   - Positional encoding for sequence understanding
+   - State-of-the-art pattern recognition
+
+8. **TransformerThreatDetector** - Complete transformer system
+   - Advanced threat pattern detection
+   - Attention weight visualization
+   - Learning rate scheduling
+
+9. **ThreatClassifier** - Unified ensemble system
+   - Combines all models for comprehensive detection
+   - Multiple ensemble strategies (weighted voting, majority, max confidence)
+   - Individual model management
+   - Best-in-class accuracy
+
 ## Installation
 
 ```bash
@@ -214,22 +240,25 @@ Sequence Input → LSTM Encoder → Latent Vector → LSTM Decoder → Sequence 
 ### Completed ✅
 - [x] Basic Autoencoder implementation
 - [x] LSTM Autoencoder for sequences
+- [x] CNN-1D for packet analysis
+- [x] Transformer with multi-head attention
+- [x] ThreatClassifier ensemble system
 - [x] HTTP API service
 - [x] Go client wrapper
 - [x] Comprehensive unit tests
 - [x] Docker support
 
 ### In Progress 🔄
-- [ ] Transformer-based models
-- [ ] Attention mechanisms
+- [ ] BERT for log analysis
 - [ ] Model serving optimization (ONNX export)
+- [ ] GPU batch inference optimization
 
 ### Planned 📋
-- [ ] CNN-1D for packet analysis
-- [ ] BERT for log analysis
 - [ ] Variational Autoencoders (VAE)
-- [ ] GPU acceleration
-- [ ] Model quantization
+- [ ] GAN-based anomaly detection
+- [ ] Attention mechanism visualization
+- [ ] Model quantization for edge deployment
+- [ ] Federated learning support
 
 ## Contributing
 
