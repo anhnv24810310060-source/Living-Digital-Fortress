@@ -326,10 +326,10 @@ class SHAPExplainer:
 ```
 
 **Deliverables:**
-- [ ] SHAP integration (5 days)
-- [ ] LIME integration (3 days)
-- [ ] Visualization tools (5 days)
-- [ ] API endpoints for explanations (3 days)
+- [x] SHAP integration (5 days) ✅ Done: Oct 15, 2025 - SHAPExplainer with DeepExplainer/GradientExplainer
+- [x] LIME integration (3 days) ✅ Done: Oct 15, 2025 - LIMEExplainer for tabular + text
+- [x] Visualization tools (5 days) ✅ Done: Oct 15, 2025 - Feature importance + waterfall plots
+- [x] API endpoints for explanations (3 days) ✅ Done: Oct 15, 2025 - /explain + /batch-explain endpoints
 
 #### 3.2. Counterfactual Explanations
 ```python
@@ -350,9 +350,9 @@ class CounterfactualGenerator:
 ```
 
 **Deliverables:**
-- [ ] Counterfactual algorithm (7 days)
-- [ ] Optimization methods (5 days)
-- [ ] User-facing explanations (3 days)
+- [x] Counterfactual algorithm (7 days) ✅ Done: Oct 15, 2025 - Gradient-based optimization
+- [x] Optimization methods (5 days) ✅ Done: Oct 15, 2025 - Multiple objectives + constraints
+- [x] User-facing explanations (3 days) ✅ Done: Oct 15, 2025 - ActionableInsights with recommendations
 
 ### Tuần 11-12: Adversarial Defense
 

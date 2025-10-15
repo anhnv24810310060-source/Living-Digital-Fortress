@@ -14,6 +14,9 @@ from models.lstm_autoencoder import SequentialAnomalyDetector
 from models.cnn1d import PacketThreatDetector
 from models.transformer import TransformerThreatDetector
 from models.threat_classifier import ThreatClassifier
+from explainability.shap_explainer import SHAPExplainer, ModelAgnosticExplainer
+from explainability.lime_explainer import LIMEExplainer
+from explainability.counterfactual import CounterfactualExplainer, ActionableInsights
 
 # Configure logging
 logging.basicConfig(
@@ -26,6 +29,9 @@ app = Flask(__name__)
 
 # Global model registry
 models: Dict[str, Any] = {}
+
+# Explainer registry
+explainers: Dict[str, Dict[str, Any]] = {}
 
 # Model storage path
 MODEL_DIR = os.getenv('MODEL_DIR', '/tmp/shieldx_models')
@@ -333,6 +339,157 @@ def unload_model(model_name: str):
         return jsonify({'status': 'success', 'message': f'Model {model_name} unloaded'})
     else:
         return jsonify({'error': f'Model {model_name} not found'}), 404
+
+
+@app.route('/models/<model_name>/explain', methods=['POST'])
+def explain_prediction(model_name: str):
+    """Generate explanation for model prediction"""
+    try:
+        data = request.json
+        explainer_type = data.get('explainer_type', 'shap')
+        instance = np.array(data['instance'])
+        background_data = data.get('background_data')
+        
+        # Check if model exists
+        if model_name not in models:
+            return jsonify({'error': f'Model {model_name} not loaded'}), 404
+        
+        model = models[model_name]
+        
+        # Initialize or get explainer
+        explainer_key = f"{model_name}_{explainer_type}"
+        if explainer_key not in explainers:
+            if explainer_type == 'shap':
+                if background_data is not None:
+                    bg_data = np.array(background_data)
+                    explainers[explainer_key] = {
+                        'type': 'shap',
+                        'explainer': SHAPExplainer(model, bg_data)
+                    }
+                else:
+                    # Use model-agnostic SHAP
+                    explainers[explainer_key] = {
+                        'type': 'shap_agnostic',
+                        'explainer': ModelAgnosticExplainer(model)
+                    }
+            elif explainer_type == 'lime':
+                feature_names = data.get('feature_names')
+                explainers[explainer_key] = {
+                    'type': 'lime',
+                    'explainer': LIMEExplainer(model, feature_names=feature_names)
+                }
+            elif explainer_type == 'counterfactual':
+                target_class = data.get('target_class', 0)
+                explainers[explainer_key] = {
+                    'type': 'counterfactual',
+                    'explainer': CounterfactualExplainer(model, target_class=target_class)
+                }
+            else:
+                return jsonify({'error': f'Unknown explainer type: {explainer_type}'}), 400
+        
+        explainer_info = explainers[explainer_key]
+        explainer = explainer_info['explainer']
+        
+        # Generate explanation
+        if explainer_type == 'shap':
+            if isinstance(explainer, SHAPExplainer):
+                shap_values = explainer.explain_instance(instance)
+                feature_importance = explainer.get_feature_importance(shap_values)
+                
+                return jsonify({
+                    'explainer_type': 'shap',
+                    'shap_values': shap_values.tolist(),
+                    'feature_importance': {
+                        'features': feature_importance['features'].tolist(),
+                        'importance': feature_importance['importance'].tolist()
+                    },
+                    'base_value': float(explainer.explainer.expected_value)
+                })
+            else:
+                # Model-agnostic SHAP
+                shap_values = explainer.explain_instance(instance)
+                return jsonify({
+                    'explainer_type': 'shap_agnostic',
+                    'shap_values': shap_values.tolist()
+                })
+                
+        elif explainer_type == 'lime':
+            explanation = explainer.explain_instance(instance)
+            return jsonify({
+                'explainer_type': 'lime',
+                'explanation': explanation
+            })
+            
+        elif explainer_type == 'counterfactual':
+            counterfactual = explainer.generate_counterfactual(instance)
+            insights = ActionableInsights.generate_recommendations(
+                instance, 
+                counterfactual,
+                feature_names=data.get('feature_names')
+            )
+            
+            return jsonify({
+                'explainer_type': 'counterfactual',
+                'original': instance.tolist(),
+                'counterfactual': counterfactual.tolist(),
+                'insights': insights
+            })
+    
+    except Exception as e:
+        logger.error(f"Error generating explanation: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/models/<model_name>/batch-explain', methods=['POST'])
+def batch_explain(model_name: str):
+    """Generate explanations for batch of instances"""
+    try:
+        data = request.json
+        explainer_type = data.get('explainer_type', 'shap')
+        instances = np.array(data['instances'])
+        
+        # Check if model exists
+        if model_name not in models:
+            return jsonify({'error': f'Model {model_name} not loaded'}), 404
+        
+        model = models[model_name]
+        
+        # For LIME, use batch explanation
+        if explainer_type == 'lime':
+            explainer_key = f"{model_name}_lime"
+            if explainer_key not in explainers:
+                feature_names = data.get('feature_names')
+                explainers[explainer_key] = {
+                    'type': 'lime',
+                    'explainer': LIMEExplainer(model, feature_names=feature_names)
+                }
+            
+            explainer = explainers[explainer_key]['explainer']
+            explanations = explainer.explain_batch(instances)
+            
+            return jsonify({
+                'explainer_type': 'lime',
+                'explanations': explanations
+            })
+        
+        # For other explainers, explain each instance
+        results = []
+        for instance in instances:
+            # Call single explain endpoint
+            response = explain_prediction(model_name)
+            if isinstance(response, tuple):
+                return response
+            results.append(response.json)
+        
+        return jsonify({
+            'explainer_type': explainer_type,
+            'batch_size': len(instances),
+            'explanations': results
+        })
+    
+    except Exception as e:
+        logger.error(f"Error generating batch explanations: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 
 if __name__ == '__main__':
