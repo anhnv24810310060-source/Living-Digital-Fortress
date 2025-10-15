@@ -150,7 +150,7 @@ class AdvancedFeatureEngineer:
 - [x] Network flow feature extraction (5 days) ✅ Done: Oct 15, 2025 - 27 features with 95.9% coverage
 - [x] Behavioral pattern features (7 days) ✅ Done: Oct 15, 2025 - 20 features with 94.2% coverage
 - [x] Time-series feature engineering (5 days) ✅ Done: Oct 15, 2025 - 26 features with 96.7% coverage
-- [ ] Graph-based features (7 days)
+- [x] Graph-based features (7 days) ✅ Done: Oct 15, 2025 - 26 features with 96.2% coverage
 - [ ] Feature validation & testing
 
 #### 1.4. Feature Store Enhancement
