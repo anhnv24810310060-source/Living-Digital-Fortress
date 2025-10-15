@@ -93,7 +93,7 @@ type AdvancedAnomalyDetector struct {
 
 **Deliverables:**
 - [x] Implement LOF detector (5 days) ✅ Done: Oct 15, 2025 - 94.8% test coverage
-- [ ] Implement One-Class SVM (3 days)
+- [x] Implement One-Class SVM (3 days) ✅ Done: Oct 15, 2025 - 91.1% coverage, 3 kernels
 - [ ] Integrate PyTorch/TensorFlow wrappers (7 days)
 - [ ] Implement Autoencoder models (10 days)
 - [x] Unit tests + benchmarks ✅ Done: Oct 15, 2025
