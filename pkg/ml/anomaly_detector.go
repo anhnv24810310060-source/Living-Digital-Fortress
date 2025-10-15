@@ -306,6 +306,26 @@ func (iforest *IsolationForest) DecisionFunction(sample []float64) float64 {
 	return math.Pow(2, -avgPathLength/c)
 }
 
+// Train trains the isolation forest (alias for Fit to implement AnomalyModel interface)
+func (iforest *IsolationForest) Train(data [][]float64) error {
+	return iforest.Fit(data)
+}
+
+// Detect checks if a point is an anomaly
+// Returns (isAnomaly, anomalyScore)
+func (iforest *IsolationForest) Detect(point []float64) (bool, float64) {
+	score := iforest.DecisionFunction(point)
+	// Higher score = more anomalous for isolation forest
+	// Threshold of 0.5 is commonly used
+	isAnomaly := score > 0.5
+	return isAnomaly, score
+}
+
+// Algorithm returns the algorithm name
+func (iforest *IsolationForest) Algorithm() string {
+	return "isolation-forest"
+}
+
 func buildTree(data [][]float64, depth, maxDepth int) *TreeNode {
 	if len(data) <= 1 || depth >= maxDepth {
 		return &TreeNode{
