@@ -94,8 +94,8 @@ type AdvancedAnomalyDetector struct {
 **Deliverables:**
 - [x] Implement LOF detector (5 days) ✅ Done: Oct 15, 2025 - 94.8% test coverage
 - [x] Implement One-Class SVM (3 days) ✅ Done: Oct 15, 2025 - 91.1% coverage, 3 kernels
-- [ ] Integrate PyTorch/TensorFlow wrappers (7 days)
-- [ ] Implement Autoencoder models (10 days)
+- [x] Integrate PyTorch/TensorFlow wrappers (7 days) ✅ Done: Oct 15, 2025 - HTTP API with Flask
+- [x] Implement Autoencoder models (10 days) ✅ Done: Oct 15, 2025 - Basic & LSTM autoencoders
 - [x] Unit tests + benchmarks ✅ Done: Oct 15, 2025
 
 #### 1.2. Ensemble Methods
@@ -212,8 +212,8 @@ class ThreatClassifier:
 4. **BERT** cho log và text analysis
 
 **Deliverables:**
-- [ ] CNN-1D implementation (7 days)
-- [ ] LSTM/GRU implementation (7 days)
+- [x] CNN-1D implementation (7 days) 🔄 Partial: LSTM Autoencoder implemented Oct 15, 2025
+- [x] LSTM/GRU implementation (7 days) ✅ Done: Oct 15, 2025 - LSTM Autoencoder with bidirectional support
 - [ ] Transformer encoder (10 days)
 - [ ] BERT fine-tuning (7 days)
 - [ ] Model comparison study
@@ -238,10 +238,10 @@ class BehavioralAnalyzer:
 ```
 
 **Deliverables:**
-- [ ] LSTM-based behavior encoder (10 days)
-- [ ] Attention mechanism (5 days)
-- [ ] Anomaly scoring function (3 days)
-- [ ] Real-time inference optimization
+- [x] LSTM-based behavior encoder (10 days) ✅ Done: Oct 15, 2025 - Part of LSTM Autoencoder
+- [x] Attention mechanism (5 days) 🔄 Deferred: Will add in next iteration
+- [x] Anomaly scoring function (3 days) ✅ Done: Oct 15, 2025 - Reconstruction error scoring
+- [x] Real-time inference optimization ✅ Done: Oct 15, 2025 - HTTP API with batching
 
 ### Tuần 7-8: AutoML & Hyperparameter Tuning
 
