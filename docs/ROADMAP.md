@@ -74,12 +74,17 @@
 **Target Date**: October 2025  
 **Focus**: Intelligence & Automation
 
-### AI/ML Integration
-- [ ] ML-assisted anomaly detection (Isolation Forest)
-- [ ] Behavioral analytics for threat scoring
-- [ ] Automated policy recommendations
-- [ ] Adversarial ML defense mechanisms
-- [ ] Model explainability (SHAP, LIME)
+### AI/ML Integration (See [ML Master Roadmap](./ML_MASTER_ROADMAP.md) for details)
+- [ ] **5+ Anomaly Detection Algorithms** (LOF, One-Class SVM, Autoencoder, VAE)
+- [ ] **Deep Learning Models** (LSTM, CNN, Transformer for threat classification)
+- [ ] **Ensemble Methods** (Voting, Stacking, XGBoost)
+- [ ] **AutoML** with Optuna for automated model selection
+- [ ] **Neural Architecture Search** for optimal architectures
+- [ ] **Transfer Learning** (BERT for logs, pre-trained models)
+- [ ] **Model Explainability** (SHAP, LIME, counterfactual explanations)
+- [ ] **Adversarial Defense** (FGSM, PGD attacks, adversarial training)
+- [ ] **Model Poisoning Detection** and data validation
+- [ ] **Performance Optimization** (quantization, pruning, distillation)
 
 ### Scalability
 - [ ] Multi-cluster policy replication (Raft consensus)
