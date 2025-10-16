@@ -149,23 +149,23 @@ def train_model(model_name: str):
             # Supervised models need labels
             if training_labels is None:
                 return jsonify({'error': f'{model_type} requires training_labels'}), 400
-            model.fit(training_data, training_labels, **training_params)
-        else:
-            # Unsupervised models
-            model.fit(training_data, **training_params)
+            model.fit(
+                training_data,
+                training_labels,
+                epochs=training_params.get('epochs', 100),
+                batch_size=training_params.get('batch_size', 64),
+                validation_split=training_params.get('validation_split', 0.2),
+                early_stopping_patience=training_params.get('early_stopping_patience', 10)
             )
         else:
-            return jsonify({'error': f'Unknown model type: {model_type}'}), 400
-        
-        # Train model
-        logger.info(f"Training {model_type} model: {model_name}")
-        model.fit(
-            training_data,
-            epochs=training_params.get('epochs', 100),
-            batch_size=training_params.get('batch_size', 256 if model_type == 'autoencoder' else 64),
-            validation_split=training_params.get('validation_split', 0.2),
-            early_stopping_patience=training_params.get('early_stopping_patience', 10)
-        )
+            # Unsupervised models
+            model.fit(
+                training_data,
+                epochs=training_params.get('epochs', 100),
+                batch_size=training_params.get('batch_size', 256),
+                validation_split=training_params.get('validation_split', 0.2),
+                early_stopping_patience=training_params.get('early_stopping_patience', 10)
+            )
         
         # Save model
         model_path = os.path.join(MODEL_DIR, f"{model_name}.pt")
