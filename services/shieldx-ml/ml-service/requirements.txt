@@ -28,3 +28,8 @@ lime==0.2.0.1
 
 # Cryptography for secure aggregation
 cryptography==41.0.7
+
+# ONNX for model export
+onnx==1.15.0
+onnxruntime==1.16.3
+
